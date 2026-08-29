@@ -1,0 +1,124 @@
+:root {
+  --green: #3ba4e5;
+  --sage: color-mix(in srgb, var(--green) 14%, white);
+  --holiday: #78b98b;
+  --birthday: #e0a526;
+  --school: #3979b8;
+}
+.auth-copy {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--green) 72%, #16342c),
+      color-mix(in srgb, var(--green) 62%, #ffffff)
+    ),
+    radial-gradient(circle at 20% 20%, var(--sage), var(--green));
+}
+.sidebar nav button.active,
+.secondary {
+  background: var(--sage);
+  color: var(--green);
+}
+.avatar {
+  background: var(--sage);
+  color: var(--green);
+}
+.tag {
+  background: var(--sage);
+  color: color-mix(in srgb, var(--green) 68%, #1d332c);
+}
+.action,
+.defaults {
+  background: var(--sage);
+}
+.themebox {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.6rem;
+  max-width: 620px;
+}
+.themepicker {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+.themepicker input[type="color"] {
+  width: 72px;
+  height: 52px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+}
+.themepicker code {
+  background: #f2f4f2;
+  padding: 0.5rem 0.7rem;
+  border-radius: 7px;
+}
+.themepreview {
+  height: 90px;
+  border-radius: 12px;
+  background: var(--green);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 750;
+  margin-bottom: 1rem;
+}
+.themebox > button {
+  background: var(--green);
+  color: white;
+  padding: 0.8rem 1rem;
+  border-radius: 9px;
+  font-weight: 700;
+}
+.themebox > label {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+.themebox > label input[type="date"] {
+  width: min(260px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.8rem 0.9rem;
+  color: var(--ink);
+  background: #fbfcfa;
+}
+.success {
+  background: #e8f6ed;
+  color: #24643a;
+  padding: 0.7rem;
+  border-radius: 8px;
+}
+.globaltheme {
+  margin-top: 1.4rem;
+}
+.personpreview {
+  border-left: 5px solid;
+  border-radius: 7px;
+  padding: 0.65rem 0.8rem;
+  margin-bottom: 1rem;
+  font-weight: 750;
+}
+.holidaypreview {
+  background-color: #e5f3e9;
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px dashed var(--holiday);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--holiday) 18%, white) 0,
+    color-mix(in srgb, var(--holiday) 18%, white) 7px,
+    white 7px,
+    white 14px
+  );
+  color: color-mix(in srgb, var(--holiday) 70%, #23332e);
+  font-weight: 750;
+  margin-bottom: 1rem;
+}
+.birthdaypreview { padding: .8rem; border-left: 4px solid; border-radius: 8px; margin-bottom: 1rem; font-weight: 750; }

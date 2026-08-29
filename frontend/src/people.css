@@ -1,0 +1,77 @@
+.copyrow {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+.copyrow input {
+  flex: 1;
+  min-width: 0;
+}
+.copyrow button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--green);
+  color: white;
+  padding: 0 0.9rem;
+  border-radius: 9px;
+  font-weight: 700;
+  transition:
+    transform 0.08s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.copyrow button:hover {
+  background: #34705e;
+  box-shadow: 0 3px 9px #173b302b;
+}
+.copyrow button:active {
+  transform: translateY(2px) scale(0.97);
+  background: #193f34;
+  box-shadow: none;
+}
+.copyrow button:focus-visible {
+  outline: 3px solid #84b7a2;
+  outline-offset: 2px;
+}
+.copyrow svg {
+  width: 18px;
+}
+.childaccess {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-top: 1.2rem;
+  padding: 0.6rem 1rem 1rem;
+}
+.childaccess legend {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  padding: 0 0.35rem;
+}
+.childaccess .check {
+  margin: 0.55rem 0;
+}
+.personform {
+  width: min(38rem, calc(100% - 3rem));
+}
+.childcard:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.personcolor {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 0.35rem;
+}
+.personcolor input {
+  width: 58px;
+  height: 42px;
+  padding: 2px;
+}
+.personcolor span {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 500;
+}

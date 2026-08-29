@@ -1,0 +1,343 @@
+.dashboardtimeline {
+  padding: 0.35rem 1.25rem;
+}
+
+.dashboardwide {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.4rem;
+}
+
+.dashboardupcoming {
+  min-width: 0;
+}
+
+.dashboardconflicts {
+  padding: 1.25rem 1.4rem;
+  border: 1px solid #e8b4aa;
+  border-radius: 13px;
+  background: #fff8f6;
+}
+
+.dashboardconflicts .sectiontitle h2 {
+  margin: 0;
+  color: #8f3427;
+}
+
+.dashboardconflicts .sectiontitle > span {
+  min-width: 2rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 99px;
+  background: #b6402e;
+  color: white;
+  text-align: center;
+  font-weight: 800;
+}
+
+.conflictlist {
+  margin-top: 0.7rem;
+}
+
+.conflictlist > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 1rem;
+  padding: 0.8rem 0.25rem;
+  border-bottom: 1px solid #efd4ce;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.conflictlist > button strong,
+.conflictlist > button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflictlist > button small {
+  color: #925f56;
+}
+
+.conflictlist > button svg {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: #b6402e;
+}
+
+.conflictlist > p {
+  margin: 0.75rem 0 0;
+  color: #925f56;
+  font-size: 0.85rem;
+}
+
+.dashboarditem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 0.25rem;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.dashboarditem:last-child {
+  border-bottom: 0;
+}
+
+.dashboarditem i {
+  flex: 0 0 8px;
+  height: 42px;
+  border-radius: 8px;
+}
+
+.dashboarditem span {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.dashboarditem strong,
+.dashboarditem small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboarditem small {
+  color: var(--muted);
+}
+
+.dashboarditem > svg {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.dashboarditem:active {
+  transform: translateY(1px);
+}
+
+.dashboardmore {
+  display: block;
+  margin: 0.65rem auto;
+  padding: 0.7rem 1rem;
+  border-radius: 9px;
+  background: var(--sage);
+  color: var(--green);
+  font-weight: 750;
+}
+
+.action > button {
+  margin-left: auto;
+  padding: 0.7rem 1rem;
+  border-radius: 9px;
+  background: var(--green);
+  color: white;
+  font-weight: 700;
+}
+
+.action.hasrequests span {
+  color: var(--green);
+}
+
+.globalheader {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: flex;
+  justify-content: center;
+  margin: calc(clamp(1.5rem, 4vw, 4rem) * -1) 0 2rem;
+  padding: 1rem 4rem 0.8rem;
+  background: color-mix(in srgb, var(--cream) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.globalsearch {
+  position: relative;
+  width: min(760px, 100%);
+}
+
+.globalsearch > svg {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  width: 20px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.globalsearch > input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0.7rem 3rem;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: white;
+  color: var(--ink);
+  box-shadow: 0 7px 24px #1c30291a;
+}
+
+.globalsearch > input:focus {
+  outline: 3px solid color-mix(in srgb, var(--green) 20%, transparent);
+  border-color: var(--green);
+}
+
+.globalsearch > button {
+  position: absolute;
+  right: 0.7rem;
+  top: 50%;
+  width: 32px;
+  height: 32px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+}
+
+.searchresults {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  left: 0;
+  right: 0;
+  max-height: min(62vh, 520px);
+  overflow: auto;
+  padding: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 18px 50px #19362d2c;
+}
+
+.searchresults > p {
+  margin: 0;
+  padding: 1.2rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.searchresults > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.75rem;
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+}
+
+.searchresults > button:hover,
+.searchresults > button:focus-visible {
+  background: var(--sage);
+  outline: none;
+}
+
+.searchresults > button > span:nth-child(2) {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.searchresults strong,
+.searchresults small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchresults small {
+  color: var(--muted);
+}
+
+.searchkind {
+  min-width: 72px;
+  padding: 0.3rem 0.5rem;
+  border-radius: 99px;
+  background: var(--sage);
+  color: var(--green);
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.calendar-highlight {
+  position: relative;
+  z-index: 2;
+  animation: calendar-highlight 1.15s ease-in-out 3;
+  outline: 3px solid var(--green);
+  outline-offset: 2px;
+}
+
+.birthdaycards .childcard:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.birthdayform {
+  width: min(560px, calc(100% - 2rem));
+}
+
+.modalactions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1.25rem;
+}
+
+.modalactions > button {
+  padding: 0.8rem 1rem;
+  border-radius: 9px;
+  background: var(--green);
+  color: white;
+  font-weight: 750;
+}
+
+.modalactions > button.secondary {
+  margin-top: 0;
+  background: var(--sage);
+  color: var(--green);
+}
+
+.modalactions > button.danger {
+  background: #fff0ed;
+  color: #a33a29;
+}
+
+@keyframes calendar-highlight {
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--green) 28%, transparent);
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboardtimeline {
+    padding: 0.25rem 0.85rem;
+  }
+
+  .action > button {
+    margin-left: auto;
+  }
+
+  .globalheader {
+    top: 64px;
+    margin: -1.4rem 0 1.25rem;
+    padding: 0.7rem 0;
+  }
+
+  .globalsearch > input {
+    font-size: 0.88rem;
+  }
+
+  .searchkind {
+    min-width: 60px;
+  }
+}

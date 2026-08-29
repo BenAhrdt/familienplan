@@ -1,0 +1,23 @@
+[Unit]
+Description=FamilienPlan Webanwendung
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=familienplan
+Group=familienplan
+WorkingDirectory=/opt/familienplan/backend
+EnvironmentFile=/opt/familienplan/.env
+ExecStart=/opt/familienplan/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/familienplan/uploads
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+

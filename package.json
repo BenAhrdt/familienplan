@@ -1,0 +1,8 @@
+{
+  "name": "familienplan",
+  "private": true,
+  "scripts": {
+    "dev": "./start.sh",
+    "start": "./start.sh"
+  }
+}
