@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.9 – 30. August 2026
+
+### E-Mail-Benachrichtigungen
+
+- Schnell aufeinanderfolgende Planungsbenachrichtigungen an dieselbe Person werden nach zwei Minuten Ruhezeit in einer Mail gebündelt, spätestens jedoch nach zehn Minuten versendet.
+- PostgreSQL-Zeilensperren verhindern, dass mehrere Hintergrund-Worker dieselbe Outbox-Nachricht doppelt versenden.
+- Testmails bleiben sofortig und gehen weiterhin an die E-Mail-Adresse des angemeldeten Administrators.
+
 ## 0.1.8 – 30. August 2026
 
 ### Personen und Einladungen
