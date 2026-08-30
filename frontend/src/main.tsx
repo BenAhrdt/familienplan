@@ -2916,6 +2916,7 @@ function PeopleScreen({
   const [open, setOpen] = useState<"invite" | "edit" | null>(null),
     [selected, setSelected] = useState<PersonAccess | null>(null),
     [invite, setInvite] = useState(""),
+    [inviteEmail, setInviteEmail] = useState<string | null>(null),
     [copied, setCopied] = useState(false),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
@@ -2961,16 +2962,18 @@ function PeopleScreen({
         load();
         reload();
       } else {
-        const r = await api<{ invite_url: string }>("/invitations", {
+        const r = await api<{ invite_url: string; email: string | null }>("/invitations", {
           method: "POST",
           body: JSON.stringify({
             display_name: f.get("display_name"),
             email: f.get("email") || null,
+            send_email: f.get("send_email") === "on",
             role,
             child_permissions: permissions(f, role),
           }),
         });
         setInvite(r.invite_url);
+        setInviteEmail(r.email);
         load();
         reload();
       }
@@ -2991,9 +2994,10 @@ function PeopleScreen({
     );
     setError("");
     setInvite("");
+    setInviteEmail(null);
     setCopied(false);
     if (p.is_pending) {
-      api<{ invite_url: string }>(`/people/${p.id}/invitation`).then((result) => setInvite(result.invite_url)).catch(() => {});
+      api<{ invite_url: string; email: string | null }>(`/people/${p.id}/invitation`).then((result) => { setInvite(result.invite_url); setInviteEmail(result.email); }).catch(() => {});
     }
     setOpen("edit");
   }
@@ -3013,6 +3017,7 @@ function PeopleScreen({
           <button
             onClick={() => {
               setInvite("");
+              setInviteEmail(null);
               setSelected(null);
               setCopied(false);
               setError("");
@@ -3097,6 +3102,7 @@ function PeopleScreen({
                     <>
                       <Field label="Anzeigename" name="display_name" />
                       <Field label="E-Mail-Adresse (optional)" name="email" type="email" required={false} />
+                      <label className="check"><input type="checkbox" name="send_email" /><span>Einladungslink sofort per E-Mail senden</span></label>
                     </>
                   )}
                 </>
@@ -3122,9 +3128,13 @@ function PeopleScreen({
                         <strong>Einladung noch nicht angenommen</strong>
                         <div className="copyrow"><input readOnly value={invite} onFocus={(e) => e.currentTarget.select()} /><button type="button" onClick={copy}><Copy />{copied ? "Kopiert" : "Link kopieren"}</button></div>
                         <button type="button" className="secondary" onClick={async () => {
-                          const renewed = await api<{ invite_url: string }>(`/people/${selected.user.id}/invitation/renew`, { method: "POST" });
-                          setInvite(renewed.invite_url); setCopied(false);
+                          const renewed = await api<{ invite_url: string; email: string | null }>(`/people/${selected.user.id}/invitation/renew`, { method: "POST" });
+                          setInvite(renewed.invite_url); setInviteEmail(renewed.email); setCopied(false);
                         }}>Neuen Einladungslink erzeugen</button>
+                        {inviteEmail && <button type="button" onClick={async () => {
+                          await api(`/people/${selected.user.id}/invitation/send`, { method: "POST" });
+                          window.alert(`Einladung an ${inviteEmail} wurde in die Versandwarteschlange gelegt.`);
+                        }}>Einladung jetzt per E-Mail senden</button>}
                       </div>
                     )}
                     <Field

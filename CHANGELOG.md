@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.11 – 30. August 2026
+
+### Einladungsversand
+
+- Das Eintragen einer E-Mail-Adresse versendet die Einladung nicht mehr automatisch.
+- Beim Erstellen kann der sofortige Versand ausdrücklich ausgewählt werden.
+- Offene Einladungen können später gezielt aus den Personeneigenschaften per E-Mail versendet werden.
+
 ## 0.1.10 – 30. August 2026
 
 ### Ein-Klick-Aktualisierung

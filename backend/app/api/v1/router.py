@@ -488,15 +488,15 @@ def invite(data: InvitationCreate, request: Request, db: Session = Depends(get_d
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Kind {child_id} wurde nicht gefunden")
         db.add(ChildUserPermission(child_id=child_id, user_id=person.id, permission=permission))
     invite_url = f"{settings.app_origin}/invite/{raw}"
-    if invitation.email:
-        recipient = db.scalar(select(User).where(func.lower(User.email) == invitation.email.lower()))
-        # New invitees do not have a user row yet, so enqueue directly by address.
+    if invitation.email and data.send_email:
+        # New invitees do not have an active account yet, so enqueue directly by address.
         from app.integrations import mail_config
         from app.models.entities import OutboxMessage
-        if mail_config(db).get("enabled"):
-            db.add(OutboxMessage(channel="email", recipient_key=invitation.email,
-                event_key=f"invitation:{invitation.id}", event_type="invitation.created",
-                payload={"subject": "Einladung zu FamilienPlan", "body": f"{user.display_name} hat dich zu FamilienPlan eingeladen.\n\nEinladung annehmen: {invite_url}"}))
+        if not mail_config(db).get("enabled"):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Der E-Mail-Versand ist noch nicht aktiviert")
+        db.add(OutboxMessage(channel="email", recipient_key=invitation.email,
+            event_key=f"invitation:{invitation.id}:{uuid.uuid4().hex}", event_type="invitation.created",
+            payload={"subject": "Einladung zu FamilienPlan", "body": f"{user.display_name} hat dich zu FamilienPlan eingeladen.\n\nEinladung annehmen: {invite_url}"}))
     audit(db, request, "INVITATION_CREATED", user.id, ("invitation", str(invitation.id)), {"email": invitation.email, "role": invitation.role.value, "children": list(data.child_permissions)})
     db.commit()
     # Returned once so an admin can deliver it when SMTP is not configured.
@@ -526,6 +526,26 @@ def renew_person_invitation(user_id: int, request: Request, db: Session = Depend
     db.commit()
     return InvitationOut(id=invitation.id, email=invitation.email, expires_at=invitation.expires_at,
         invite_url=f"{settings.app_origin}/invite/{raw}", user_id=user_id)
+
+
+@router.post("/people/{user_id}/invitation/send", status_code=202, dependencies=[Depends(require_csrf)])
+def send_person_invitation(user_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(admin)):
+    invitation = db.scalar(select(Invitation).where(Invitation.user_id == user_id, Invitation.used_at.is_(None)))
+    if not invitation or not invitation.token_value or not invitation.email:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Für diese Person ist keine versendbare Einladung vorhanden")
+    if invitation.expires_at <= utcnow():
+        raise HTTPException(status.HTTP_410_GONE, "Der Einladungslink ist abgelaufen. Bitte zuerst einen neuen Link erzeugen")
+    from app.integrations import mail_config
+    from app.models.entities import OutboxMessage
+    if not mail_config(db).get("enabled"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Der E-Mail-Versand ist noch nicht aktiviert")
+    invite_url = f"{settings.app_origin}/invite/{invitation.token_value}"
+    db.add(OutboxMessage(channel="email", recipient_key=invitation.email,
+        event_key=f"invitation:{invitation.id}:{uuid.uuid4().hex}", event_type="invitation.created",
+        payload={"subject": "Einladung zu FamilienPlan", "body": f"{actor.display_name} hat dich zu FamilienPlan eingeladen.\n\nEinladung annehmen: {invite_url}"}))
+    audit(db, request, "INVITATION_SENT", actor.id, ("invitation", str(invitation.id)), {"user_id": user_id, "email": invitation.email})
+    db.commit()
+    return {"queued": True, "recipient": invitation.email}
 
 
 @router.post("/invitations/accept", response_model=SessionOut)

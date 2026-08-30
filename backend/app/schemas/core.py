@@ -57,6 +57,7 @@ class InvitationCreate(BaseModel):
     role: Role = Role.VIEWER
     display_name: str = Field(min_length=2, max_length=160)
     child_permissions: dict[int, Permission] = {}
+    send_email: bool = False
 
 
 class InvitationOut(BaseModel):
