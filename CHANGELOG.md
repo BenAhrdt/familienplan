@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.25 – 30. August 2026
+
+### Terminfreigaben und offene Einladungen
+
+- Nicht freigegebene Terminarten werden serverseitig aus Kalenderdaten, Aufenthalten und Geburtstagen entfernt.
+- Die Kalenderfilter zeigen einer Person nur die für sie freigeschalteten Terminarten.
+- Rubriken für Geburtstage und Abfallkalender benötigen zusätzlich die entsprechende Terminfreigabe.
+- Administratoren können die E-Mail-Adresse einer noch nicht registrierten Person ergänzen, ändern oder entfernen.
+- Benutzername und Passwort werden weiterhin erst von der eingeladenen Person festgelegt.
+
 ## 0.1.24 – 30. August 2026
 
 ### Einheitliche Dialoge

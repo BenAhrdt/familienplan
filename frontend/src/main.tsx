@@ -1078,6 +1078,9 @@ function CalendarScreen({
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
     });
   const now = new Date(),
+    availableEventTypes = getSessionUser()?.role === "ADMIN"
+      ? sortedEventTypes(Object.keys(eventTypeLabels) as EventType[])
+      : sortedEventTypes(getSessionUser()?.allowed_event_types || []),
     monthStart = new Date(month.getFullYear(), month.getMonth(), 1),
     firstWeekday = (monthStart.getDay() + 6) % 7,
     from = new Date(month.getFullYear(), month.getMonth(), 1 - firstWeekday),
@@ -1829,7 +1832,7 @@ function CalendarScreen({
       )}
       <section className="calendar-type-filters" aria-label="Angezeigte Terminarten">
         <strong>Termine anzeigen:</strong>
-        {sortedEventTypes(Object.keys(eventTypeLabels) as EventType[]).map((type) => (
+        {availableEventTypes.map((type) => (
           <label key={type}>
             <input type="checkbox" checked={!hiddenEventTypes.includes(type)} onChange={() => setHiddenEventTypes((current) => {
               const changed = current.includes(type) ? current.filter((item) => item !== type) : [...current, type];
@@ -1903,7 +1906,7 @@ function CalendarScreen({
                 new Date(`${holiday.starts_on}T00:00:00`) < dayEnd &&
                 new Date(`${holiday.ends_on}T23:59:59`) >= day,
             );
-            const birthdays = hiddenEventTypes.includes("BIRTHDAY") ? [] : [
+            const birthdays = !availableEventTypes.includes("BIRTHDAY") || hiddenEventTypes.includes("BIRTHDAY") ? [] : [
               ...children
                 .filter((child) => child.birth_date)
                 .map((child) => ({
@@ -1963,7 +1966,7 @@ function CalendarScreen({
               >
                 <time>{day.getDate()}</time>
                 <div className="dayentries">
-                  {!hiddenEventTypes.includes("STAY") && children.map((child) => {
+                  {availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY") && children.map((child) => {
                     const childStays = dayStays
                       .filter((item) => item.child_id === child.id)
                       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -2194,7 +2197,7 @@ function CalendarScreen({
                       }
                     }}
                   >
-                    {sortedEventTypes(getSessionUser()?.allowed_event_types || ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]).map((type) => (
+                    {availableEventTypes.map((type) => (
                       <option key={type} value={type}>{eventTypeLabels[type as EventType]}</option>
                     ))}
                   </select>
@@ -2358,7 +2361,7 @@ function CalendarScreen({
                       }
                     }}
                   >
-                    {sortedEventTypes(getSessionUser()?.allowed_event_types || ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]).map((type) => (
+                    {availableEventTypes.map((type) => (
                       <option key={type} value={type}>{eventTypeLabels[type as EventType]}</option>
                     ))}
                   </select>
@@ -3019,7 +3022,7 @@ function PeopleScreen({
             display_name: String(f.get("display_name")),
             first_name: f.get("first_name") || null,
             last_name: f.get("last_name") || null,
-            email: String(f.get("email")),
+            email: f.get("email") || null,
             role,
             color: String(f.get("color")),
             birth_date: f.get("birth_date") || null,
@@ -3228,8 +3231,8 @@ function PeopleScreen({
                     {selected?.user.is_pending ? (
                       <>
                         <input type="hidden" name="username" value={selected.user.username} />
-                        <input type="hidden" name="email" value={selected.user.email} />
-                        <p className="hint">Benutzername und weitere Anmeldedaten legt die Person beim Annehmen der Einladung fest.</p>
+                        <Field key={`pending-email-${inviteEmail || "empty"}`} label="E-Mail-Adresse (optional)" name="email" type="email" required={false} defaultValue={inviteEmail || ""} />
+                        <p className="hint">Den Benutzernamen und das Passwort legt die Person beim Annehmen der Einladung fest. Die E-Mail-Adresse kann vorher geändert oder ergänzt werden.</p>
                       </>
                     ) : (
                       <>
@@ -4401,7 +4404,7 @@ function App() {
   }
   useEffect(() => {
     if (!user || user.role === "ADMIN") return;
-    if (screen === "people" || (screen === "birthdays" && !sectionAccess.birthdays.includes(user.id)) || (screen === "waste" && !sectionAccess.waste_collection.includes(user.id))) setScreen("home");
+    if (screen === "people" || (screen === "birthdays" && (!user.allowed_event_types.includes("BIRTHDAY") || !sectionAccess.birthdays.includes(user.id))) || (screen === "waste" && (!user.allowed_event_types.includes("WASTE") || !sectionAccess.waste_collection.includes(user.id)))) setScreen("home");
   }, [user, screen, sectionAccess]);
   if (loading) return <div className="splash">FamilienPlan</div>;
   if (setup && !user)
@@ -4462,8 +4465,8 @@ function App() {
     ["settings", Palette],
   ] as const).filter(([id]) => {
     if (id === "people") return user.role === "ADMIN";
-    if (id === "birthdays") return user.role === "ADMIN" || sectionAccess.birthdays.includes(user.id);
-    if (id === "waste") return user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id);
+    if (id === "birthdays") return user.role === "ADMIN" || (user.allowed_event_types.includes("BIRTHDAY") && sectionAccess.birthdays.includes(user.id));
+    if (id === "waste") return user.role === "ADMIN" || (user.allowed_event_types.includes("WASTE") && sectionAccess.waste_collection.includes(user.id));
     return true;
   });
   let content: React.ReactNode = (

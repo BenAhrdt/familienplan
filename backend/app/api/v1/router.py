@@ -301,6 +301,8 @@ def people(db: Session = Depends(get_db), _: User = Depends(current_user)):
 
 @router.get("/birthdays", response_model=list[BirthdayOut])
 def birthdays(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
+        return []
     query = select(Birthday)
     if user.role != Role.ADMIN:
         query = query.where(
@@ -311,6 +313,8 @@ def birthdays(db: Session = Depends(get_db), user: User = Depends(current_user))
 
 @router.post("/birthdays", response_model=BirthdayOut, status_code=201, dependencies=[Depends(require_csrf)])
 def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Geburtstag ist nicht freigegeben")
     values = data.model_dump()
     audience = normalized_audience(db, user.id, values.pop("visible_to_user_ids"))
     values["is_private"] = audience is not None
@@ -325,6 +329,8 @@ def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depend
 
 @router.put("/birthdays/{birthday_id}", response_model=BirthdayOut, dependencies=[Depends(require_csrf)])
 def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Geburtstag ist nicht freigegeben")
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
@@ -342,6 +348,8 @@ def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db
 
 @router.delete("/birthdays/{birthday_id}", status_code=204, dependencies=[Depends(require_csrf)])
 def delete_birthday(birthday_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Geburtstag ist nicht freigegeben")
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
@@ -536,16 +544,24 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
     if person.id == actor.id and data.role != Role.ADMIN:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Die eigenen Administratorrechte können hier nicht entfernt werden")
     username = data.username.strip()
-    email = str(data.email).strip().lower()
+    email = str(data.email).strip().lower() if data.email else ""
+    if not person.is_pending and not email:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für registrierte Personen ist eine E-Mail-Adresse erforderlich")
     if db.scalar(select(User.id).where(func.lower(User.username) == username.lower(), User.id != person.id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Dieser Benutzername ist bereits vergeben")
-    if db.scalar(select(User.id).where(func.lower(User.email) == email, User.id != person.id)):
+    if email and db.scalar(select(User.id).where(func.lower(User.email) == email, User.id != person.id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Diese E-Mail-Adresse ist bereits vergeben")
     person.username = username
     person.display_name = data.display_name.strip()
     person.first_name = data.first_name.strip() if data.first_name else None
     person.last_name = data.last_name.strip() if data.last_name else None
-    person.email = email
+    if person.is_pending:
+        invitation = db.scalar(select(Invitation).where(Invitation.user_id == person.id))
+        if invitation:
+            invitation.email = email or None
+        person.email = email or (person.email if person.email.endswith("@familienplan.invalid") else f"pending-{uuid.uuid4().hex}@familienplan.invalid")
+    else:
+        person.email = email
     person.role = data.role
     if data.color:
         person.color = data.color.upper()
@@ -1011,6 +1027,8 @@ def stay_payload(db: Session, stay: Stay) -> dict:
 
 @router.get("/children/{child_id}/stays", response_model=list[StayOut])
 def stays(child_id: int, from_at: datetime | None = None, to_at: datetime | None = None, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != Role.ADMIN and "STAY" not in (user.allowed_event_types or []):
+        return []
     assert_child_access(db, user, child_id)
     query = select(Stay).where(Stay.child_id == child_id, Stay.status == PlanStatus.CONFIRMED)
     if from_at:
@@ -1445,6 +1463,8 @@ def create_planning_group(data: GroupPlanningCreate, request: Request, mode: str
 
 @router.get("/stay-series", response_model=list[StayOut])
 def stay_series(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != Role.ADMIN and "STAY" not in (user.allowed_event_types or []):
+        return []
     allowed_child_ids = None
     if user.role != Role.ADMIN:
         allowed_child_ids = list(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
@@ -1689,6 +1709,7 @@ def calendar(from_at: datetime, to_at: datetime, db: Session = Depends(get_db), 
         allowed_child_ids = list(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
     query = select(CalendarEvent).where(CalendarEvent.starts_at < to_at, CalendarEvent.ends_at > from_at)
     if user.role != Role.ADMIN:
+        query = query.where(CalendarEvent.event_type.in_(user.allowed_event_types or []))
         query = query.where((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
     if allowed_child_ids is not None:
         query = query.where((CalendarEvent.child_id.is_(None)) | (CalendarEvent.child_id.in_(allowed_child_ids)))

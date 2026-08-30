@@ -123,7 +123,7 @@ class PersonAccessUpdate(BaseModel):
     display_name: str = Field(min_length=2, max_length=160)
     first_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
-    email: EmailStr
+    email: EmailStr | None = None
     role: Role
     child_permissions: dict[int, Permission] = {}
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
