@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.23 – 30. August 2026
+
+### Synchronisierung und Aktualisierung der Ansichten
+
+- Jede unterstützte externe Kalenderquelle kann in den Admin-Einstellungen einzeln manuell synchronisiert werden.
+- Ladezustand, Ergebnis, Fehler und neuer Synchronisationszeitpunkt erscheinen unmittelbar in der Quellenübersicht.
+- Erfolgreiche Schreibaktionen lösen appweit eine Aktualisierung abhängiger Daten aus.
+- Die geöffnete Kalenderansicht übernimmt Änderungen ohne manuellen Browser-Refresh.
+
 ## 0.1.22 – 30. August 2026
 
 ### Schreibgeschützte Kalendereinträge

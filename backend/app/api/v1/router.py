@@ -458,6 +458,29 @@ def calendar_source_status(db: Session = Depends(get_db), _: User = Depends(admi
     } for source in db.scalars(select(CalendarSource).order_by(CalendarSource.kind, CalendarSource.name))]
 
 
+@router.post("/calendar-sources/{source_id}/sync", dependencies=[Depends(require_csrf)])
+async def synchronize_calendar_source(source_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    source = db.get(CalendarSource, source_id)
+    if not source or not source.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kalenderquelle nicht gefunden")
+    try:
+        if source.kind == "WASTE":
+            result = await sync_waste_calendar(db)
+        elif source.kind == "SCHOOL":
+            match = re.fullmatch(r"child-(\d+)-school", source.key)
+            child = db.get(Child, int(match.group(1))) if match else None
+            if not child or not child.school_calendar_url:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Die zugehörige Schulkalender-Adresse ist nicht mehr eingerichtet")
+            result = await synchronize_child_calendar(db, child)
+        else:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Diese Kalenderquelle unterstützt noch keine manuelle Synchronisierung")
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    audit(db, request, "CALENDAR_SOURCE_SYNCED", user.id, ("calendar_source", str(source.id)), result)
+    db.commit()
+    return result
+
+
 @router.put("/waste-calendar/settings", response_model=WasteCalendarSetting, dependencies=[Depends(require_csrf)])
 def update_waste_calendar_settings(data: WasteCalendarSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
     valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))

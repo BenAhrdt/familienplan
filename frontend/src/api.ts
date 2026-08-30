@@ -257,6 +257,8 @@ export async function api<T>(
     const data = await response.json().catch(() => ({}));
     throw new Error(errorMessage(data));
   }
+  const method = (options.method || "GET").toUpperCase();
+  if (!["GET", "HEAD"].includes(method)) window.dispatchEvent(new CustomEvent("familienplan:data-changed", { detail: { path, method } }));
   if (response.status === 204) return undefined as T;
   const data = await response.json();
   if (

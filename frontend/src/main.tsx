@@ -1129,6 +1129,11 @@ function CalendarScreen({
   }, [requests]);
   useEffect(load, [children.length, month.getFullYear(), month.getMonth()]);
   useEffect(() => {
+    const refresh = () => load();
+    window.addEventListener("familienplan:data-changed", refresh);
+    return () => window.removeEventListener("familienplan:data-changed", refresh);
+  }, [children.length, month.getFullYear(), month.getMonth()]);
+  useEffect(() => {
     if (!target) return;
     const targetDate = new Date(target.startsAt);
     if (
@@ -4338,6 +4343,15 @@ function App() {
     return () => window.clearInterval(timer);
   }, [user]);
   useEffect(() => {
+    if (!user) return;
+    const refresh = () => {
+      loadChildren(); loadPeople(); loadNotifications();
+      api<SectionAccess>("/settings/sections", { background: true }).then(setSectionAccess).catch(() => {});
+    };
+    window.addEventListener("familienplan:data-changed", refresh);
+    return () => window.removeEventListener("familienplan:data-changed", refresh);
+  }, [user?.id]);
+  useEffect(() => {
     localStorage.setItem("familienplan.lastScreen", screen);
   }, [screen]);
   useEffect(() => {
@@ -4790,9 +4804,19 @@ function SectionAccessSettings({ people, value, onChange }: { people: User[]; va
 }
 
 function CalendarSourceOverview() {
-  const [sources, setSources] = useState<CalendarSourceStatus[]>([]), [error, setError] = useState("");
-  useEffect(() => { api<CalendarSourceStatus[]>("/calendar-sources/status").then(setSources).catch((x) => setError((x as Error).message)); }, []);
-  return <section className="sync-overview settings-card"><h2>Externe Kalender</h2><p className="muted">Synchronisationsstatus aller angebundenen Kalenderquellen.</p>{error && <p className="error">{error}</p>}{!error && !sources.length && <p className="hint">Noch keine externe Kalenderquelle eingerichtet.</p>}{sources.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}</div></article>)}</section>;
+  const [sources, setSources] = useState<CalendarSourceStatus[]>([]), [error, setError] = useState(""), [message, setMessage] = useState(""), [syncing, setSyncing] = useState<number | null>(null);
+  const load = () => api<CalendarSourceStatus[]>("/calendar-sources/status").then(setSources).catch((x) => setError((x as Error).message));
+  useEffect(() => { void load(); }, []);
+  async function sync(source: CalendarSourceStatus) {
+    setSyncing(source.id); setError(""); setMessage("");
+    try {
+      const result = await api<{ message?: string; imported?: number }>(`/calendar-sources/${source.id}/sync`, { method: "POST" });
+      setMessage(result.message || `${source.name} wurde synchronisiert.`);
+      await load();
+    } catch (x) { setError((x as Error).message); }
+    finally { setSyncing(null); }
+  }
+  return <section className="sync-overview settings-card"><h2>Externe Kalender</h2><p className="muted">Synchronisationsstatus aller angebundenen Kalenderquellen.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}{!error && !sources.length && <p className="hint">Noch keine externe Kalenderquelle eingerichtet.</p>}{sources.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div className="sync-source-actions"><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}<button type="button" onClick={() => sync(source)} disabled={syncing !== null}>{syncing === source.id ? "Synchronisiere …" : "Jetzt synchronisieren"}</button></div></article>)}</section>;
 }
 
 function SettingsScreen({

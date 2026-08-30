@@ -221,6 +221,8 @@ html.api-pending::after {
 .sync-overview article div { display:grid; gap:.2rem; }
 .sync-overview article div:last-child { text-align:right; }
 .sync-overview small { color:var(--muted); }
+.sync-source-actions { justify-items:end; }
+.sync-source-actions button { margin-top:.35rem; padding:.55rem .75rem; border-radius:8px; font-weight:700; }
 .waste-type-colors { display:grid; gap:.8rem; }
 .waste-type-colors > label { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
 @media(max-width:760px){.waste-import-card{align-items:stretch;flex-direction:column}.waste-import-actions button{flex:1}}
