@@ -38,6 +38,9 @@
   padding: 1.6rem;
   max-width: 620px;
 }
+.settings-card + .settings-card {
+  margin-top: 1.4rem;
+}
 .themepicker {
   display: flex;
   align-items: center;

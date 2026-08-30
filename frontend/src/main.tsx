@@ -4521,7 +4521,7 @@ function SectionAccessSettings({ people, value, onChange }: { people: User[]; va
     try { const saved = await api<SectionAccess>("/settings/sections", { method: "PUT", body: JSON.stringify(draft) }); onChange(saved); setMessage("Rubrikenfreigaben gespeichert."); setError(""); }
     catch (x) { setError((x as Error).message); }
   }
-  return <section className="themebox section-access-settings"><h2>Rubriken freigeben</h2><p className="muted">Administratoren sehen alle Rubriken. Hier wählst du weitere Personen aus.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
+  return <section className="themebox section-access-settings settings-card"><h2>Rubriken freigeben</h2><p className="muted">Administratoren sehen alle Rubriken. Hier wählst du weitere Personen aus.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
     {(Object.keys(sectionLabels) as Array<keyof SectionAccess>).map((section) => <div className="integration-row" key={section}><span><strong>{sectionLabels[section]}</strong><small>{draft[section].length ? `${draft[section].length} Person(en) freigegeben` : "Nur Administratoren"}</small></span><button type="button" className="secondary" onClick={() => setOpen(section)}>Personen auswählen</button></div>)}
     <button onClick={save}>Freigaben speichern</button>
     {open && <div className="modal"><section className="panel"><button type="button" className="close" onClick={() => setOpen(null)}>×</button><h2>{sectionLabels[open]} freigeben</h2><div className="audience-list">{people.filter((person) => person.role !== "ADMIN").map((person) => <label key={person.id}><input type="checkbox" checked={draft[open].includes(person.id)} onChange={(event) => setDraft((current) => ({ ...current, [open]: event.target.checked ? [...current[open], person.id] : current[open].filter((id) => id !== person.id) }))}/><span>{person.display_name}</span></label>)}</div><button type="button" className="audience-done" onClick={() => setOpen(null)}>Fertig</button></section></div>}
@@ -4614,7 +4614,7 @@ function SettingsScreen({
           <p>Darstellung von FamilienPlan anpassen.</p>
         </div>
       </header>
-      <section className="themebox">
+      <section className="themebox settings-card">
         <h2>Meine Kalenderfarbe</h2>
         <p className="muted">
           Diese Farbe kennzeichnet im Kalender die Tage, an denen ein Kind bei
@@ -4664,7 +4664,7 @@ function SettingsScreen({
         <IntegrationSettings />
       )}
       {user.role === "ADMIN" && (
-        <section className="themebox globaltheme">
+        <section className="themebox globaltheme settings-card">
           <h2>Akzentfarbe</h2>
           <p className="muted">
             Die Farbe wird appweit für Navigation, Schaltflächen und
@@ -4792,7 +4792,7 @@ function IntegrationSettings() {
     try { const x = await api<{secret:string}>("/webhooks", { method:"POST", body:JSON.stringify({name:hookName,url:hookUrl,events:["*"]}) }); setNewSecret(x.secret); setHookUrl(""); await reload(); }
     catch (x) { setError((x as Error).message); }
   }
-  return <section className="themebox integration-settings">
+  return <section className="themebox integration-settings settings-card">
     <h2>Integrationen</h2>
     <p className="muted">REST-API, signierte Webhooks und E-Mail-Benachrichtigungen zentral verwalten. MQTT ist bewusst noch nicht enthalten.</p>
     {error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}

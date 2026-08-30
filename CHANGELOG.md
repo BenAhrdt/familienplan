@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.7 – 30. August 2026
+
+### Oberfläche und Updates
+
+- Mehr Abstand trennt die einzelnen Karten in den Einstellungen deutlicher.
+- HTML und Client-Routen werden mit `no-cache` ausgeliefert; versionsbenannte Assets dürfen langfristig und unveränderlich gecacht werden.
+
 ## 0.1.6 – 30. August 2026
 
 ### Dienststart
