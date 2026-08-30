@@ -198,6 +198,21 @@ html.api-pending::after {
 .version-info .changelog-link:disabled { opacity:.55; }
 .changelog-modal .panel { width:min(42rem,calc(100% - 2rem)); max-height:calc(100vh - 3rem); overflow:auto; }
 .changelog-modal .panel > h2 { margin-right:2rem; }
+.update-dialog .panel { width:min(32rem,calc(100% - 2rem)); }
+.update-dialog .panel > h2 { margin-right:2rem; }
+.update-dialog .panel > p { line-height:1.55; color:var(--muted); }
+.update-dialog code { overflow-wrap:anywhere; }
+.dialog-actions { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
+.dialog-actions button { border-radius:9px; padding:.85rem 1.15rem; font-weight:700; background:var(--green); color:white; }
+.dialog-actions button.secondary { background:#edf2ef; color:var(--ink); }
+.waste-import-card { display:flex; align-items:center; justify-content:space-between; gap:1.5rem; margin-bottom:1.5rem; }
+.waste-import-card h2 { margin:0 0 .35rem; }
+.waste-import-card p { margin:.25rem 0; }
+.waste-import-card small { color:var(--muted); }
+.waste-import-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+.waste-import-actions button { border-radius:9px; padding:.75rem 1rem; background:var(--green); color:white; font-weight:700; }
+.waste-import-actions button.secondary { background:#edf2ef; color:var(--ink); }
+@media(max-width:760px){.waste-import-card{align-items:stretch;flex-direction:column}.waste-import-actions button{flex:1}}
 .changelog-content h3 { margin:1.4rem 0 .55rem; padding-bottom:.4rem; border-bottom:1px solid var(--line); }
 .changelog-content h4 { margin:1rem 0 .4rem; }
 .changelog-content p { margin:.4rem 0; color:var(--muted); line-height:1.55; }

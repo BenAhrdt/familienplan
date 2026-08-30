@@ -318,3 +318,16 @@ class ThemeSetting(BaseModel):
 class SectionAccessSetting(BaseModel):
     birthdays: list[int] = []
     waste_collection: list[int] = []
+
+
+class WasteCalendarSetting(BaseModel):
+    enabled: bool = False
+    provider: str = Field(default="AWIDO", pattern="^(AWIDO|ICAL)$")
+    customer: str = Field(default="awld", max_length=80)
+    city: str = Field(default="Hohenahr", max_length=160)
+    street: str = Field(default="Ahrdt", max_length=200)
+    calendar_url: str = Field(default="", max_length=1500)
+    visible_to_user_ids: list[int] = []
+    last_sync_at: str | None = None
+    last_result: dict | None = None
+    last_error: str | None = None

@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -11,6 +12,8 @@ from app.api.v1.router import router
 from app.api.v1.integration_router import router as integration_router
 from app.core.config import get_settings
 from app.integrations import deliver_outbox_once
+from app.core.database import SessionLocal
+from app.waste_calendar import get_waste_config, sync_waste_calendar
 from app.version import VERSION
 
 settings = get_settings()
@@ -19,12 +22,25 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     async def worker():
+        last_waste_check = 0.0
         while True:
             try:
                 await deliver_outbox_once()
             except Exception:
                 import logging
                 logging.getLogger("familienplan.outbox").exception("Outbox-Verarbeitung fehlgeschlagen")
+            if asyncio.get_running_loop().time() - last_waste_check >= 3600:
+                last_waste_check = asyncio.get_running_loop().time()
+                try:
+                    with SessionLocal() as db:
+                        config = get_waste_config(db)
+                        last_sync = config.get("last_sync_at")
+                        due = not last_sync or datetime.fromisoformat(last_sync) < datetime.now(timezone.utc) - timedelta(hours=24)
+                        if config.get("enabled") and due:
+                            await sync_waste_calendar(db)
+                except Exception:
+                    import logging
+                    logging.getLogger("familienplan.waste").exception("Abfallkalender-Synchronisierung fehlgeschlagen")
             await asyncio.sleep(15)
     task = asyncio.create_task(worker())
     yield

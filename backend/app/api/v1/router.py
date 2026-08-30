@@ -24,7 +24,8 @@ from app.core.security import hash_password, new_token, token_hash, utcnow, veri
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
 from app.models.entities import ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, Invitation, Notification, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.waste_calendar import awido_options, get_waste_config, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
 settings = get_settings()
@@ -406,6 +407,51 @@ def waste_appointments(db: Session = Depends(get_db), user: User = Depends(curre
         else:
             singles.append(item)
     return sorted([*singles, *representatives.values()], key=lambda item: item.starts_at)
+
+
+@router.get("/waste-calendar/settings", response_model=WasteCalendarSetting)
+def waste_calendar_settings(db: Session = Depends(get_db), _: User = Depends(admin)):
+    return get_waste_config(db)
+
+
+@router.put("/waste-calendar/settings", response_model=WasteCalendarSetting, dependencies=[Depends(require_csrf)])
+def update_waste_calendar_settings(data: WasteCalendarSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
+    if set(data.visible_to_user_ids) - valid_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
+    current = get_waste_config(db)
+    value = data.model_dump(exclude={"last_sync_at", "last_result", "last_error"})
+    value.update({key: current.get(key) for key in ("last_sync_at", "last_result", "last_error")})
+    save_waste_config(db, value)
+    section_row = db.get(ApplicationSetting, "section_access")
+    sections = section_access(db)
+    sections["waste_collection"] = list(data.visible_to_user_ids)
+    if section_row:
+        section_row.value = sections
+    else:
+        db.add(ApplicationSetting(key="section_access", value=sections))
+    audit(db, request, "WASTE_CALENDAR_SETTINGS_CHANGED", user.id, ("setting", "waste_calendar"))
+    db.commit()
+    return value
+
+
+@router.get("/waste-calendar/awido/options")
+async def waste_calendar_awido_options(customer: str = "awld", city: str | None = None, _: User = Depends(admin)):
+    try:
+        return await awido_options(customer.strip().lower(), city)
+    except httpx.HTTPError:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Die AWIDO-Auswahl ist derzeit nicht erreichbar")
+
+
+@router.post("/waste-calendar/sync", dependencies=[Depends(require_csrf)])
+async def synchronize_waste_calendar(request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    try:
+        result = await sync_waste_calendar(db)
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    audit(db, request, "WASTE_CALENDAR_SYNCED", user.id, ("setting", "waste_calendar"), {"events": result["imported"]})
+    db.commit()
+    return result
 
 
 @router.get("/people/access", response_model=list[PersonAccessOut])

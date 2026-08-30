@@ -2,6 +2,19 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.13 – 30. August 2026
+
+### Automatischer Abfallkalender
+
+- AWIDO-Abfuhrtermine können anhand von Anbieterkennung, Gemeinde und Ortsteil automatisch übernommen werden; Hohenahr-Ahrdt ist direkt vorkonfiguriert.
+- Alternativ lassen sich beliebige iCal- und WebCal-Quellen anbinden.
+- FamilienPlan synchronisiert täglich das aktuelle und kommende Jahr, vermeidet doppelte Termine und übernimmt neu veröffentlichte Jahrespläne automatisch.
+- Importierte Abholtermine können gezielt für ausgewählte Personen freigegeben werden.
+
+### Oberfläche
+
+- Die Updatebestätigung sowie Updatefehler werden in eigenen FamilienPlan-Dialogen statt in Browser-Pop-ups angezeigt.
+
 ## 0.1.12 – 30. August 2026
 
 ### Schulkalender

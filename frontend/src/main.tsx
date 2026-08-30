@@ -62,6 +62,11 @@ type PlanningItem = HolidayPlanningDraft & {
   ends_time?: string;
 };
 type SectionAccess = { birthdays: number[]; waste_collection: number[] };
+type WasteCalendarSetting = {
+  enabled: boolean; provider: "AWIDO" | "ICAL"; customer: string; city: string;
+  street: string; calendar_url: string; visible_to_user_ids: number[];
+  last_sync_at: string | null; last_result: { events?: number; years?: number[] } | null; last_error: string | null;
+};
 type ApplicationMeta = {
   version: string;
   latest_version: string | null;
@@ -3369,10 +3374,42 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
     [editing, setEditing] = useState<CalendarEvent | null | undefined>(undefined),
     [deleting, setDeleting] = useState<CalendarEvent | null>(null),
     [repeat, setRepeat] = useState<"once" | "weekly1" | "weekly2" | "weeklyCustom" | "monthlySame" | "monthlyDay" | "monthlyCustom">("once"),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [calendarSettings, setCalendarSettings] = useState<WasteCalendarSetting | null>(null),
+    [calendarOpen, setCalendarOpen] = useState(false),
+    [syncing, setSyncing] = useState(false),
+    [syncMessage, setSyncMessage] = useState("");
   const canEdit = true;
   const load = () => api<CalendarEvent[]>("/waste-appointments").then(setItems).catch((x) => setError((x as Error).message));
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    api<WasteCalendarSetting>("/waste-calendar/settings").then(setCalendarSettings).catch(() => {});
+  }, []);
+  async function saveCalendar(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!calendarSettings) return;
+    const form = new FormData(event.currentTarget);
+    try {
+      const saved = await api<WasteCalendarSetting>("/waste-calendar/settings", { method: "PUT", body: JSON.stringify({
+        ...calendarSettings,
+        enabled: form.get("enabled") === "on",
+        provider: String(form.get("provider")) as "AWIDO" | "ICAL",
+        customer: String(form.get("customer") || "awld"), city: String(form.get("city") || ""),
+        street: String(form.get("street") || ""), calendar_url: String(form.get("calendar_url") || ""),
+        visible_to_user_ids: form.getAll("visible_to_user_ids").map(Number),
+      }) });
+      setCalendarSettings(saved); setCalendarOpen(false); setSyncMessage("Einstellungen gespeichert.");
+    } catch (x) { setError((x as Error).message); }
+  }
+  async function syncCalendar() {
+    setSyncing(true); setError(""); setSyncMessage("");
+    try {
+      const result = await api<{ imported: number; message: string }>("/waste-calendar/sync", { method: "POST" });
+      setSyncMessage(result.message); load();
+      setCalendarSettings(await api<WasteCalendarSetting>("/waste-calendar/settings"));
+    } catch (x) { setError((x as Error).message); }
+    finally { setSyncing(false); }
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -3404,20 +3441,34 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
   return <>
     <header className="pagehead"><div><span className="eyebrow">Kalender</span><h1>Müllabfuhr</h1><p>Abholtermine verwalten; sie erscheinen als normale Termine im Kalender.</p></div>{canEdit && <button onClick={() => { setError(""); setRepeat("once"); setEditing(null); }}><Plus size={18}/> Abholtermin</button>}</header>
     {error && <p className="error">{error}</p>}
+    {syncMessage && <p className="success">{syncMessage}</p>}
+    {calendarSettings && <section className="themebox waste-import-card">
+      <div><h2>Automatischer Abfallkalender</h2><p className="muted">{calendarSettings.enabled ? `${calendarSettings.provider === "AWIDO" ? `${calendarSettings.city} · ${calendarSettings.street}` : "iCal/WebCal"} · tägliche Synchronisierung` : "Noch nicht aktiviert"}</p>
+      {calendarSettings.last_sync_at && <small>Zuletzt synchronisiert: {new Date(calendarSettings.last_sync_at).toLocaleString("de-DE")}{calendarSettings.last_result?.events !== undefined ? ` · ${calendarSettings.last_result.events} Termine` : ""}</small>}
+      {calendarSettings.last_error && <p className="error">{calendarSettings.last_error}</p>}</div>
+      <div className="waste-import-actions"><button type="button" className="secondary" onClick={() => setCalendarOpen(true)}>Einrichten</button>{calendarSettings.enabled && <button type="button" onClick={syncCalendar} disabled={syncing}>{syncing ? "Synchronisiere …" : "Jetzt synchronisieren"}</button>}</div>
+    </section>}
     <div className="cards">{items.map((item) => <button className="childcard" key={item.id} onClick={() => { if (!canEdit) return; setRepeat(item.recurrence_frequency === "MONTHLY" ? item.recurrence_interval === 1 ? "monthlySame" : "monthlyCustom" : item.recurrence_frequency === "WEEKLY" ? item.recurrence_interval === 2 ? "weekly2" : item.recurrence_interval === 1 ? "weekly1" : "weeklyCustom" : "once"); setEditing(item); }} disabled={!canEdit}><div className="avatar"><Trash2 size={18}/></div><h2>{item.title}</h2><p>{new Date(item.starts_at).toLocaleString("de-DE")}</p><span className="tag">Termin · Müllabfuhr{item.recurrence_group ? " · Serie" : ""}</span></button>)}</div>
     {editing !== undefined && <div className="modal"><form className="panel" onSubmit={submit}><button type="button" className="close" onClick={() => setEditing(undefined)}>×</button><h2>{editing ? "Abholtermin bearbeiten" : "Abholtermin anlegen"}</h2>
       <Field label="Abfallart / Titel" name="title" defaultValue={editing?.title || ""}/>
       <label>Kind (optional)<select name="child_id" defaultValue={editing?.child_id || (children.length === 1 ? children[0].id : "")}><option value="">Ganze Familie</option>{children.map((child) => <option key={child.id} value={child.id}>{child.display_name}</option>)}</select></label>
       <div className="grid2"><Field label="Abholung" name="starts_at" type="datetime-local" defaultValue={localDateTime(start)}/><Field label="Ende" name="ends_at" type="datetime-local" defaultValue={localDateTime(end)}/></div>
       <label>Wiederholung<select value={repeat} onChange={(event) => setRepeat(event.target.value as typeof repeat)}><option value="once">Einmalig</option><option value="weekly1">Jede Woche</option><option value="weekly2">Alle zwei Wochen</option><option value="weeklyCustom">Alle X Wochen</option><option value="monthlySame">Jeden Monat am gleichen Tag</option><option value="monthlyDay">Jeden Monat am X. Tag</option><option value="monthlyCustom">Alle X Monate</option></select></label>
-      {(repeat === "weeklyCustom" || repeat === "monthlyCustom") && <Field label={repeat === "monthlyCustom" ? "Abstand in Monaten" : "Abstand in Wochen"} name="repeat_custom" type="number" defaultValue={editing?.recurrence_interval?.toString() || ""}/>} 
-      {repeat === "monthlyDay" && <Field label="Tag im Monat (1–31)" name="recurrence_day" type="number" defaultValue={new Date(editing?.starts_at || Date.now()).getDate().toString()}/>} 
-      {repeat !== "once" && <Field label="Wiederholen bis (leer = ohne Ende)" name="recurrence_until" type="date" required={false} defaultValue={editing?.recurrence_until?.slice(0, 10) || ""}/>} 
+      {(repeat === "weeklyCustom" || repeat === "monthlyCustom") && <Field label={repeat === "monthlyCustom" ? "Abstand in Monaten" : "Abstand in Wochen"} name="repeat_custom" type="number" defaultValue={editing?.recurrence_interval?.toString() || ""}/>}
+      {repeat === "monthlyDay" && <Field label="Tag im Monat (1–31)" name="recurrence_day" type="number" defaultValue={new Date(editing?.starts_at || Date.now()).getDate().toString()}/>}
+      {repeat !== "once" && <Field label="Wiederholen bis (leer = ohne Ende)" name="recurrence_until" type="date" required={false} defaultValue={editing?.recurrence_until?.slice(0, 10) || ""}/>}
       <Field label="Notiz" name="description" required={false} defaultValue={editing?.description || ""}/><label>Farbe<input name="color" type="color" defaultValue={editing?.color || "#5C8B58"}/></label>
       <AudiencePicker key={`waste-audience-${editing?.id || "new"}`} people={people} initialValues={editing?.visible_to_user_ids}/>
       <div className="modalactions"><button>{editing ? "Speichern" : "Anlegen"}</button>{editing && <button type="button" className="danger secondary" onClick={() => setDeleting(editing)}>Löschen</button>}</div>
     </form></div>}
     {deleting && <div className="modal confirmmodal"><section className="panel"><button type="button" className="close" onClick={() => setDeleting(null)}>×</button><h2>{deleting.recurrence_group ? "Abholserie löschen?" : "Abholtermin löschen?"}</h2><p>{deleting.recurrence_group ? `Die gesamte Serie „${deleting.title}“ mit allen Abholterminen wird dauerhaft gelöscht.` : `Der Abholtermin „${deleting.title}“ wird dauerhaft gelöscht.`}</p><div className="modalactions"><button type="button" className="danger" onClick={async () => { await remove(deleting); setDeleting(null); }}>{deleting.recurrence_group ? "Gesamte Serie löschen" : "Termin löschen"}</button><button type="button" className="secondary" onClick={() => setDeleting(null)}>Abbrechen</button></div></section></div>}
+    {calendarOpen && calendarSettings && <div className="modal"><form className="panel" onSubmit={saveCalendar}><button type="button" className="close" onClick={() => setCalendarOpen(false)}>×</button><h2>Abfallkalender einrichten</h2>
+      <label className="check"><input type="checkbox" name="enabled" defaultChecked={calendarSettings.enabled}/><span>Automatische tägliche Synchronisierung aktivieren</span></label>
+      <label>Anbieter<select name="provider" value={calendarSettings.provider} onChange={(e) => setCalendarSettings({...calendarSettings, provider: e.target.value as "AWIDO" | "ICAL"})}><option value="AWIDO">AWIDO</option><option value="ICAL">iCal-/WebCal-Adresse</option></select></label>
+      {calendarSettings.provider === "AWIDO" ? <><Field label="AWIDO-Kennung" name="customer" defaultValue={calendarSettings.customer || "awld"}/><div className="grid2"><Field label="Gemeinde / Stadt" name="city" defaultValue={calendarSettings.city}/><Field label="Ortsteil / Straße" name="street" defaultValue={calendarSettings.street}/></div><p className="hint">Für Hohenahr-Ahrdt: Kennung <code>awld</code>, Gemeinde <code>Hohenahr</code>, Ortsteil <code>Ahrdt</code>.</p></> : <Field label="iCal-/WebCal-Adresse" name="calendar_url" type="url" defaultValue={calendarSettings.calendar_url}/>}
+      <fieldset className="childaccess"><legend>Sichtbar für</legend>{people.filter((person) => person.role !== "ADMIN").map((person) => <label className="check" key={person.id}><input type="checkbox" name="visible_to_user_ids" value={person.id} defaultChecked={calendarSettings.visible_to_user_ids.includes(person.id)}/><span>{person.display_name}</span></label>)}<p className="hint">Administratoren sehen die Termine immer.</p></fieldset>
+      <button>Einstellungen speichern</button>
+    </form></div>}
   </>;
 }
 
@@ -4129,6 +4180,8 @@ function App() {
     [notificationsOpen, setNotificationsOpen] = useState(false),
     [meta, setMeta] = useState<ApplicationMeta | null>(null),
     [updateStarting, setUpdateStarting] = useState(false),
+    [updateDialog, setUpdateDialog] = useState<"confirm" | "timeout" | "error" | null>(null),
+    [updateError, setUpdateError] = useState(""),
     [showChangelog, setShowChangelog] = useState(false),
     [markingNotificationsRead, setMarkingNotificationsRead] = useState(false),
     [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(null),
@@ -4210,7 +4263,7 @@ function App() {
   }, [planningItems]);
   async function installUpdate() {
     if (!meta?.update_available || updateStarting) return;
-    if (!window.confirm(`FamilienPlan ${meta.latest_version} jetzt installieren? Vorher wird automatisch ein Backup erstellt.`)) return;
+    setUpdateDialog(null);
     setUpdateStarting(true);
     try {
       await api("/system/update", { method: "POST" });
@@ -4220,7 +4273,7 @@ function App() {
         if (Date.now() > deadline) {
           window.clearInterval(poll);
           setUpdateStarting(false);
-          window.alert("Das Update dauert länger als erwartet. Prüfe bitte: systemctl status familienplan-update.service");
+          setUpdateDialog("timeout");
           return;
         }
         try {
@@ -4235,7 +4288,8 @@ function App() {
       }, 4000);
     } catch (error) {
       setUpdateStarting(false);
-      window.alert((error as Error).message);
+      setUpdateError((error as Error).message);
+      setUpdateDialog("error");
     }
   }
   useEffect(() => {
@@ -4382,7 +4436,7 @@ function App() {
               Version {meta?.version || "…"}
             </button>
             {meta?.update_available && user.role === "ADMIN" && !impersonating && (
-              <button className="brand-update" type="button" onClick={installUpdate} disabled={updateStarting}>
+              <button className="brand-update" type="button" onClick={() => setUpdateDialog("confirm")} disabled={updateStarting}>
                 {updateStarting ? "Update wird installiert …" : `Update ${meta.latest_version} installieren`}
               </button>
             )}
@@ -4416,6 +4470,33 @@ function App() {
           </button>
         </div>
       </aside>
+      {updateDialog && (
+        <div className="modal update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
+          <section className="panel">
+            <button type="button" className="close" onClick={() => setUpdateDialog(null)} aria-label="Schließen">×</button>
+            <h2 id="update-dialog-title">
+              {updateDialog === "confirm" ? "Update installieren" : "Update nicht abgeschlossen"}
+            </h2>
+            {updateDialog === "confirm" ? (
+              <p>FamilienPlan {meta?.latest_version} jetzt installieren? Vorher wird automatisch ein Backup erstellt.</p>
+            ) : updateDialog === "timeout" ? (
+              <p>Das Update dauert länger als erwartet. Prüfe auf dem Server den Status mit <code>systemctl status familienplan-update.service</code>.</p>
+            ) : (
+              <p className="error">{updateError || "Das Update konnte nicht gestartet werden."}</p>
+            )}
+            <div className="dialog-actions">
+              {updateDialog === "confirm" ? (
+                <>
+                  <button type="button" className="secondary" onClick={() => setUpdateDialog(null)}>Abbrechen</button>
+                  <button type="button" onClick={installUpdate}>Update installieren</button>
+                </>
+              ) : (
+                <button type="button" onClick={() => setUpdateDialog(null)}>Schließen</button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
       {showChangelog && meta && <ChangelogModal meta={meta} onClose={() => setShowChangelog(false)} />}
       <button
         className="notification-toggle"
