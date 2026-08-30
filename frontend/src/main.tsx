@@ -1856,6 +1856,16 @@ function CalendarScreen({
                 new Date(event.starts_at) < dayEnd &&
                 new Date(event.ends_at) > day,
             );
+            const duplicateEventIds = new Set(
+              dayEvents
+                .filter((event) => dayEvents.some((other) =>
+                  other.id !== event.id &&
+                  Boolean(other.source_id) !== Boolean(event.source_id) &&
+                  other.event_type === event.event_type &&
+                  other.title.trim().toLocaleLowerCase("de-DE") === event.title.trim().toLocaleLowerCase("de-DE"),
+                ))
+                .map((event) => event.id),
+            );
             const dayHolidays = holidays.filter(
               (holiday) =>
                 new Date(`${holiday.starts_on}T00:00:00`) < dayEnd &&
@@ -2044,6 +2054,7 @@ function CalendarScreen({
                     >
                       {event.title}
                       {event.is_private ? " · Privat" : ""}
+                      {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
                     </span>
                   ))}
                   {birthdays.map((birthday) => (
@@ -4563,6 +4574,9 @@ function App() {
         <b>FamilienPlan</b>
         <button onClick={openNotifications} aria-label="Benachrichtigungen">
           <Bell />
+        </button>
+        <button onClick={logout} aria-label="Abmelden" title="Abmelden">
+          <LogOut />
         </button>
       </header>
       <main className="content">

@@ -2,6 +2,21 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.14 – 30. August 2026
+
+### Schulkalender
+
+- Erfolgreiche Synchronisierungen entfernen automatisch importierte Termine, die nicht mehr in der Schulquelle vorhanden sind.
+- Termine anderer Klassen werden bereits beim Import verworfen und aus vorhandenen Datenbeständen bereinigt.
+- Die globale Suche verwendet denselben Klassenfilter wie der Kalender.
+- Manuell angelegte Schultermine bleiben von Import und Bereinigung unberührt; mögliche manuelle/importierte Dubletten werden gekennzeichnet.
+
+### Mobile Bedienung und Einladungen
+
+- Einladungslinks liefern zuverlässig die Annahmeseite der Anwendung aus.
+- Die mobile Kopfzeile enthält eine direkt erreichbare Abmeldefunktion.
+- Der Monatskalender zeigt auf kleinen Bildschirmen alle sieben Wochentage ohne horizontales Abschneiden.
+
 ## 0.1.13 – 30. August 2026
 
 ### Automatischer Abfallkalender

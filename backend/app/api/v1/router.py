@@ -853,6 +853,7 @@ async def sync_child_calendar(child_id: int, request: Request, db: Session = Dep
         source = CalendarSource(key=f"child-{child_id}-school", name=child.school or "Schulkalender", kind="SCHOOL", url=url)
         db.add(source); db.flush()
     imported = 0
+    seen_external_ids: set[str] = set()
     for block in re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text_data, re.S):
         fields = {}
         for line in block.splitlines():
@@ -865,17 +866,25 @@ async def sync_child_calendar(child_id: int, request: Request, db: Session = Dep
             ends_at, _ = _ics_datetime(fields.get("DTEND", "")) if fields.get("DTEND") else (starts_at + (timedelta(days=1) if all_day else timedelta(hours=1)), all_day)
         except ValueError:
             continue
+        if not school_event_matches_class(fields["SUMMARY"], fields.get("DESCRIPTION"), child.school_class):
+            continue
         external_id = fields.get("UID") or hashlib.sha256(f"{fields['SUMMARY']}|{fields['DTSTART']}".encode()).hexdigest()
+        seen_external_ids.add(external_id)
         event = db.scalar(select(CalendarEvent).where(CalendarEvent.source_id == source.id, CalendarEvent.external_id == external_id))
         if not event:
             event = CalendarEvent(source_id=source.id, external_id=external_id); db.add(event)
         event.child_id, event.title, event.description = child.id, fields["SUMMARY"], fields.get("DESCRIPTION")
         event.starts_at, event.ends_at, event.all_day, event.category, event.event_type, event.url = starts_at, ends_at, all_day, "SCHOOL", "SCHOOL", fields.get("URL")
         imported += 1
-    source.last_sync_at, source.last_result, source.last_error = utcnow(), {"events": imported}, None
-    audit(db, request, "SCHOOL_CALENDAR_SYNCED", user.id, ("child", str(child_id)), {"events": imported})
+    removed = 0
+    for stale in db.scalars(select(CalendarEvent).where(CalendarEvent.source_id == source.id)):
+        if stale.external_id not in seen_external_ids:
+            db.delete(stale)
+            removed += 1
+    source.last_sync_at, source.last_result, source.last_error = utcnow(), {"events": imported, "removed": removed}, None
+    audit(db, request, "SCHOOL_CALENDAR_SYNCED", user.id, ("child", str(child_id)), {"events": imported, "removed": removed})
     db.commit()
-    return {"imported": imported, "message": f"{imported} Schultermine übernommen"}
+    return {"imported": imported, "removed": removed, "message": f"{imported} Schultermine übernommen, {removed} veraltete Einträge entfernt"}
 
 
 @router.put("/children/{child_id}/permissions", status_code=204, dependencies=[Depends(require_csrf)])
@@ -1606,6 +1615,7 @@ def calendar(from_at: datetime, to_at: datetime, db: Session = Depends(get_db), 
     return [
         event for event in result
         if event.event_type != "SCHOOL"
+        or event.source_id is None
         or not event.child_id
         or school_event_matches_class(event.title, event.description, children_by_id.get(event.child_id).school_class if children_by_id.get(event.child_id) else None)
     ]
@@ -1679,6 +1689,17 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
             .order_by(CalendarEvent.starts_at.desc())
             .limit(20)
         ),
+    ]
+    search_children_by_id = {
+        child.id: child
+        for child in db.scalars(select(Child).where(Child.id.in_({event.child_id for event in found_events if event.child_id})))
+    }
+    found_events = [
+        event for event in found_events
+        if event.event_type != "SCHOOL"
+        or event.source_id is None
+        or not event.child_id
+        or school_event_matches_class(event.title, event.description, search_children_by_id.get(event.child_id).school_class if search_children_by_id.get(event.child_id) else None)
     ]
 
     stay_query = (

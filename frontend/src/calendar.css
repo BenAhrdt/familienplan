@@ -412,6 +412,52 @@
     min-width: 760px;
   }
 }
+@media (max-width: 650px) {
+  .monthcalendar {
+    overflow-x: hidden;
+  }
+  .monthcalendar > header {
+    gap: .55rem;
+    padding: .75rem .45rem;
+  }
+  .monthcalendar > header h2 {
+    min-width: 0;
+    flex: 1;
+    font-size: 1.3rem;
+  }
+  .weekdays,
+  .monthgrid {
+    min-width: 0;
+  }
+  .weekdays span {
+    padding: .4rem 0;
+    font-size: .65rem;
+  }
+  .monthgrid > article {
+    min-height: 88px;
+    padding: .2rem;
+  }
+  .monthgrid time {
+    width: 22px;
+    height: 22px;
+    font-size: .68rem;
+  }
+  .dayentries {
+    gap: .16rem;
+    margin-top: .18rem;
+  }
+  .dayentries span {
+    padding: .2rem;
+    font-size: .52rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .dayentries span small,
+  .dayentries span:nth-child(n + 4) {
+    display: none;
+  }
+}
 .childcard:disabled {
   cursor: default;
   opacity: 1;

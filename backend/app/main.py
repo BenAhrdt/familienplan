@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import router
@@ -82,4 +82,10 @@ class SPAStaticFiles(StaticFiles):
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if frontend_dist.is_dir():
+    @app.get("/invite/{token}", include_in_schema=False)
+    async def invitation_page(token: str):
+        response = FileResponse(frontend_dist / "index.html", media_type="text/html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+
     app.mount("/", SPAStaticFiles(directory=frontend_dist, html=True), name="frontend")
