@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.16 – 30. August 2026
+
+### Aktualisierungen
+
+- Administratoren können unter Einstellungen unabhängig vom einstündigen Cache sofort nach neuen Releases suchen.
+- Nach dem Start eines Updates zeigt FamilienPlan einen 30-sekündigen Countdown für Backup, Installation und fünf Sekunden Reserve.
+- Ein früher erkannter Versionswechsel lädt die Anwendung sofort neu; andernfalls erfolgt das Neuladen nach Ablauf des Countdowns.
+
 ## 0.1.15 – 30. August 2026
 
 ### Automatische Synchronisierung

@@ -205,6 +205,9 @@ html.api-pending::after {
 .dialog-actions { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
 .dialog-actions button { border-radius:9px; padding:.85rem 1.15rem; font-weight:700; background:var(--green); color:white; }
 .dialog-actions button.secondary { background:#edf2ef; color:var(--ink); }
+.update-countdown { display:flex; align-items:center; gap:1rem; margin:1.4rem 0 .4rem; padding:1rem; border-radius:12px; background:color-mix(in srgb,var(--green) 9%,white); }
+.update-countdown strong { display:grid; place-items:center; width:58px; height:58px; border-radius:50%; background:var(--green); color:white; font-size:1.45rem; }
+.update-countdown span { color:var(--ink); font-weight:700; }
 .waste-import-card { display:flex; align-items:center; justify-content:space-between; gap:1.5rem; margin-bottom:1.5rem; }
 .waste-import-card h2 { margin:0 0 .35rem; }
 .waste-import-card p { margin:.25rem 0; }

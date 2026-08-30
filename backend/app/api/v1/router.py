@@ -39,8 +39,12 @@ def _version_parts(value: str) -> tuple[int, ...]:
 
 
 @router.get("/meta")
-async def application_meta(_: User = Depends(current_user)):
+async def application_meta(refresh: bool = False, user: User = Depends(current_user)):
     global _release_cache
+    if refresh:
+        if user.role != Role.ADMIN:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur Administratoren dürfen die Updateprüfung erzwingen")
+        _release_cache = None
     repository = (settings.github_repository or "").strip()
     changelog_path = Path(__file__).resolve().parents[4] / "CHANGELOG.md"
     try:

@@ -4206,8 +4206,9 @@ function App() {
     [notificationsOpen, setNotificationsOpen] = useState(false),
     [meta, setMeta] = useState<ApplicationMeta | null>(null),
     [updateStarting, setUpdateStarting] = useState(false),
-    [updateDialog, setUpdateDialog] = useState<"confirm" | "timeout" | "error" | null>(null),
+    [updateDialog, setUpdateDialog] = useState<"confirm" | "progress" | "timeout" | "error" | null>(null),
     [updateError, setUpdateError] = useState(""),
+    [updateSeconds, setUpdateSeconds] = useState(30),
     [showChangelog, setShowChangelog] = useState(false),
     [markingNotificationsRead, setMarkingNotificationsRead] = useState(false),
     [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(null),
@@ -4297,10 +4298,21 @@ function App() {
   }, [planningItems]);
   async function installUpdate() {
     if (!meta?.update_available || updateStarting) return;
-    setUpdateDialog(null);
+    setUpdateDialog("progress");
+    setUpdateSeconds(30);
     setUpdateStarting(true);
     try {
       await api("/system/update", { method: "POST" });
+      const countdown = window.setInterval(() => {
+        setUpdateSeconds((current) => {
+          if (current <= 1) {
+            window.clearInterval(countdown);
+            location.reload();
+            return 0;
+          }
+          return current - 1;
+        });
+      }, 1000);
       const previousVersion = meta.version;
       const deadline = Date.now() + 5 * 60_000;
       const poll = window.setInterval(async () => {
@@ -4441,7 +4453,7 @@ function App() {
       />
     );
   else if (screen === "settings")
-    content = <SettingsScreen user={user} people={people} onUserChange={setUser} sectionAccess={sectionAccess} onSectionAccessChange={setSectionAccess} />;
+    content = <SettingsScreen user={user} people={people} onUserChange={setUser} sectionAccess={sectionAccess} onSectionAccessChange={setSectionAccess} updateMeta={meta} onCheckForUpdates={async () => { const current = await api<ApplicationMeta>("/meta?refresh=true"); setMeta(current); return current; }} />;
   const unreadDecisions = notifications.filter(
     (item) =>
       !item.read_at &&
@@ -4509,10 +4521,12 @@ function App() {
           <section className="panel">
             <button type="button" className="close" onClick={() => setUpdateDialog(null)} aria-label="Schließen">×</button>
             <h2 id="update-dialog-title">
-              {updateDialog === "confirm" ? "Update installieren" : "Update nicht abgeschlossen"}
+              {updateDialog === "confirm" ? "Update installieren" : updateDialog === "progress" ? "Update wird installiert" : "Update nicht abgeschlossen"}
             </h2>
             {updateDialog === "confirm" ? (
               <p>FamilienPlan {meta?.latest_version} jetzt installieren? Vorher wird automatisch ein Backup erstellt.</p>
+            ) : updateDialog === "progress" ? (
+              <><p>Backup, Aktualisierung und Neustart laufen. FamilienPlan lädt anschließend automatisch neu.</p><div className="update-countdown"><strong>{updateSeconds}</strong><span>Sekunden bis zum Neuladen</span></div></>
             ) : updateDialog === "timeout" ? (
               <p>Das Update dauert länger als erwartet. Prüfe auf dem Server den Status mit <code>systemctl status familienplan-update.service</code>.</p>
             ) : (
@@ -4524,9 +4538,9 @@ function App() {
                   <button type="button" className="secondary" onClick={() => setUpdateDialog(null)}>Abbrechen</button>
                   <button type="button" onClick={installUpdate}>Update installieren</button>
                 </>
-              ) : (
+              ) : updateDialog !== "progress" ? (
                 <button type="button" onClick={() => setUpdateDialog(null)}>Schließen</button>
-              )}
+              ) : null}
             </div>
           </section>
         </div>
@@ -4734,12 +4748,16 @@ function SettingsScreen({
   onUserChange,
   sectionAccess,
   onSectionAccessChange,
+  updateMeta,
+  onCheckForUpdates,
 }: {
   user: User;
   people: User[];
   onUserChange: (user: User) => void;
   sectionAccess: SectionAccess;
   onSectionAccessChange: (value: SectionAccess) => void;
+  updateMeta: ApplicationMeta | null;
+  onCheckForUpdates: () => Promise<ApplicationMeta>;
 }) {
   const [color, setColor] = useState(
       getComputedStyle(document.documentElement)
@@ -4753,6 +4771,8 @@ function SettingsScreen({
     [personColor, setPersonColor] = useState(user.color || "#3BA4E5"),
     [birthDate, setBirthDate] = useState(user.birth_date || ""),
     [saved, setSaved] = useState(false),
+    [checkingUpdates, setCheckingUpdates] = useState(false),
+    [updateCheckMessage, setUpdateCheckMessage] = useState(""),
     [error, setError] = useState("");
   useEffect(() => {
     api<{ primary_color: string; holiday_color: string; birthday_color: string; school_color: string }>(
@@ -4819,6 +4839,14 @@ function SettingsScreen({
       setSaved(true);
     } catch (x) { setError((x as Error).message); }
   }
+  async function checkForUpdates() {
+    setCheckingUpdates(true); setUpdateCheckMessage("");
+    try {
+      const current = await onCheckForUpdates();
+      setUpdateCheckMessage(current.update_available ? `Update ${current.latest_version} ist verfügbar.` : `FamilienPlan ${current.version} ist aktuell.`);
+    } catch (x) { setUpdateCheckMessage((x as Error).message); }
+    finally { setCheckingUpdates(false); }
+  }
   return (
     <>
       <header className="pagehead">
@@ -4883,6 +4911,7 @@ function SettingsScreen({
       {user.role === "ADMIN" && (
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />
       )}
+      {user.role === "ADMIN" && <section className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
       {user.role === "ADMIN" && (
         <IntegrationSettings />
       )}
