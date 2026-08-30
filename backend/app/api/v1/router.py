@@ -430,7 +430,7 @@ def update_section_access(data: SectionAccessSetting, request: Request, db: Sess
 @router.get("/waste-appointments", response_model=list[CalendarEventOut])
 def waste_appointments(db: Session = Depends(get_db), user: User = Depends(current_user)):
     require_section_access(db, user, "waste_collection")
-    query = select(CalendarEvent).where(CalendarEvent.event_type == "WASTE")
+    query = select(CalendarEvent).where(CalendarEvent.event_type == "WASTE", CalendarEvent.source_id.is_(None))
     if user.role != Role.ADMIN:
         query = query.where((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
     items = list(db.scalars(query.order_by(CalendarEvent.starts_at)))
@@ -447,6 +447,15 @@ def waste_appointments(db: Session = Depends(get_db), user: User = Depends(curre
 @router.get("/waste-calendar/settings", response_model=WasteCalendarSetting)
 def waste_calendar_settings(db: Session = Depends(get_db), _: User = Depends(admin)):
     return get_waste_config(db)
+
+
+@router.get("/calendar-sources/status")
+def calendar_source_status(db: Session = Depends(get_db), _: User = Depends(admin)):
+    return [{
+        "id": source.id, "name": source.name, "kind": source.kind,
+        "last_sync_at": source.last_sync_at, "last_result": source.last_result,
+        "last_error": source.last_error, "active": source.is_active,
+    } for source in db.scalars(select(CalendarSource).order_by(CalendarSource.kind, CalendarSource.name))]
 
 
 @router.put("/waste-calendar/settings", response_model=WasteCalendarSetting, dependencies=[Depends(require_csrf)])

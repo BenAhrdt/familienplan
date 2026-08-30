@@ -51,6 +51,7 @@ export type CalendarEvent = {
   category: string;
   child_id: number | null;
   source_id: number | null;
+  raw_data: { waste_type?: string; [key: string]: unknown } | null;
   created_by_id: number | null;
   color: string | null;
   is_private: boolean;

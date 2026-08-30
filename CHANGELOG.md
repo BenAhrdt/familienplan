@@ -2,6 +2,18 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.18 – 30. August 2026
+
+### Abfallkalender und Kalenderquellen
+
+- Der automatische Abfallkalender gleicht Änderungen und Löschungen vollständig mit der Onlinequelle ab; manuelle Termine bleiben unberührt.
+- Importierte Abfuhrtermine erscheinen nicht mehr als lange Terminliste im Verwaltungsbereich.
+- Bioabfall, Gelbe Tonne, Restabfall, Altpapier, Schadstoffe und sonstige Abfälle erhalten einzeln einstellbare Farben.
+- Tage mit Abfuhrterminen verwenden die persönliche Grundfarbe; der jeweilige Eintrag wird mit der Farbe seiner Abfallart markiert.
+- Administratoren sehen den letzten Synchronisationszeitpunkt und Fehler aller Schul-, Abfall- und zukünftigen Kalenderquellen in einer Übersicht.
+- Terminarten können im Monatskalender einzeln ein- und ausgeblendet werden; die Auswahl bleibt im Browser gespeichert.
+- Die Bezeichnung „Müllabfuhr“ wurde appweit durch „Abfallkalender“ ersetzt.
+
 ## 0.1.17 – 30. August 2026
 
 ### Aktualisierungen

@@ -10,6 +10,19 @@
   overflow: hidden;
   margin-bottom: 1.8rem;
 }
+.calendar-type-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem .9rem;
+  padding: .85rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+.calendar-type-filters label { display: flex; align-items: center; gap: .35rem; font-size: .84rem; }
+.calendar-type-filters input { accent-color: var(--green); }
 .change-requests {
   background: white;
   border: 1px solid var(--line);

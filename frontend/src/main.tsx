@@ -65,8 +65,10 @@ type SectionAccess = { birthdays: number[]; waste_collection: number[] };
 type WasteCalendarSetting = {
   enabled: boolean; provider: "AWIDO" | "ICAL"; customer: string; city: string;
   street: string; calendar_url: string; color: string; visible_to_user_ids: number[];
-  last_sync_at: string | null; last_result: { events?: number; years?: number[] } | null; last_error: string | null;
+  type_colors: Record<string, string>;
+  last_sync_at: string | null; last_result: { events?: number; removed?: number; years?: number[] } | null; last_error: string | null;
 };
+type CalendarSourceStatus = { id: number; name: string; kind: string; active: boolean; last_sync_at: string | null; last_result: Record<string, unknown> | null; last_error: string | null };
 type CalendarColorPreferences = { holiday_color: string; birthday_color: string; school_color: string; waste_color: string };
 type ApplicationMeta = {
   version: string;
@@ -83,7 +85,7 @@ const labels = {
   children: "Kinder",
   people: "Personen",
   birthdays: "Geburtstage",
-  waste: "Müllabfuhr",
+  waste: "Abfallkalender",
   holidays: "Ferien & Feiertage",
   planning: "Planung zusammenstellen",
   settings: "Einstellungen",
@@ -112,8 +114,12 @@ const eventTypeLabels: Record<EventType, string> = {
   GENERAL: "Allgemein",
   SCHOOL: "Schule",
   CLEANING: "Putzfrau",
-  WASTE: "Müllabfuhr",
+  WASTE: "Abfallkalender",
   OTHER: "Sonstiges",
+};
+const wasteTypeLabels: Record<string, string> = {
+  bio: "Bioabfall", yellow: "Gelbe Tonne", residual: "Restabfall",
+  paper: "Altpapier", hazardous: "Schadstoff / Sondermüll", other: "Sonstige Abfälle",
 };
 const sortedEventTypes = (types: EventType[]) =>
   [...types].sort((left, right) => {
@@ -127,7 +133,7 @@ const eventDisplayColor = (event: CalendarEvent) =>
     : event.event_type === "BIRTHDAY"
       ? "var(--birthday)"
       : event.event_type === "WASTE"
-        ? `var(--waste, ${event.color || "#5C8B58"})`
+        ? event.color || "var(--waste, #5C8B58)"
       : event.color || "#8B6CC1";
 
 function clientId() {
@@ -1062,6 +1068,10 @@ function CalendarScreen({
     } | null>(null),
     [selectedDay, setSelectedDay] = useState<Date | null>(null),
     [error, setError] = useState(""),
+    [hiddenEventTypes, setHiddenEventTypes] = useState<EventType[]>(() => {
+      try { return JSON.parse(localStorage.getItem("familienplan-calendar-hidden-types") || "[]"); }
+      catch { return []; }
+    }),
     [month, setMonth] = useState(() => {
       const initial = target ? new Date(target.startsAt) : new Date();
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
@@ -1812,6 +1822,19 @@ function CalendarScreen({
           ))}
         </section>
       )}
+      <section className="calendar-type-filters" aria-label="Angezeigte Terminarten">
+        <strong>Termine anzeigen:</strong>
+        {sortedEventTypes(Object.keys(eventTypeLabels) as EventType[]).map((type) => (
+          <label key={type}>
+            <input type="checkbox" checked={!hiddenEventTypes.includes(type)} onChange={() => setHiddenEventTypes((current) => {
+              const changed = current.includes(type) ? current.filter((item) => item !== type) : [...current, type];
+              localStorage.setItem("familienplan-calendar-hidden-types", JSON.stringify(changed));
+              return changed;
+            })}/>
+            <span>{eventTypeLabels[type]}</span>
+          </label>
+        ))}
+      </section>
       <section className="monthcalendar">
         <header>
           <button
@@ -1856,6 +1879,7 @@ function CalendarScreen({
             );
             const dayEvents = events.filter(
               (event) =>
+                !hiddenEventTypes.includes(event.event_type) &&
                 new Date(event.starts_at) < dayEnd &&
                 new Date(event.ends_at) > day,
             );
@@ -1928,6 +1952,9 @@ function CalendarScreen({
                   setOpen("event");
                 }}
                 title="Termin an diesem Tag anlegen"
+                style={dayEvents.some((event) => event.event_type === "WASTE") ? {
+                  backgroundColor: "color-mix(in srgb, var(--waste) 9%, white)",
+                } : undefined}
               >
                 <time>{day.getDate()}</time>
                 <div className="dayentries">
@@ -3391,6 +3418,7 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
     [error, setError] = useState(""),
     [calendarSettings, setCalendarSettings] = useState<WasteCalendarSetting | null>(null),
     [calendarOpen, setCalendarOpen] = useState(false),
+    [sourceStatuses, setSourceStatuses] = useState<CalendarSourceStatus[]>([]),
     [syncing, setSyncing] = useState(false),
     [syncMessage, setSyncMessage] = useState("");
   const canEdit = true;
@@ -3398,6 +3426,7 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
   useEffect(() => {
     void load();
     api<WasteCalendarSetting>("/waste-calendar/settings").then(setCalendarSettings).catch(() => {});
+    if (getSessionUser()?.role === "ADMIN") api<CalendarSourceStatus[]>("/calendar-sources/status").then(setSourceStatuses).catch(() => {});
   }, []);
   async function saveCalendar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3411,6 +3440,7 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
         customer: String(form.get("customer") || "awld"), city: String(form.get("city") || ""),
         street: String(form.get("street") || ""), calendar_url: String(form.get("calendar_url") || ""),
         color: String(form.get("color") || "#5C8B58"),
+        type_colors: Object.fromEntries(Object.keys(wasteTypeLabels).map((type) => [type, String(form.get(`type_color_${type}`) || calendarSettings.type_colors[type])])),
         visible_to_user_ids: form.getAll("visible_to_user_ids").map(Number),
       }) });
       setCalendarSettings(saved); setCalendarOpen(false);
@@ -3464,7 +3494,7 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
   }
   const start = editing ? new Date(editing.starts_at) : new Date(), end = editing ? new Date(editing.ends_at) : new Date(start.getTime() + 3600000);
   return <>
-    <header className="pagehead"><div><span className="eyebrow">Kalender</span><h1>Müllabfuhr</h1><p>Abholtermine verwalten; sie erscheinen als normale Termine im Kalender.</p></div>{canEdit && <button onClick={() => { setError(""); setRepeat("once"); setEditing(null); }}><Plus size={18}/> Abholtermin</button>}</header>
+    <header className="pagehead"><div><span className="eyebrow">Kalender</span><h1>Abfallkalender</h1><p>Automatische Abfuhrpläne einrichten und eigene Abholtermine verwalten.</p></div>{canEdit && <button onClick={() => { setError(""); setRepeat("once"); setEditing(null); }}><Plus size={18}/> Abholtermin</button>}</header>
     {error && <p className="error">{error}</p>}
     {syncMessage && <p className="success">{syncMessage}</p>}
     {calendarSettings && <section className="themebox waste-import-card">
@@ -3473,7 +3503,10 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
       {calendarSettings.last_error && <p className="error">{calendarSettings.last_error}</p>}</div>
       <div className="waste-import-actions"><button type="button" className="secondary" onClick={() => setCalendarOpen(true)}>Einrichten</button>{calendarSettings.enabled && <button type="button" onClick={syncCalendar} disabled={syncing}>{syncing ? "Synchronisiere …" : "Jetzt synchronisieren"}</button>}</div>
     </section>}
-    <div className="cards">{items.map((item) => <button className="childcard" key={item.id} onClick={() => { if (!canEdit) return; setRepeat(item.recurrence_frequency === "MONTHLY" ? item.recurrence_interval === 1 ? "monthlySame" : "monthlyCustom" : item.recurrence_frequency === "WEEKLY" ? item.recurrence_interval === 2 ? "weekly2" : item.recurrence_interval === 1 ? "weekly1" : "weeklyCustom" : "once"); setEditing(item); }} disabled={!canEdit}><div className="avatar"><Trash2 size={18}/></div><h2>{item.title}</h2><p>{new Date(item.starts_at).toLocaleString("de-DE")}</p><span className="tag">Termin · Müllabfuhr{item.recurrence_group ? " · Serie" : ""}</span></button>)}</div>
+    {!!sourceStatuses.length && <section className="sync-overview"><h2>Synchronisationsübersicht</h2><p className="muted">Status aller angebundenen Kalenderquellen.</p>{sourceStatuses.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}</div></article>)}</section>}
+    <h2 className="sectiontitle">Manuell angelegte Abholtermine</h2>
+    {!items.length && <p className="hint">Keine manuellen Abholtermine vorhanden. Automatisch importierte Termine findest du im normalen Kalender.</p>}
+    <div className="cards">{items.map((item) => <button className="childcard" key={item.id} onClick={() => { if (!canEdit) return; setRepeat(item.recurrence_frequency === "MONTHLY" ? item.recurrence_interval === 1 ? "monthlySame" : "monthlyCustom" : item.recurrence_frequency === "WEEKLY" ? item.recurrence_interval === 2 ? "weekly2" : item.recurrence_interval === 1 ? "weekly1" : "weeklyCustom" : "once"); setEditing(item); }} disabled={!canEdit}><div className="avatar"><Trash2 size={18}/></div><h2>{item.title}</h2><p>{new Date(item.starts_at).toLocaleString("de-DE")}</p><span className="tag">Termin · Abfallkalender{item.recurrence_group ? " · Serie" : ""}</span></button>)}</div>
     {editing !== undefined && <div className="modal"><form className="panel" onSubmit={submit}><button type="button" className="close" onClick={() => setEditing(undefined)}>×</button><h2>{editing ? "Abholtermin bearbeiten" : "Abholtermin anlegen"}</h2>
       <Field label="Abfallart / Titel" name="title" defaultValue={editing?.title || ""}/>
       <label>Kind (optional)<select name="child_id" defaultValue={editing?.child_id || (children.length === 1 ? children[0].id : "")}><option value="">Ganze Familie</option>{children.map((child) => <option key={child.id} value={child.id}>{child.display_name}</option>)}</select></label>
@@ -3491,7 +3524,8 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
       <label className="check"><input type="checkbox" name="enabled" defaultChecked={calendarSettings.enabled}/><span>Automatische tägliche Synchronisierung aktivieren</span></label>
       <label>Anbieter<select name="provider" value={calendarSettings.provider} onChange={(e) => setCalendarSettings({...calendarSettings, provider: e.target.value as "AWIDO" | "ICAL"})}><option value="AWIDO">AWIDO</option><option value="ICAL">iCal-/WebCal-Adresse</option></select></label>
       {calendarSettings.provider === "AWIDO" ? <><Field label="AWIDO-Kennung" name="customer" defaultValue={calendarSettings.customer || "awld"}/><div className="grid2"><Field label="Gemeinde / Stadt" name="city" defaultValue={calendarSettings.city}/><Field label="Ortsteil / Straße" name="street" defaultValue={calendarSettings.street}/></div><p className="hint">Für Hohenahr-Ahrdt: Kennung <code>awld</code>, Gemeinde <code>Hohenahr</code>, Ortsteil <code>Ahrdt</code>.</p></> : <Field label="iCal-/WebCal-Adresse" name="calendar_url" type="url" defaultValue={calendarSettings.calendar_url}/>}
-      <label>Farbe der Abfuhrtermine<div className="themepicker"><input type="color" name="color" value={calendarSettings.color || "#5C8B58"} onChange={(event) => setCalendarSettings({...calendarSettings, color: event.target.value})}/><code>{(calendarSettings.color || "#5C8B58").toUpperCase()}</code></div></label>
+      <label>Grundfarbe des Abfallkalenders<div className="themepicker"><input type="color" name="color" value={calendarSettings.color || "#5C8B58"} onChange={(event) => setCalendarSettings({...calendarSettings, color: event.target.value})}/><code>{(calendarSettings.color || "#5C8B58").toUpperCase()}</code></div></label>
+      <fieldset className="waste-type-colors"><legend>Farben der Abfallarten</legend>{Object.entries(wasteTypeLabels).map(([type, label]) => <label key={type}><span>{label}</span><div className="themepicker"><input type="color" name={`type_color_${type}`} value={calendarSettings.type_colors[type]} onChange={(event) => setCalendarSettings({...calendarSettings, type_colors: {...calendarSettings.type_colors, [type]: event.target.value}})}/><code>{calendarSettings.type_colors[type].toUpperCase()}</code></div></label>)}</fieldset>
       <fieldset className="childaccess"><legend>Sichtbar für</legend>{people.filter((person) => person.role !== "ADMIN").map((person) => <label className="check" key={person.id}><input type="checkbox" name="visible_to_user_ids" value={person.id} defaultChecked={calendarSettings.visible_to_user_ids.includes(person.id)}/><span>{person.display_name}</span></label>)}<p className="hint">Administratoren sehen die Termine immer.</p></fieldset>
       <button>Einstellungen speichern</button>
     </form></div>}
@@ -4730,7 +4764,7 @@ function InviteAccept() {
 function SectionAccessSettings({ people, value, onChange }: { people: User[]; value: SectionAccess; onChange: (value: SectionAccess) => void }) {
   const [draft, setDraft] = useState<SectionAccess>(value), [open, setOpen] = useState<keyof SectionAccess | null>(null), [message, setMessage] = useState(""), [error, setError] = useState("");
   useEffect(() => setDraft(value), [value.birthdays.join(","), value.waste_collection.join(",")]);
-  const sectionLabels: Record<keyof SectionAccess, string> = { birthdays: "Geburtstage", waste_collection: "Müllabfuhr" };
+  const sectionLabels: Record<keyof SectionAccess, string> = { birthdays: "Geburtstage", waste_collection: "Abfallkalender" };
   async function save() {
     try { const saved = await api<SectionAccess>("/settings/sections", { method: "PUT", body: JSON.stringify(draft) }); onChange(saved); setMessage("Rubrikenfreigaben gespeichert."); setError(""); }
     catch (x) { setError((x as Error).message); }
@@ -4905,7 +4939,7 @@ function SettingsScreen({
         <h3>Schule</h3><div className="themepicker"><input type="color" value={calendarColors.school_color} onChange={(event) => setCalendarColors({...calendarColors, school_color: event.target.value})}/><code>{calendarColors.school_color.toUpperCase()}</code></div>
         <h3>Ferien</h3><div className="themepicker"><input type="color" value={calendarColors.holiday_color} onChange={(event) => setCalendarColors({...calendarColors, holiday_color: event.target.value})}/><code>{calendarColors.holiday_color.toUpperCase()}</code></div>
         {(user.role === "ADMIN" || sectionAccess.birthdays.includes(user.id)) && <><h3>Geburtstage</h3><div className="themepicker"><input type="color" value={calendarColors.birthday_color} onChange={(event) => setCalendarColors({...calendarColors, birthday_color: event.target.value})}/><code>{calendarColors.birthday_color.toUpperCase()}</code></div></>}
-        {(user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id)) && <><h3>Müllabfuhr</h3><div className="themepicker"><input type="color" value={calendarColors.waste_color} onChange={(event) => setCalendarColors({...calendarColors, waste_color: event.target.value})}/><code>{calendarColors.waste_color.toUpperCase()}</code></div></>}
+        {(user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id)) && <><h3>Abfallkalender</h3><div className="themepicker"><input type="color" value={calendarColors.waste_color} onChange={(event) => setCalendarColors({...calendarColors, waste_color: event.target.value})}/><code>{calendarColors.waste_color.toUpperCase()}</code></div></>}
         <button onClick={saveCalendarColors}>Kalenderfarben speichern</button>
       </section>
       {user.role === "ADMIN" && (

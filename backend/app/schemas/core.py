@@ -1,6 +1,7 @@
+import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.entities import Permission, PlanStatus, Role
 
@@ -300,6 +301,7 @@ class CalendarEventOut(CalendarEventCreate):
     created_by_id: int | None = None
     recurrence_group: str | None = None
     color: str | None = None
+    raw_data: dict | None = None
 
 
 class HolidayOut(BaseModel):
@@ -328,10 +330,21 @@ class WasteCalendarSetting(BaseModel):
     street: str = Field(default="Ahrdt", max_length=200)
     calendar_url: str = Field(default="", max_length=1500)
     color: str = Field(default="#5C8B58", pattern=r"^#[0-9A-Fa-f]{6}$")
+    type_colors: dict[str, str] = {
+        "bio": "#795548", "yellow": "#E4B820", "residual": "#4F5963",
+        "paper": "#3979B8", "hazardous": "#B33A3A", "other": "#5C8B58",
+    }
     visible_to_user_ids: list[int] = []
     last_sync_at: str | None = None
     last_result: dict | None = None
     last_error: str | None = None
+
+    @field_validator("type_colors")
+    @classmethod
+    def valid_type_colors(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(not re.fullmatch(r"#[0-9A-Fa-f]{6}", color) for color in value.values()):
+            raise ValueError("Alle Farben müssen im Format #RRGGBB angegeben werden")
+        return value
 
 
 class CalendarColorPreferences(BaseModel):

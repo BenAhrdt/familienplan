@@ -215,6 +215,14 @@ html.api-pending::after {
 .waste-import-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
 .waste-import-actions button { border-radius:9px; padding:.75rem 1rem; background:var(--green); color:white; font-weight:700; }
 .waste-import-actions button.secondary { background:#edf2ef; color:var(--ink); }
+.sync-overview { background:white; border:1px solid var(--line); border-radius:13px; padding:1.35rem; margin-bottom:1.5rem; }
+.sync-overview h2 { margin:0; font-family:Georgia,serif; }
+.sync-overview article { display:flex; justify-content:space-between; gap:1rem; padding:.8rem 0; border-top:1px solid var(--line); }
+.sync-overview article div { display:grid; gap:.2rem; }
+.sync-overview article div:last-child { text-align:right; }
+.sync-overview small { color:var(--muted); }
+.waste-type-colors { display:grid; gap:.8rem; }
+.waste-type-colors > label { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
 @media(max-width:760px){.waste-import-card{align-items:stretch;flex-direction:column}.waste-import-actions button{flex:1}}
 .changelog-content h3 { margin:1.4rem 0 .55rem; padding-bottom:.4rem; border-bottom:1px solid var(--line); }
 .changelog-content h4 { margin:1rem 0 .4rem; }

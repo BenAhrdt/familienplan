@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -14,6 +14,10 @@ from app.models.entities import ApplicationSetting, CalendarEvent, CalendarSourc
 AWIDO_BASE = "https://awido.cubefour.de"
 SETTING_KEY = "waste_calendar"
 SOURCE_KEY = "waste-calendar-import"
+DEFAULT_TYPE_COLORS = {
+    "bio": "#795548", "yellow": "#E4B820", "residual": "#4F5963",
+    "paper": "#3979B8", "hazardous": "#B33A3A", "other": "#5C8B58",
+}
 settings = get_settings()
 
 
@@ -23,6 +27,7 @@ def get_waste_config(db: Session) -> dict:
         "enabled": False, "provider": "AWIDO", "customer": "awld",
         "city": "Hohenahr", "street": "Ahrdt", "calendar_url": "",
         "color": "#5C8B58",
+        "type_colors": DEFAULT_TYPE_COLORS,
         "visible_to_user_ids": [], "last_sync_at": None, "last_result": None,
         "last_error": None,
     }
@@ -86,6 +91,21 @@ def _date(value: str) -> datetime:
     return datetime.strptime(raw, "%Y%m%d").replace(tzinfo=ZoneInfo(settings.app_timezone))
 
 
+def _waste_type(title: str) -> str:
+    normalized = title.casefold()
+    if "bio" in normalized or "kompost" in normalized:
+        return "bio"
+    if "gelb" in normalized or "leichtverpack" in normalized:
+        return "yellow"
+    if "rest" in normalized or "graue" in normalized:
+        return "residual"
+    if "papier" in normalized or "pappe" in normalized:
+        return "paper"
+    if "schad" in normalized or "sonder" in normalized:
+        return "hazardous"
+    return "other"
+
+
 async def sync_waste_calendar(db: Session) -> dict:
     # Uvicorn uses multiple workers. Serialize creation and reconciliation so
     # two startup workers cannot create the same CalendarSource concurrently.
@@ -108,8 +128,9 @@ async def sync_waste_calendar(db: Session) -> dict:
                 for year in (datetime.now().year, datetime.now().year + 1):
                     response = await client.get(f"{AWIDO_BASE}/Customer/{customer}/KalenderICS.aspx", params={"oid": oid, "jahr": year, "fraktionen": "", "reminder": "-1.17:00"})
                     response.raise_for_status()
-                    if "BEGIN:VCALENDAR" in response.text:
-                        texts.append(response.text)
+                    if "BEGIN:VCALENDAR" not in response.text:
+                        raise ValueError(f"AWIDO hat für {year} keinen vollständigen Kalender geliefert")
+                    texts.append(response.text)
                 source.url = f"{AWIDO_BASE}/Customer/{customer}/v2/Calendar2.aspx"
             else:
                 url = str(config.get("calendar_url") or "").replace("webcal://", "https://")
@@ -120,13 +141,16 @@ async def sync_waste_calendar(db: Session) -> dict:
                 texts.append(response.text)
                 source.url = url
         audience = [int(item) for item in config.get("visible_to_user_ids", [])]
+        type_colors = {**DEFAULT_TYPE_COLORS, **config.get("type_colors", {})}
         imported = 0
+        seen_external_ids: set[str] = set()
         for fields in [item for text in texts for item in _ics_events(text)]:
             starts_at = _date(fields["DTSTART"])
             title = fields["SUMMARY"].strip()
             external_id = fields.get("UID") or hashlib.sha256(f"{title}|{starts_at.date()}".encode()).hexdigest()
             # Some providers reuse a UID across years; date keeps the imported occurrence unique.
             external_id = f"{external_id}:{starts_at.date().isoformat()}"
+            seen_external_ids.add(external_id)
             event = db.scalar(select(CalendarEvent).where(CalendarEvent.source_id == source.id, CalendarEvent.external_id == external_id))
             if not event:
                 event = CalendarEvent(source_id=source.id, external_id=external_id)
@@ -134,19 +158,24 @@ async def sync_waste_calendar(db: Session) -> dict:
             event.title = title
             event.description = fields.get("DESCRIPTION") or "Automatisch aus dem Abfallkalender importiert"
             event.starts_at, event.ends_at, event.all_day = starts_at, starts_at + timedelta(days=1), True
-            event.category, event.event_type, event.color = "FAMILY", "WASTE", str(config.get("color") or "#5C8B58")
+            waste_type = _waste_type(title)
+            event.category, event.event_type, event.color = "FAMILY", "WASTE", type_colors[waste_type]
             # An empty selection means “nur Administratoren”, never public.
             event.visible_to_user_ids = audience
             event.is_private = True
-            event.raw_data = {"provider": provider, "location": fields.get("LOCATION")}
+            event.raw_data = {"provider": provider, "location": fields.get("LOCATION"), "waste_type": waste_type}
             imported += 1
+        removed = db.execute(delete(CalendarEvent).where(
+            CalendarEvent.source_id == source.id,
+            CalendarEvent.external_id.not_in(seen_external_ids),
+        )).rowcount
         now = utcnow()
-        result = {"events": imported, "years": [datetime.now().year, datetime.now().year + 1]}
+        result = {"events": imported, "removed": removed, "years": [datetime.now().year, datetime.now().year + 1]}
         source.last_sync_at, source.last_result, source.last_error = now, result, None
         config.update({"last_sync_at": now.isoformat(), "last_result": result, "last_error": None})
         save_waste_config(db, config)
         db.commit()
-        return {"imported": imported, "message": f"{imported} Abfuhrtermine synchronisiert"}
+        return {"imported": imported, "removed": removed, "message": f"{imported} Abfuhrtermine synchronisiert, {removed} entfernte Termine bereinigt"}
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         message = str(exc) or "Der Abfallkalender konnte nicht geladen werden"
         source.last_sync_at, source.last_error = utcnow(), message
