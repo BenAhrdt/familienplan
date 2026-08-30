@@ -44,8 +44,8 @@ write_env() {
     printf 'APP_ORIGIN=%s\n' "$1"
     printf 'SESSION_COOKIE_SECURE=%s\n' "$3"
     printf 'SESSION_HOURS=12\nREMEMBER_SESSION_DAYS=30\nINVITATION_HOURS=72\n'
-    printf 'SMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USERNAME=%s\nSMTP_PASSWORD=%s\n' "$6" "$7" "$8" "$9"
-    printf 'SMTP_FROM=%s\nSMTP_STARTTLS=%s\n' "${10}" "${11}"
+    printf 'SMTP_HOST=\nSMTP_PORT=587\nSMTP_USERNAME=\nSMTP_PASSWORD=\n'
+    printf 'SMTP_FROM=FamilienPlan <familienplan@example.de>\nSMTP_STARTTLS=true\n'
     printf 'UPLOAD_DIR=./uploads\nGITHUB_REPOSITORY=BenAhrdt/familienplan\n'
   } > "$temporary_file"
   mv "$temporary_file" "$ENV_FILE"
@@ -120,23 +120,9 @@ else
     app_env="development"; cookie_secure="false"
   fi
 
-  echo
-  echo "SMTP ist optional. Leere Eingaben deaktivieren den E-Mail-Versand."
-  smtp_host="$(ask "SMTP-Server" "")"
-  smtp_port="$(ask "SMTP-Port" "587")"
-  smtp_username="$(ask "SMTP-Benutzer" "")"
-  smtp_password=""
-  if [[ -n "$smtp_host" ]]; then
-    read -r -s -p "SMTP-Passwort (Eingabe bleibt unsichtbar): " smtp_password
-    echo
-  fi
-  smtp_from="$(ask "Absender" "FamilienPlan <familienplan@example.de>")"
-  smtp_starttls="$(ask "SMTP STARTTLS verwenden (true/false)" "true")"
-
   db_password="$(openssl rand -hex 24)"
   secret_key="$(openssl rand -hex 32)"
-  write_env "$app_origin" "$app_env" "$cookie_secure" "$db_password" "$secret_key" \
-    "$smtp_host" "$smtp_port" "$smtp_username" "$smtp_password" "$smtp_from" "$smtp_starttls"
+  write_env "$app_origin" "$app_env" "$cookie_secure" "$db_password" "$secret_key"
   echo "Konfiguration wurde geschützt unter $ENV_FILE gespeichert."
 fi
 

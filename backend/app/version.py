@@ -6,7 +6,7 @@ def _read_version() -> str:
     try:
         return version_file.read_text(encoding="utf-8").strip()
     except OSError:
-        return "0.1.1"
+        return "0.1.2"
 
 
 VERSION = _read_version()

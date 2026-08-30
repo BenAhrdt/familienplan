@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.2 – 30. August 2026
+
+### Installation
+
+- Überflüssige SMTP-Abfragen aus dem Installer entfernt; die Mailkonfiguration erfolgt später in der Weboberfläche.
+- Der Installer fragt bei einer neuen Einrichtung nur noch die öffentliche Basisadresse ab.
+
 ## 0.1.1 – 30. August 2026
 
 ### Installation

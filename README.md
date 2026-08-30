@@ -2,11 +2,11 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.1** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.2** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 
-Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die übrige Konfiguration ab, installiert alle Abhängigkeiten, baut das Frontend und führt die Datenbankmigrationen aus. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
+Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die öffentliche Basisadresse ab, installiert alle Abhängigkeiten, baut das Frontend und führt die Datenbankmigrationen aus. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
 
 ```bash
 git clone https://github.com/BenAhrdt/familienplan.git
@@ -14,7 +14,7 @@ cd familienplan
 ./scripts/install.sh
 ```
 
-Alle benötigten Angaben werden während dieses einen Aufrufs abgefragt. Bei einer HTTPS-Adresse setzt der Installer automatisch den Produktivmodus und sichere Sitzungscookies. Eine vorhandene vollständige `.env` kann bei einem erneuten Aufruf beibehalten werden. Liefert das Betriebssystem eine zu alte Node.js-Version, richtet der Installer das signierte NodeSource-Repository für Node.js 22 LTS ein.
+Bei einer HTTPS-Adresse setzt der Installer automatisch den Produktivmodus und sichere Sitzungscookies. Einstellungen wie SMTP werden später in der Weboberfläche vorgenommen. Eine vorhandene vollständige `.env` kann bei einem erneuten Aufruf beibehalten werden. Liefert das Betriebssystem eine zu alte Node.js-Version, richtet der Installer das signierte NodeSource-Repository für Node.js 22 LTS ein.
 
 ## Aktualisieren
 
