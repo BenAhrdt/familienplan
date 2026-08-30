@@ -24,7 +24,7 @@ from app.core.security import hash_password, new_token, token_hash, utcnow, veri
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
 from app.models.entities import ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, Invitation, Notification, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, get_waste_config, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -367,6 +367,37 @@ def update_theme(data: ThemeSetting, request: Request, db: Session = Depends(get
     else:
         db.add(ApplicationSetting(key="theme", value=data.model_dump()))
     audit(db, request, "THEME_CHANGED", user.id, ("setting", "theme"), data.model_dump())
+    db.commit()
+    return data
+
+
+def resolved_calendar_colors(db: Session, user_id: int) -> dict:
+    theme = get_theme(db, None)
+    waste = get_waste_config(db)
+    defaults = {
+        "holiday_color": theme.holiday_color,
+        "birthday_color": theme.birthday_color,
+        "school_color": theme.school_color,
+        "waste_color": waste.get("color", "#5C8B58"),
+    }
+    row = db.get(ApplicationSetting, f"calendar_colors_{user_id}")
+    return {**defaults, **(row.value if row else {})}
+
+
+@router.get("/settings/calendar-colors", response_model=CalendarColorPreferences)
+def get_calendar_colors(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return resolved_calendar_colors(db, user.id)
+
+
+@router.put("/settings/calendar-colors", response_model=CalendarColorPreferences, dependencies=[Depends(require_csrf)])
+def update_calendar_colors(data: CalendarColorPreferences, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    key = f"calendar_colors_{user.id}"
+    row = db.get(ApplicationSetting, key)
+    if row:
+        row.value = data.model_dump()
+    else:
+        db.add(ApplicationSetting(key=key, value=data.model_dump()))
+    audit(db, request, "PERSONAL_CALENDAR_COLORS_CHANGED", user.id, ("setting", key))
     db.commit()
     return data
 
@@ -833,11 +864,9 @@ def _ics_datetime(value: str) -> tuple[datetime, bool]:
     return datetime.strptime(value[:15], "%Y%m%dT%H%M%S").replace(tzinfo=ZoneInfo(settings.app_timezone)), False
 
 
-@router.post("/children/{child_id}/calendar/sync", dependencies=[Depends(require_csrf)])
-async def sync_child_calendar(child_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
-    child = db.get(Child, child_id)
-    if not child or not child.school_calendar_url:
-        return {"imported": 0, "message": "Für diese Schule wurde keine öffentliche Kalenderquelle erkannt"}
+async def synchronize_child_calendar(db: Session, child: Child) -> dict:
+    if not child.school_calendar_url:
+        return {"imported": 0, "removed": 0, "message": "Für diese Schule wurde keine öffentliche Kalenderquelle erkannt"}
     url = child.school_calendar_url.replace("webcal://", "https://")
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": "FamilienPlan/1.0", "Accept": "text/calendar"}) as client:
@@ -882,9 +911,19 @@ async def sync_child_calendar(child_id: int, request: Request, db: Session = Dep
             db.delete(stale)
             removed += 1
     source.last_sync_at, source.last_result, source.last_error = utcnow(), {"events": imported, "removed": removed}, None
-    audit(db, request, "SCHOOL_CALENDAR_SYNCED", user.id, ("child", str(child_id)), {"events": imported, "removed": removed})
     db.commit()
     return {"imported": imported, "removed": removed, "message": f"{imported} Schultermine übernommen, {removed} veraltete Einträge entfernt"}
+
+
+@router.post("/children/{child_id}/calendar/sync", dependencies=[Depends(require_csrf)])
+async def sync_child_calendar(child_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    child = db.get(Child, child_id)
+    if not child or not child.school_calendar_url:
+        return {"imported": 0, "message": "Für diese Schule wurde keine öffentliche Kalenderquelle erkannt"}
+    result = await synchronize_child_calendar(db, child)
+    audit(db, request, "SCHOOL_CALENDAR_SYNCED", user.id, ("child", str(child_id)), {"events": result["imported"], "removed": result["removed"]})
+    db.commit()
+    return result
 
 
 @router.put("/children/{child_id}/permissions", status_code=204, dependencies=[Depends(require_csrf)])

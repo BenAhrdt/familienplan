@@ -2,6 +2,20 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.15 – 30. August 2026
+
+### Automatische Synchronisierung
+
+- Schulkalender werden beim Anwendungsstart geprüft und anschließend spätestens alle sechs Stunden synchronisiert.
+- Ein PostgreSQL-Sperrmechanismus verhindert doppelte Synchronisierung durch mehrere Webworker.
+- Fehlgeschlagene oder ungültige Abrufe verändern keine vorhandenen Schultermine.
+
+### Persönliche Kalenderfarben
+
+- Am automatischen Abfallkalender kann eine Standardfarbe für importierte Abfuhrtermine gewählt werden.
+- Jeder Benutzer kann Schule, Ferien und freigegebene Rubriken in persönlichen Farben darstellen.
+- Farben für Geburtstage und Müllabfuhr werden nur angeboten, wenn die jeweilige Rubrik sichtbar ist.
+
 ## 0.1.14 – 30. August 2026
 
 ### Schulkalender

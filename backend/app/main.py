@@ -8,11 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1.router import router
+from app.api.v1.router import router, synchronize_child_calendar
 from app.api.v1.integration_router import router as integration_router
 from app.core.config import get_settings
 from app.integrations import deliver_outbox_once
 from app.core.database import SessionLocal
+from app.models.entities import CalendarSource, Child
+from sqlalchemy import select, text
 from app.waste_calendar import get_waste_config, sync_waste_calendar
 from app.version import VERSION
 
@@ -23,6 +25,7 @@ settings = get_settings()
 async def lifespan(_: FastAPI):
     async def worker():
         last_waste_check = 0.0
+        last_school_check = 0.0
         while True:
             try:
                 await deliver_outbox_once()
@@ -41,6 +44,23 @@ async def lifespan(_: FastAPI):
                 except Exception:
                     import logging
                     logging.getLogger("familienplan.waste").exception("Abfallkalender-Synchronisierung fehlgeschlagen")
+            if asyncio.get_running_loop().time() - last_school_check >= 3600:
+                last_school_check = asyncio.get_running_loop().time()
+                try:
+                    with SessionLocal() as db:
+                        locked = bool(db.scalar(text("SELECT pg_try_advisory_lock(7346219)")))
+                        if locked:
+                            try:
+                                children = db.scalars(select(Child).where(Child.is_active.is_(True), Child.school_calendar_url.is_not(None)))
+                                for child in children:
+                                    source = db.scalar(select(CalendarSource).where(CalendarSource.key == f"child-{child.id}-school"))
+                                    if not source or not source.last_sync_at or source.last_sync_at < datetime.now(timezone.utc) - timedelta(hours=6):
+                                        await synchronize_child_calendar(db, child)
+                            finally:
+                                db.execute(text("SELECT pg_advisory_unlock(7346219)"))
+                except Exception:
+                    import logging
+                    logging.getLogger("familienplan.school").exception("Schulkalender-Synchronisierung fehlgeschlagen")
             await asyncio.sleep(15)
     task = asyncio.create_task(worker())
     yield

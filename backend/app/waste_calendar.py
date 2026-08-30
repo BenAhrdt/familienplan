@@ -22,6 +22,7 @@ def get_waste_config(db: Session) -> dict:
     return row.value if row else {
         "enabled": False, "provider": "AWIDO", "customer": "awld",
         "city": "Hohenahr", "street": "Ahrdt", "calendar_url": "",
+        "color": "#5C8B58",
         "visible_to_user_ids": [], "last_sync_at": None, "last_result": None,
         "last_error": None,
     }
@@ -130,7 +131,7 @@ async def sync_waste_calendar(db: Session) -> dict:
             event.title = title
             event.description = fields.get("DESCRIPTION") or "Automatisch aus dem Abfallkalender importiert"
             event.starts_at, event.ends_at, event.all_day = starts_at, starts_at + timedelta(days=1), True
-            event.category, event.event_type, event.color = "FAMILY", "WASTE", "#5C8B58"
+            event.category, event.event_type, event.color = "FAMILY", "WASTE", str(config.get("color") or "#5C8B58")
             # An empty selection means “nur Administratoren”, never public.
             event.visible_to_user_ids = audience
             event.is_private = True

@@ -64,9 +64,10 @@ type PlanningItem = HolidayPlanningDraft & {
 type SectionAccess = { birthdays: number[]; waste_collection: number[] };
 type WasteCalendarSetting = {
   enabled: boolean; provider: "AWIDO" | "ICAL"; customer: string; city: string;
-  street: string; calendar_url: string; visible_to_user_ids: number[];
+  street: string; calendar_url: string; color: string; visible_to_user_ids: number[];
   last_sync_at: string | null; last_result: { events?: number; years?: number[] } | null; last_error: string | null;
 };
+type CalendarColorPreferences = { holiday_color: string; birthday_color: string; school_color: string; waste_color: string };
 type ApplicationMeta = {
   version: string;
   latest_version: string | null;
@@ -125,6 +126,8 @@ const eventDisplayColor = (event: CalendarEvent) =>
     ? "var(--school)"
     : event.event_type === "BIRTHDAY"
       ? "var(--birthday)"
+      : event.event_type === "WASTE"
+        ? `var(--waste, ${event.color || "#5C8B58"})`
       : event.color || "#8B6CC1";
 
 function clientId() {
@@ -3407,10 +3410,21 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
         provider: String(form.get("provider")) as "AWIDO" | "ICAL",
         customer: String(form.get("customer") || "awld"), city: String(form.get("city") || ""),
         street: String(form.get("street") || ""), calendar_url: String(form.get("calendar_url") || ""),
+        color: String(form.get("color") || "#5C8B58"),
         visible_to_user_ids: form.getAll("visible_to_user_ids").map(Number),
       }) });
-      setCalendarSettings(saved); setCalendarOpen(false); setSyncMessage("Einstellungen gespeichert.");
-    } catch (x) { setError((x as Error).message); }
+      setCalendarSettings(saved); setCalendarOpen(false);
+      if (saved.enabled) {
+        setSyncing(true);
+        const result = await api<{ imported: number; message: string }>("/waste-calendar/sync", { method: "POST" });
+        setSyncMessage(`Einstellungen gespeichert. ${result.message}`);
+        setCalendarSettings(await api<WasteCalendarSetting>("/waste-calendar/settings"));
+        load();
+        setSyncing(false);
+      } else {
+        setSyncMessage("Einstellungen gespeichert.");
+      }
+    } catch (x) { setError((x as Error).message); setSyncing(false); }
   }
   async function syncCalendar() {
     setSyncing(true); setError(""); setSyncMessage("");
@@ -3477,6 +3491,7 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
       <label className="check"><input type="checkbox" name="enabled" defaultChecked={calendarSettings.enabled}/><span>Automatische tägliche Synchronisierung aktivieren</span></label>
       <label>Anbieter<select name="provider" value={calendarSettings.provider} onChange={(e) => setCalendarSettings({...calendarSettings, provider: e.target.value as "AWIDO" | "ICAL"})}><option value="AWIDO">AWIDO</option><option value="ICAL">iCal-/WebCal-Adresse</option></select></label>
       {calendarSettings.provider === "AWIDO" ? <><Field label="AWIDO-Kennung" name="customer" defaultValue={calendarSettings.customer || "awld"}/><div className="grid2"><Field label="Gemeinde / Stadt" name="city" defaultValue={calendarSettings.city}/><Field label="Ortsteil / Straße" name="street" defaultValue={calendarSettings.street}/></div><p className="hint">Für Hohenahr-Ahrdt: Kennung <code>awld</code>, Gemeinde <code>Hohenahr</code>, Ortsteil <code>Ahrdt</code>.</p></> : <Field label="iCal-/WebCal-Adresse" name="calendar_url" type="url" defaultValue={calendarSettings.calendar_url}/>}
+      <label>Farbe der Abfuhrtermine<div className="themepicker"><input type="color" name="color" value={calendarSettings.color || "#5C8B58"} onChange={(event) => setCalendarSettings({...calendarSettings, color: event.target.value})}/><code>{(calendarSettings.color || "#5C8B58").toUpperCase()}</code></div></label>
       <fieldset className="childaccess"><legend>Sichtbar für</legend>{people.filter((person) => person.role !== "ADMIN").map((person) => <label className="check" key={person.id}><input type="checkbox" name="visible_to_user_ids" value={person.id} defaultChecked={calendarSettings.visible_to_user_ids.includes(person.id)}/><span>{person.display_name}</span></label>)}<p className="hint">Administratoren sehen die Termine immer.</p></fieldset>
       <button>Einstellungen speichern</button>
     </form></div>}
@@ -4259,6 +4274,14 @@ function App() {
           document.documentElement.style.setProperty("--school", t.school_color);
         })
         .catch(() => {});
+      api<CalendarColorPreferences>("/settings/calendar-colors")
+        .then((colors) => {
+          document.documentElement.style.setProperty("--holiday", colors.holiday_color);
+          document.documentElement.style.setProperty("--birthday", colors.birthday_color);
+          document.documentElement.style.setProperty("--school", colors.school_color);
+          document.documentElement.style.setProperty("--waste", colors.waste_color);
+        })
+        .catch(() => {});
     }
   }, [user]);
   useEffect(() => {
@@ -4726,6 +4749,7 @@ function SettingsScreen({
     [holidayColor, setHolidayColor] = useState("#78B98B"),
     [birthdayColor, setBirthdayColor] = useState("#E0A526"),
     [schoolColor, setSchoolColor] = useState("#3979B8"),
+    [calendarColors, setCalendarColors] = useState<CalendarColorPreferences>({ holiday_color: "#78B98B", birthday_color: "#E0A526", school_color: "#3979B8", waste_color: "#5C8B58" }),
     [personColor, setPersonColor] = useState(user.color || "#3BA4E5"),
     [birthDate, setBirthDate] = useState(user.birth_date || ""),
     [saved, setSaved] = useState(false),
@@ -4743,6 +4767,7 @@ function SettingsScreen({
       document.documentElement.style.setProperty("--birthday", r.birthday_color);
       document.documentElement.style.setProperty("--school", r.school_color);
     });
+    api<CalendarColorPreferences>("/settings/calendar-colors").then(setCalendarColors);
   }, []);
   function preview(value: string) {
     setColor(value);
@@ -4781,6 +4806,18 @@ function SettingsScreen({
     } catch (x) {
       setError((x as Error).message);
     }
+  }
+  async function saveCalendarColors() {
+    setError("");
+    try {
+      const changed = await api<CalendarColorPreferences>("/settings/calendar-colors", { method: "PUT", body: JSON.stringify(calendarColors) });
+      setCalendarColors(changed);
+      document.documentElement.style.setProperty("--holiday", changed.holiday_color);
+      document.documentElement.style.setProperty("--birthday", changed.birthday_color);
+      document.documentElement.style.setProperty("--school", changed.school_color);
+      document.documentElement.style.setProperty("--waste", changed.waste_color);
+      setSaved(true);
+    } catch (x) { setError((x as Error).message); }
   }
   return (
     <>
@@ -4833,6 +4870,15 @@ function SettingsScreen({
           {user.display_name}
         </div>
         <button onClick={savePersonColor}>Profil speichern</button>
+      </section>
+      <section className="themebox settings-card">
+        <h2>Meine Kalenderfarben</h2>
+        <p className="muted">Diese Farben gelten nur für deine persönliche Kalenderansicht.</p>
+        <h3>Schule</h3><div className="themepicker"><input type="color" value={calendarColors.school_color} onChange={(event) => setCalendarColors({...calendarColors, school_color: event.target.value})}/><code>{calendarColors.school_color.toUpperCase()}</code></div>
+        <h3>Ferien</h3><div className="themepicker"><input type="color" value={calendarColors.holiday_color} onChange={(event) => setCalendarColors({...calendarColors, holiday_color: event.target.value})}/><code>{calendarColors.holiday_color.toUpperCase()}</code></div>
+        {(user.role === "ADMIN" || sectionAccess.birthdays.includes(user.id)) && <><h3>Geburtstage</h3><div className="themepicker"><input type="color" value={calendarColors.birthday_color} onChange={(event) => setCalendarColors({...calendarColors, birthday_color: event.target.value})}/><code>{calendarColors.birthday_color.toUpperCase()}</code></div></>}
+        {(user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id)) && <><h3>Müllabfuhr</h3><div className="themepicker"><input type="color" value={calendarColors.waste_color} onChange={(event) => setCalendarColors({...calendarColors, waste_color: event.target.value})}/><code>{calendarColors.waste_color.toUpperCase()}</code></div></>}
+        <button onClick={saveCalendarColors}>Kalenderfarben speichern</button>
       </section>
       {user.role === "ADMIN" && (
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />

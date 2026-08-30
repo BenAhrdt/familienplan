@@ -327,7 +327,15 @@ class WasteCalendarSetting(BaseModel):
     city: str = Field(default="Hohenahr", max_length=160)
     street: str = Field(default="Ahrdt", max_length=200)
     calendar_url: str = Field(default="", max_length=1500)
+    color: str = Field(default="#5C8B58", pattern=r"^#[0-9A-Fa-f]{6}$")
     visible_to_user_ids: list[int] = []
     last_sync_at: str | None = None
     last_result: dict | None = None
     last_error: str | None = None
+
+
+class CalendarColorPreferences(BaseModel):
+    holiday_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    birthday_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    school_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    waste_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
