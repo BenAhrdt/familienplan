@@ -157,6 +157,8 @@ class Stay(Base):
     child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), index=True)
     responsible_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     recurrence_rule_id: Mapped[int | None] = mapped_column(ForeignKey("recurrence_rules.id", ondelete="SET NULL"), index=True)
+    recurrence_exception_rule_id: Mapped[int | None] = mapped_column(ForeignKey("recurrence_rules.id", ondelete="SET NULL"), index=True)
+    recurrence_original_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus, name="plan_status"), default=PlanStatus.DRAFT)

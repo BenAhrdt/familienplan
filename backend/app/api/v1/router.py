@@ -954,6 +954,8 @@ def inferred_recurrence_rule(db: Session, stay: Stay) -> RecurrenceRule | None:
     """Recover the series link for older occurrences that were detached while edited."""
     if stay.recurrence_rule_id:
         return db.get(RecurrenceRule, stay.recurrence_rule_id)
+    if stay.recurrence_exception_rule_id:
+        return db.get(RecurrenceRule, stay.recurrence_exception_rule_id)
     rules = db.scalars(select(RecurrenceRule).where(
         RecurrenceRule.child_id == stay.child_id,
         RecurrenceRule.starts_at <= stay.starts_at,
@@ -1161,7 +1163,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
     if data.scope == "future":
         query = select(Stay).where(((Stay.recurrence_rule_id == rule_id) | (Stay.id == stay.id)), Stay.starts_at >= stay.starts_at)
     elif data.scope == "series":
-        query = select(Stay).where((Stay.recurrence_rule_id == rule_id) | (Stay.id == stay.id))
+        query = select(Stay).where(Stay.recurrence_rule_id == rule_id)
     targets = list(db.scalars(query.order_by(Stay.starts_at)))
     if data.scope == "series" and rule and data.recurrence_interval_weeks:
         if data.recurrence_until and data.recurrence_until < data.starts_at:
@@ -1188,10 +1190,16 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
             recurrence_until=data.recurrence_until,
         )
         occurrences = recurrence_dates(template)
+        excluded_starts = set(db.scalars(select(Stay.recurrence_original_start).where(
+            Stay.recurrence_exception_rule_id == rule.id,
+            Stay.recurrence_original_start.is_not(None),
+        )))
         for target in targets:
             db.delete(target)
         replacements = []
         for starts_at, ends_at in occurrences:
+            if starts_at in excluded_starts:
+                continue
             replacement = Stay(
                 child_id=stay.child_id,
                 responsible_user_id=data.responsible_user_id,
@@ -1250,6 +1258,8 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
             ))
         # A deliberately changed occurrence is an explicit exception and must
         # never be regenerated from or moved with the parent series.
+        stay.recurrence_exception_rule_id = rule.id if rule else None
+        stay.recurrence_original_start = original_start if rule else None
         stay.recurrence_rule_id = None
     audit(db, request, "STAY_SERIES_CHANGED" if len(targets) > 1 else "STAY_CHANGED", user.id, ("stay", str(stay.id)), {"scope": data.scope, "affected": len(targets)})
     db.commit()

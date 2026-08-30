@@ -1799,7 +1799,6 @@ function CalendarScreen({
               <div>
                 <strong>
                   {event.title}
-                  {event.is_private ? " · Privat" : ""}
                 </strong>
                 <small>
                   {event.recurrence_frequency === "MONTHLY"
@@ -2083,7 +2082,6 @@ function CalendarScreen({
                       }
                     >
                       {event.title}
-                      {event.is_private ? " · Privat" : ""}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
                     </span>
                   ))}
@@ -2100,7 +2098,7 @@ function CalendarScreen({
                       title="Automatisch erzeugter Termin · Geburtstag"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      🎂 {birthday.name} wird {birthday.age}{birthday.isPrivate ? " · Privat" : ""}
+                      🎂 {birthday.name} wird {birthday.age}
                     </span>
                   ))}
                   {dayHolidays.map((holiday) => (

@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.19 – 30. August 2026
+
+### Serienausnahmen und Kalenderanzeige
+
+- Bewusst verschobene Einzeltermine einer Aufenthaltsserie werden als Ausnahmen mit ihrem ursprünglichen Serientermin gespeichert.
+- Eine spätere Bearbeitung der gesamten Serie erzeugt am ursprünglichen Datum einer verschobenen Ausnahme keinen neuen Doppeltermin.
+- Der sichtbare Zusatz „Privat“ wurde aus Kalenderterminen und Geburtstagen entfernt; die Zugriffsbeschränkung bleibt unverändert wirksam.
+
 ## 0.1.18 – 30. August 2026
 
 ### Abfallkalender und Kalenderquellen
