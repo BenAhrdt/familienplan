@@ -55,7 +55,7 @@ write_env() {
     printf 'SESSION_HOURS=12\nREMEMBER_SESSION_DAYS=30\nINVITATION_HOURS=72\n'
     printf 'SMTP_HOST=\nSMTP_PORT=587\nSMTP_USERNAME=\nSMTP_PASSWORD=\n'
     printf 'SMTP_FROM=FamilienPlan <familienplan@example.de>\nSMTP_STARTTLS=true\n'
-    printf 'UPLOAD_DIR=./uploads\nGITHUB_REPOSITORY=BenAhrdt/familienplan\n'
+    printf 'UPLOAD_DIR=%s/uploads\nGITHUB_REPOSITORY=BenAhrdt/familienplan\n' "$INSTALL_DIR"
   } > "$temporary_file"
   mv "$temporary_file" "$ENV_FILE"
   chmod 600 "$ENV_FILE"

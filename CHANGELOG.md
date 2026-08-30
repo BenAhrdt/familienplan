@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.17 – 30. August 2026
+
+### Aktualisierungen
+
+- Der Ein-Klick-Updater schreibt seine Anforderung zuverlässig in das freigegebene Upload-Verzeichnis, auch wenn in älteren Installationen ein relativer Pfad hinterlegt ist.
+- Neuinstallationen speichern den Upload-Pfad direkt als absoluten Installationspfad.
+- Eine PostgreSQL-Sperre verhindert, dass parallele Webworker dieselbe Abfallkalender-Quelle gleichzeitig anlegen.
+
 ## 0.1.16 – 30. August 2026
 
 ### Aktualisierungen

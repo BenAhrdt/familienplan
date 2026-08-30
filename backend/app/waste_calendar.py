@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -87,6 +87,9 @@ def _date(value: str) -> datetime:
 
 
 async def sync_waste_calendar(db: Session) -> dict:
+    # Uvicorn uses multiple workers. Serialize creation and reconciliation so
+    # two startup workers cannot create the same CalendarSource concurrently.
+    db.execute(text("SELECT pg_advisory_xact_lock(7346220)"))
     config = dict(get_waste_config(db))
     if not config.get("enabled"):
         return {"imported": 0, "message": "Der automatische Abfallkalender ist deaktiviert"}

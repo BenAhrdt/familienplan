@@ -34,6 +34,14 @@ class Settings(BaseSettings):
             raise ValueError("FamilienPlan requires PostgreSQL; SQLite is not supported")
         return value
 
+    @field_validator("upload_dir")
+    @classmethod
+    def resolve_upload_dir(cls, value: Path) -> Path:
+        if value.is_absolute():
+            return value
+        # Services run from backend/, while uploads live at the project root.
+        return (Path(__file__).resolve().parents[3] / value).resolve()
+
 
 @lru_cache
 def get_settings() -> Settings:
