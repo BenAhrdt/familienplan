@@ -162,6 +162,10 @@ fi
 if [[ "$PROJECT_DIR" != "$INSTALL_DIR" ]]; then
   run_as_root mkdir -p "$INSTALL_DIR"
   run_as_root cp -a "$PROJECT_DIR/." "$INSTALL_DIR/"
+  echo "Erzeuge verschiebbare Python-Umgebung am Produktionspfad …"
+  run_as_root python3 -m venv --clear "$INSTALL_DIR/.venv"
+  run_as_root "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
+  run_as_root "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt"
 fi
 run_as_root chown -R root:root "$INSTALL_DIR"
 run_as_root chown -R familienplan:familienplan "$INSTALL_DIR/uploads"
@@ -208,6 +212,13 @@ fi
 run_as_root systemctl daemon-reload
 run_as_root systemctl enable --now familienplan
 run_as_root systemctl restart familienplan
+sleep 2
+if ! run_as_root systemctl is-active --quiet familienplan; then
+  echo "Fehler: familienplan.service konnte nicht gestartet werden." >&2
+  run_as_root systemctl status familienplan --no-pager --full >&2 || true
+  run_as_root journalctl -u familienplan -n 50 --no-pager >&2 || true
+  exit 1
+fi
 
 echo
 echo "FamilienPlan wurde erfolgreich installiert."
