@@ -2,27 +2,19 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.0** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.1** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
-## Schnellinstallation aus dem GitHub-Repository
+## Geführte Ein-Befehl-Installation
 
-Vorausgesetzt werden Linux, PostgreSQL, Python 3 mit `venv`, Node.js/npm, der PostgreSQL-Client und OpenSSL.
+Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die übrige Konfiguration ab, installiert alle Abhängigkeiten, baut das Frontend und führt die Datenbankmigrationen aus. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
 
 ```bash
 git clone https://github.com/BenAhrdt/familienplan.git
 cd familienplan
-chmod +x start.sh scripts/*.sh
 ./scripts/install.sh
 ```
 
-Beim ersten Aufruf erzeugt das Skript eine geschützte `.env` samt zufälligem `SECRET_KEY`. Trage anschließend mindestens `DATABASE_URL` und für den Produktivbetrieb `APP_ORIGIN`, `APP_ENV=production` sowie `SESSION_COOKIE_SECURE=true` ein. Der zweite Aufruf installiert alle Abhängigkeiten, baut das Frontend und führt die Datenbankmigrationen aus:
-
-```bash
-nano .env
-./scripts/install.sh
-```
-
-Die PostgreSQL-Datenbank und der dazugehörige eingeschränkte Datenbankbenutzer müssen vorher vorhanden sein. Eine beispielhafte Einrichtung steht im nächsten Abschnitt.
+Alle benötigten Angaben werden während dieses einen Aufrufs abgefragt. Bei einer HTTPS-Adresse setzt der Installer automatisch den Produktivmodus und sichere Sitzungscookies. Eine vorhandene vollständige `.env` kann bei einem erneuten Aufruf beibehalten werden. Liefert das Betriebssystem eine zu alte Node.js-Version, richtet der Installer das signierte NodeSource-Repository für Node.js 22 LTS ein.
 
 ## Aktualisieren
 
@@ -59,9 +51,9 @@ Die Prüfung erfolgt höchstens einmal pro Stunde gegen das neueste veröffentli
 
 Das relationale Modell umfasst Benutzer, Sessions, Einladungen, Kinder und deren Berechtigungen, Kalenderquellen/-termine, Aufenthalte und Serien, Ferienperioden/-pläne/-segmente, Änderungsanfragen und Zustimmungen, Benachrichtigungen, API-Tokens, Audit-Logs sowie Systemeinstellungen. Kalenderquellen werden passend zu den tatsächlich gewählten Einrichtungen angelegt; produktive Abrufadapter und die vollständigen Planungsworkflows sind noch auszubauen.
 
-## PostgreSQL auf Debian/LXC installieren
+## PostgreSQL manuell einrichten
 
-Auf dem geprüften LXC ist PostgreSQL derzeit **nicht installiert**. Der Benutzer `ben` besitzt wegen `no_new_privileges` keine nutzbaren sudo-Rechte. Führe deshalb genau diese Befehle als `root` im LXC aus (ersetze das Passwort durch `openssl rand -base64 36`):
+Dieser Abschnitt ist nur für eine bewusst manuelle Installation oder für Systeme außerhalb von Debian und Ubuntu erforderlich. Ersetze das Passwort durch die Ausgabe von `openssl rand -hex 24`:
 
 ```bash
 apt update
@@ -134,7 +126,7 @@ Jede Modelländerung benötigt eine geprüfte Migration. In Produktion wird `ale
 
 ```bash
 cd backend
-../.venv/bin/pytest -q
+../.venv/bin/python -m pytest -q
 cd ../frontend
 npm run build
 ```

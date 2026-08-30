@@ -2,48 +2,168 @@
 set -Eeuo pipefail
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$PROJECT_DIR/.env"
+DB_NAME="familienplan"
+DB_USER="familienplan"
 
-need_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "Fehler: '$1' fehlt. Bitte zuerst $2 installieren." >&2
-    exit 1
+fail() { echo "Fehler: $*" >&2; exit 1; }
+
+run_as_root() {
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then "$@"
+  elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+  else fail "Für die Installation werden root-Rechte oder sudo benötigt."
   fi
 }
 
-need_command python3 "Python 3 mit venv"
-need_command npm "Node.js und npm"
-need_command pg_isready "den PostgreSQL-Client"
-need_command openssl "OpenSSL"
+run_as_postgres() {
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser -u postgres -- "$@"
+  else sudo -u postgres "$@"
+  fi
+}
 
-if [[ ! -f "$PROJECT_DIR/.env" ]]; then
-  install -m 600 "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+ask() {
+  local prompt="$1" default_value="$2" answer
+  read -r -p "$prompt [$default_value]: " answer
+  printf '%s' "${answer:-$default_value}"
+}
+
+env_value() {
+  local key="$1"
+  [[ -f "$ENV_FILE" ]] || return 0
+  sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1
+}
+
+write_env() {
+  local temporary_file
+  temporary_file="$(mktemp "$PROJECT_DIR/.env.XXXXXX")"
+  chmod 600 "$temporary_file"
+  {
+    printf 'DATABASE_URL=postgresql+psycopg://%s:%s@127.0.0.1:5432/%s\n' "$DB_USER" "$4" "$DB_NAME"
+    printf 'SECRET_KEY=%s\n' "$5"
+    printf 'APP_ENV=%s\n' "$2"
+    printf 'APP_ORIGIN=%s\n' "$1"
+    printf 'SESSION_COOKIE_SECURE=%s\n' "$3"
+    printf 'SESSION_HOURS=12\nREMEMBER_SESSION_DAYS=30\nINVITATION_HOURS=72\n'
+    printf 'SMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USERNAME=%s\nSMTP_PASSWORD=%s\n' "$6" "$7" "$8" "$9"
+    printf 'SMTP_FROM=%s\nSMTP_STARTTLS=%s\n' "${10}" "${11}"
+    printf 'UPLOAD_DIR=./uploads\nGITHUB_REPOSITORY=BenAhrdt/familienplan\n'
+  } > "$temporary_file"
+  mv "$temporary_file" "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+}
+
+echo "FamilienPlan – geführte Installation"
+echo
+
+[[ -r /etc/os-release ]] || fail "Die automatische Systemeinrichtung unterstützt derzeit Debian und Ubuntu."
+. /etc/os-release
+case "${ID:-}" in
+  debian|ubuntu) ;;
+  *) fail "Unterstützt werden Debian und Ubuntu (erkannt: ${ID:-unbekannt})." ;;
+esac
+
+echo "Installiere benötigte Systempakete …"
+run_as_root apt-get update
+run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  ca-certificates curl gnupg openssl postgresql postgresql-client python3 python3-venv python3-pip
+
+node_major=0
+if command -v node >/dev/null 2>&1; then
+  node_major="$(node --version | sed 's/^v//' | cut -d. -f1)"
+fi
+if [[ ! "$node_major" =~ ^[0-9]+$ ]] || (( node_major < 20 )); then
+  echo "Installiere aktuelle Node.js-LTS-Version …"
+  nodesource_key="$(mktemp)"
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o "$nodesource_key"
+  run_as_root mkdir -p /usr/share/keyrings
+  run_as_root gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg "$nodesource_key"
+  rm -f "$nodesource_key"
+  printf '%s\n' 'deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main' | \
+    run_as_root tee /etc/apt/sources.list.d/nodesource.list >/dev/null
+  run_as_root apt-get update
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+fi
+node_major="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+
+for required_command in python3 node npm pg_isready openssl; do
+  command -v "$required_command" >/dev/null 2>&1 || fail "'$required_command' wurde nicht gefunden."
+done
+(( node_major >= 20 )) || fail "Benötigt wird Node.js 20 oder neuer; installiert ist $(node --version)."
+
+echo "Starte PostgreSQL …"
+run_as_root systemctl enable --now postgresql
+pg_isready -q || fail "PostgreSQL ist nicht erreichbar."
+
+reuse_config=false
+configure_database=true
+if [[ -f "$ENV_FILE" ]] && ! grep -q 'CHANGE_ME' "$ENV_FILE"; then
+  read -r -p "Vorhandene .env weiterverwenden? [J/n]: " reuse_answer
+  case "${reuse_answer:-j}" in j|J|ja|JA|Ja|y|Y|yes|YES) reuse_config=true ;; esac
+fi
+
+if [[ "$reuse_config" == true ]]; then
+  database_url="$(env_value DATABASE_URL)"
+  if [[ "$database_url" =~ ^postgresql(\+psycopg)?://familienplan:([^@]+)@127\.0\.0\.1:5432/familienplan$ ]]; then
+    db_password="${BASH_REMATCH[2]}"
+  else
+    fail "Die vorhandene DATABASE_URL nutzt nicht die lokal verwaltete Standarddatenbank."
+  fi
+  echo "Bestehende Konfiguration wird beibehalten."
+  configure_database=false
+else
+  default_origin="$(env_value APP_ORIGIN)"
+  [[ -n "$default_origin" ]] || default_origin="http://localhost:5173"
+  app_origin="$(ask "Adresse, unter der FamilienPlan aufgerufen wird" "$default_origin")"
+  if [[ "$app_origin" == https://* ]]; then
+    app_env="production"; cookie_secure="true"
+  else
+    app_env="development"; cookie_secure="false"
+  fi
+
+  echo
+  echo "SMTP ist optional. Leere Eingaben deaktivieren den E-Mail-Versand."
+  smtp_host="$(ask "SMTP-Server" "")"
+  smtp_port="$(ask "SMTP-Port" "587")"
+  smtp_username="$(ask "SMTP-Benutzer" "")"
+  smtp_password=""
+  if [[ -n "$smtp_host" ]]; then
+    read -r -s -p "SMTP-Passwort (Eingabe bleibt unsichtbar): " smtp_password
+    echo
+  fi
+  smtp_from="$(ask "Absender" "FamilienPlan <familienplan@example.de>")"
+  smtp_starttls="$(ask "SMTP STARTTLS verwenden (true/false)" "true")"
+
+  db_password="$(openssl rand -hex 24)"
   secret_key="$(openssl rand -hex 32)"
-  sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$secret_key|" "$PROJECT_DIR/.env"
-  echo "Konfiguration wurde unter $PROJECT_DIR/.env angelegt."
-  echo "Trage dort DATABASE_URL und APP_ORIGIN ein und starte das Skript erneut."
-  exit 2
+  write_env "$app_origin" "$app_env" "$cookie_secure" "$db_password" "$secret_key" \
+    "$smtp_host" "$smtp_port" "$smtp_username" "$smtp_password" "$smtp_from" "$smtp_starttls"
+  echo "Konfiguration wurde geschützt unter $ENV_FILE gespeichert."
 fi
 
-chmod 600 "$PROJECT_DIR/.env"
-if grep -q '^DATABASE_URL=.*CHANGE_ME' "$PROJECT_DIR/.env"; then
-  echo "Fehler: Bitte zuerst DATABASE_URL in $PROJECT_DIR/.env konfigurieren." >&2
-  exit 2
-fi
-if grep -q '^SECRET_KEY=.*CHANGE_ME' "$PROJECT_DIR/.env"; then
-  echo "Fehler: Bitte zuerst einen sicheren SECRET_KEY in $PROJECT_DIR/.env konfigurieren." >&2
-  exit 2
+if [[ "$configure_database" == true ]]; then
+  echo "Richte PostgreSQL-Datenbank ein …"
+  if run_as_postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -qx 1; then
+    printf '%s\n' "ALTER ROLE $DB_USER WITH LOGIN PASSWORD :'db_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;" | run_as_postgres psql --set=db_password="$db_password"
+  else
+    printf '%s\n' "CREATE ROLE $DB_USER LOGIN PASSWORD :'db_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;" | run_as_postgres psql --set=db_password="$db_password"
+  fi
+  if ! run_as_postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -qx 1; then
+    run_as_postgres createdb --owner="$DB_USER" --encoding=UTF8 --template=template0 "$DB_NAME"
+  fi
+  run_as_postgres psql -c "REVOKE ALL ON DATABASE $DB_NAME FROM PUBLIC; GRANT CONNECT, TEMPORARY ON DATABASE $DB_NAME TO $DB_USER;"
 fi
 
-if [[ ! -d "$PROJECT_DIR/.venv" ]]; then
-  python3 -m venv "$PROJECT_DIR/.venv"
-fi
+echo "Installiere Anwendungsabhängigkeiten …"
+[[ -d "$PROJECT_DIR/.venv" ]] || python3 -m venv "$PROJECT_DIR/.venv"
 "$PROJECT_DIR/.venv/bin/pip" install --upgrade pip
 "$PROJECT_DIR/.venv/bin/pip" install -r "$PROJECT_DIR/backend/requirements.txt"
 npm --prefix "$PROJECT_DIR/frontend" ci
 npm --prefix "$PROJECT_DIR/frontend" run build
+
+echo "Führe Datenbankmigrationen aus …"
 (cd "$PROJECT_DIR/backend" && ../.venv/bin/alembic upgrade head)
 
 echo
 echo "FamilienPlan wurde erfolgreich installiert."
-echo "Entwicklung: $PROJECT_DIR/start.sh"
-echo "Produktion:  Hinweise zu nginx und systemd in der README beachten."
+echo "Starten: $PROJECT_DIR/start.sh"
+echo "Aufrufen: $(env_value APP_ORIGIN)"
