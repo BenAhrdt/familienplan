@@ -228,17 +228,18 @@ html.api-pending::after {
 html,body,#root { max-width:100%; overflow-x:hidden; }
 html { overflow-y:scroll; scroll-behavior:smooth; }
 body { min-height:100%; overscroll-behavior-x:none; }
+.link-button { margin-top:.75rem!important; background:transparent!important; color:var(--green)!important; box-shadow:none!important; }
 .modal { overflow-y:auto; overscroll-behavior:contain; }
 .modal .panel { max-height:min(90dvh,900px); overflow-y:auto; overscroll-behavior:contain; scroll-padding-bottom:7rem; }
 @media (max-width:900px) {
   .sidebar,.notification-toggle { display:none; }
-  .mobiletop { display:flex; height:calc(64px + env(safe-area-inset-top)); padding:env(safe-area-inset-top) .8rem 0; position:sticky; top:0; z-index:50; align-items:center; gap:.55rem; background:white; border-bottom:1px solid var(--line); }
+  .mobiletop { display:flex; height:calc(64px + env(safe-area-inset-top)); padding:env(safe-area-inset-top) .8rem 0; position:fixed; left:0; right:0; top:0; z-index:50; align-items:center; gap:.55rem; background:white; border-bottom:1px solid var(--line); }
   .mobiletop .mark { width:34px; height:34px; font-size:.8rem; flex:0 0 auto; }
   .mobiletop > b { flex:1; min-width:0; font-family:Georgia,serif; white-space:nowrap; }
   .mobiletop > button:not(.mobile-logout) { width:40px; height:40px; display:grid; place-items:center; padding:0; border-radius:50%; background:#eef5f1; color:var(--green); }
   .mobiletop .mobile-logout { min-width:42px; height:40px; display:flex; align-items:center; justify-content:center; gap:.35rem; padding:0 .65rem; border-radius:10px; background:#fff0ed; color:#9a3727; }
   .mobiletop .mobile-logout span { display:none; }
-  .content { margin-left:0; width:100%; max-width:100%; padding:1rem .8rem calc(78px + env(safe-area-inset-bottom)); overflow-x:hidden; }
+  .content { margin-left:0; width:100%; max-width:100%; padding:calc(140px + env(safe-area-inset-top)) .8rem calc(78px + env(safe-area-inset-bottom)); overflow-x:hidden; }
   .globalheader { margin-bottom:1rem; }
   .bottom { display:grid; grid-template-columns:repeat(3,1fr); position:fixed; z-index:55; bottom:0; left:0; right:0; height:calc(64px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom); background:white; border-top:1px solid var(--line); }
   .bottom button { min-width:0; background:transparent; color:#829088; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.15rem; }
@@ -259,7 +260,7 @@ body { min-height:100%; overscroll-behavior-x:none; }
   .mobile-menu nav svg { flex:0 0 auto; }
   .notification-panel { top:calc(58px + env(safe-area-inset-top)); right:.5rem; width:calc(100vw - 1rem); max-height:calc(100dvh - 74px - env(safe-area-inset-top)); }
   .pagehead { margin-bottom:1.5rem; }
-  .globalheader { position:sticky; top:calc(64px + env(safe-area-inset-top)); z-index:48; margin-top:0; padding:.35rem 0 .75rem; }
+  .globalheader { position:fixed; left:0; right:0; top:calc(64px + env(safe-area-inset-top)); z-index:48; margin:0; padding:.45rem .8rem .75rem; }
   .modal { align-items:start; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
   .modal .panel { width:100%; max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin:0; padding-bottom:calc(7rem + env(safe-area-inset-bottom)); border-radius:18px 18px 0 0; }
 }

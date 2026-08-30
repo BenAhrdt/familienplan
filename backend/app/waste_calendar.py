@@ -163,7 +163,13 @@ async def sync_waste_calendar(db: Session) -> dict:
             # An empty selection means “nur Administratoren”, never public.
             event.visible_to_user_ids = audience
             event.is_private = True
-            event.raw_data = {"provider": provider, "location": fields.get("LOCATION"), "waste_type": waste_type}
+            event.raw_data = {
+                "provider": provider,
+                "location": fields.get("LOCATION"),
+                "waste_type": waste_type,
+                "all_day_start": starts_at.date().isoformat(),
+                "all_day_end_exclusive": (starts_at + timedelta(days=1)).date().isoformat(),
+            }
             imported += 1
         removed = db.execute(delete(CalendarEvent).where(
             CalendarEvent.source_id == source.id,

@@ -110,7 +110,7 @@ const federalStates = [
   ["TH", "Thüringen"],
 ];
 const eventTypeLabels: Record<EventType, string> = {
-  STAY: "Aufenthalt",
+  STAY: "Betreuung",
   BIRTHDAY: "Geburtstag",
   GENERAL: "Allgemein",
   SCHOOL: "Schule",
@@ -137,6 +137,21 @@ const eventDisplayColor = (event: CalendarEvent) =>
         ? event.color || "var(--waste, #5C8B58)"
       : event.color || "#8B6CC1";
 const eventTypeDisplayColor = (type: EventType) => type === "SCHOOL" ? "var(--school)" : type === "BIRTHDAY" ? "var(--birthday)" : type === "WASTE" ? "var(--waste, #5C8B58)" : type === "STAY" ? "var(--green)" : type === "CLEANING" ? "#35A853" : type === "GENERAL" ? "#8B6CC1" : "#6F63B6";
+
+const localDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+function calendarEventOccursOnDay(event: CalendarEvent, day: Date, dayEnd: Date) {
+  if (event.all_day) {
+    const start = event.raw_data?.all_day_start;
+    const end = event.raw_data?.all_day_end_exclusive;
+    if (typeof start === "string" && typeof end === "string") {
+      const dayKey = localDateKey(day);
+      return start <= dayKey && dayKey < end;
+    }
+  }
+  return new Date(event.starts_at) < dayEnd && new Date(event.ends_at) > day;
+}
 
 function clientId() {
   return globalThis.crypto?.randomUUID?.() ||
@@ -280,7 +295,7 @@ function Setup({ done }: { done: (u: User) => void }) {
           Ruhiger durch den Alltag.
         </h1>
         <p>
-          Kalender, Aufenthalte und Ferien an einem sicheren Ort – für alle, die
+          Kalender, Betreuungszeiten und Ferien an einem sicheren Ort – für alle, die
           Familie organisieren.
         </p>
       </section>
@@ -325,7 +340,7 @@ function Setup({ done }: { done: (u: User) => void }) {
 }
 
 function Login({ done }: { done: (u: User) => void }) {
-  const [error, setError] = useState("");
+  const [error, setError] = useState(""), [forgotOpen,setForgotOpen]=useState(false), [forgotMessage,setForgotMessage]=useState("");
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -368,9 +383,17 @@ function Login({ done }: { done: (u: User) => void }) {
         <button>
           Anmelden <ChevronRight size={18} />
         </button>
+        <button type="button" className="link-button" onClick={()=>{setForgotOpen(true);setForgotMessage("")}}>Passwort vergessen?</button>
       </form>
+      {forgotOpen && <div className="modal"><form className="panel" onSubmit={async(e)=>{e.preventDefault();setError("");try{const f=new FormData(e.currentTarget);const result=await api<{message:string}>("/auth/password/forgot",{method:"POST",body:JSON.stringify({email:f.get("email")})});setForgotMessage(result.message)}catch(x){setError((x as Error).message)}}}><button type="button" className="close" onClick={()=>setForgotOpen(false)}>×</button><h2>Passwort zurücksetzen</h2><p className="muted">Du erhältst einen eine Stunde gültigen Einmal-Link. Dein bisheriges Passwort wird nicht per E-Mail versendet.</p>{error&&<p className="error">{error}</p>}{forgotMessage?<><p className="success">{forgotMessage}</p><button type="button" onClick={()=>setForgotOpen(false)}>Schließen</button></>:<><Field label="E-Mail-Adresse" name="email" type="email"/><button>Reset-Link anfordern</button></>}</form></div>}
     </main>
   );
+}
+
+function ResetPassword() {
+  const token=location.pathname.split("/reset-password/")[1]||"", [message,setMessage]=useState(""), [error,setError]=useState("");
+  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const f=new FormData(e.currentTarget);try{const result=await api<{message:string}>("/auth/password/reset",{method:"POST",body:JSON.stringify({token,password:f.get("password"),password_confirm:f.get("password_confirm")})});setMessage(result.message)}catch(x){setError((x as Error).message)}}
+  return <main className="auth"><section className="auth-copy"><span className="eyebrow">FamilienPlan</span><h1>Neues Passwort festlegen.</h1></section>{message?<section className="panel"><h2>Passwort geändert</h2><p className="success">{message}</p><button onClick={()=>{history.replaceState({},"","/");location.reload()}}>Zur Anmeldung</button></section>:<form className="panel" onSubmit={submit}><h2>Passwort zurücksetzen</h2><p className="muted">Der Link kann nur einmal verwendet werden.</p>{error&&<p className="error">{error}</p>}<Field label="Neues Passwort (mindestens 12 Zeichen)" name="password" type="password"/><Field label="Passwort bestätigen" name="password_confirm" type="password"/><button>Passwort speichern</button></form>}</main>
 }
 
 type DashboardItem = {
@@ -379,7 +402,7 @@ type DashboardItem = {
   detail: string;
   startsAt: Date;
   color: string;
-  kind: "Termin" | "Aufenthalt" | "Geburtstag";
+  kind: "Termin" | "Betreuung" | "Geburtstag";
 };
 type CalendarTarget = {
   kind: "event" | "stay" | "birthday";
@@ -464,10 +487,10 @@ function Dashboard({
           ...staysByChild.flat().map((stay) => ({
             id: `stay-${stay.id}`,
             title: `${childNames.get(stay.child_id) || "Kind"} bei ${stay.responsible_display_name || "–"}`,
-            detail: stay.note || "Aufenthalt",
+            detail: stay.note || "Betreuungszeit",
             startsAt: new Date(stay.starts_at),
             color: people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)",
-            kind: "Aufenthalt" as const,
+            kind: "Betreuung" as const,
           })),
           ...birthdays.map((birthday) => {
             const birthDate = new Date(`${birthday.birth_date}T12:00:00`),
@@ -1080,6 +1103,7 @@ function CalendarScreen({
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
     });
   const now = new Date(),
+    canWriteCalendar = getSessionUser()?.role !== "VIEWER",
     availableEventTypes = getSessionUser()?.role === "ADMIN"
       ? sortedEventTypes(Object.keys(eventTypeLabels) as EventType[])
       : sortedEventTypes(getSessionUser()?.allowed_event_types || []),
@@ -1213,7 +1237,8 @@ function CalendarScreen({
           child_id: Number(f.get("child_id")) || null,
           color: f.get("color"),
           is_private: false,
-          visible_to_user_ids: f.getAll("visible_to_user_ids").map(Number),
+          // Sichtbarkeit ergibt sich aus Rubrik- und Kinderfreigaben.
+          visible_to_user_ids: null,
           recurrence_frequency: eventInterval
             ? eventMonthly
               ? "MONTHLY"
@@ -1359,6 +1384,11 @@ function CalendarScreen({
     event: CalendarEvent,
     scope: "occurrence" | "future" | "series" = "occurrence",
   ) {
+    if (!canWriteCalendar) {
+      const start = new Date(event.starts_at), end = new Date(event.ends_at);
+      setReadOnlyInfo({ title:event.title, message:`${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}${event.description ? `\n\n${event.description}` : ""}\n\nDu besitzt Leserechte und kannst diesen Termin deshalb nicht bearbeiten.` });
+      return;
+    }
     const interval = event.recurrence_interval || 1;
     setEventRepeatKind(
       event.recurrence_frequency === "MONTHLY"
@@ -1379,6 +1409,10 @@ function CalendarScreen({
   }
   function openDay(day: Date, dayStays: Stay[], selectedStay?: Stay) {
     const source = selectedStay || dayStays[0] || null;
+    if (!canWriteCalendar) {
+      if (source) setReadOnlyInfo({ title:`Betreuungszeit: ${children.find((child)=>child.id===source.child_id)?.display_name || "Kind"}`, message:`Bei ${source.responsible_display_name || "Person"}\n${new Date(source.starts_at).toLocaleString("de-DE")} – ${new Date(source.ends_at).toLocaleString("de-DE")}${source.note ? `\n\n${source.note}` : ""}\n\nDu besitzt Leserechte und kannst diese Betreuungszeit deshalb nicht bearbeiten.` });
+      return;
+    }
     const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
     const dayEnd = new Date(
       day.getFullYear(),
@@ -1497,6 +1531,7 @@ function CalendarScreen({
     setOpen("stay");
   }
   function openSeries(stay: Stay) {
+    if (!canWriteCalendar) return;
     const interval = stay.recurrence_interval_weeks || 1;
     setRepeatKind(
       stay.recurrence_frequency === "MONTHLY"
@@ -1568,7 +1603,7 @@ function CalendarScreen({
         ? "die gesamte Serie"
         : editScope === "future"
           ? "diesen und alle zukünftigen Termine"
-          : "diesen Aufenthalt";
+          : "diese Betreuungszeit";
     setDeleteProposalChoice({
       stayId: editingStay.id,
       scope: editScope,
@@ -1630,7 +1665,7 @@ function CalendarScreen({
                 ? "gesamte Serie"
                 : proposal.scope === "future"
                   ? "dieser und alle zukünftigen Termine"
-                  : "einzelner Aufenthalt";
+                  : "einzelne Betreuungszeit";
             const previousPerson = people.find(
               (person) => person.id === before.responsible_user_id,
             );
@@ -1654,7 +1689,7 @@ function CalendarScreen({
                     </>
                   ) : proposal.action === "DELETE" ? (
                     <>
-                      schlägt die Löschung eines Aufenthalts vor.
+                      schlägt die Löschung einer Betreuungszeit vor.
                       <small>
                         {request.child_name || "Kind"} · bisher bei{" "}
                         {previousPerson?.display_name || "unbekannt"} ·{" "}
@@ -1670,7 +1705,7 @@ function CalendarScreen({
                     </>
                   ) : proposal.action === "CREATE" ? (
                     <>
-                      schlägt einen neuen Aufenthalt bei{" "}
+                      schlägt eine neue Betreuungszeit bei{" "}
                       <strong>
                         {proposedPerson?.display_name || "unbekannt"}
                       </strong>{" "}
@@ -1760,7 +1795,7 @@ function CalendarScreen({
       {(series.length > 0 || eventSeries.length > 0) && (
         <details className="series-list calendar-collapsible">
           <summary>Periodische Einträge</summary>
-          <p>Aufenthalts- und Terminserien unabhängig vom angezeigten Monat verwalten.</p>
+          <p>Regelmäßige Betreuungszeiten und Terminserien unabhängig vom angezeigten Monat verwalten.</p>
           {series.map((stay) => (
             <article key={stay.recurrence_rule_id}>
               <div>
@@ -1789,7 +1824,7 @@ function CalendarScreen({
                   · Beginn: {new Date(stay.starts_at).toLocaleString("de-DE")}
                 </small>
               </div>
-              <button onClick={() => openSeries(stay)}>Serie bearbeiten</button>
+              {canWriteCalendar && <button onClick={() => openSeries(stay)}>Betreuungsserie bearbeiten</button>}
             </article>
           ))}
           {eventSeries.map((event) => (
@@ -1812,9 +1847,9 @@ function CalendarScreen({
                   {new Date(event.starts_at).toLocaleString("de-DE")}
                 </small>
               </div>
-              <button onClick={() => openCalendarEvent(event, "series")}>
+              {canWriteCalendar && <button onClick={() => openCalendarEvent(event, "series")}>
                 Terminserie bearbeiten
-              </button>
+              </button>}
             </article>
           ))}
         </details>
@@ -1834,7 +1869,7 @@ function CalendarScreen({
         ))}
         </div>
       </details>
-      <section className="monthcalendar">
+      <section className={`monthcalendar${canWriteCalendar ? "" : " calendar-readonly"}`}>
         <header className="calendar-navigation">
           <button
             onClick={() =>
@@ -1858,7 +1893,7 @@ function CalendarScreen({
           >
             <ChevronRight />
           </button>
-          <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>
+          {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
         </header>
         <div className="weekdays">
           {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
@@ -1880,8 +1915,7 @@ function CalendarScreen({
             const dayEvents = events.filter(
               (event) =>
                 !hiddenEventTypes.includes(event.event_type) &&
-                new Date(event.starts_at) < dayEnd &&
-                new Date(event.ends_at) > day,
+                calendarEventOccursOnDay(event, day, dayEnd),
             );
             const duplicateEventIds = new Set(
               dayEvents
@@ -1944,6 +1978,7 @@ function CalendarScreen({
                 key={day.toISOString()}
                 onClick={(event) => {
                   if ((event.target as HTMLElement).closest(".dayevent")) return;
+                  if (!canWriteCalendar) return;
                   setSelectedDay(day);
                   setEditingEvent(null);
                   setEventType("GENERAL");
@@ -1951,7 +1986,7 @@ function CalendarScreen({
                   setError("");
                   setOpen("event");
                 }}
-                title="Termin an diesem Tag anlegen"
+                title={canWriteCalendar ? "Termin an diesem Tag anlegen" : undefined}
                 style={dayEvents.some((event) => event.event_type === "WASTE") ? {
                   backgroundColor: "color-mix(in srgb, var(--waste) 9%, white)",
                 } : undefined}
@@ -2043,6 +2078,10 @@ function CalendarScreen({
                         }}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (!canWriteCalendar) {
+                            setReadOnlyInfo({ title:`Betreuung: ${child.display_name}`, message:`Standardmäßig bei ${responsible.display_name}.\n\nDies ist die hinterlegte Standardbetreuung und kein einzeln gespeicherter Termin.` });
+                            return;
+                          }
                           const startsAt = new Date(day);
                           const endsAt = new Date(dayEnd);
                           setCreateDraft({
@@ -2148,7 +2187,7 @@ function CalendarScreen({
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Vorheriger Monat"><ChevronLeft /></button>
           <h2>{month.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</h2>
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Nächster Monat"><ChevronRight /></button>
-          <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>
+          {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
         </footer>
       </section>
       </div>
@@ -2173,7 +2212,7 @@ function CalendarScreen({
             >
               ×
             </button>
-            <h2>{editingEvent || editingStay || stayToConvert ? "Termin bearbeiten" : "Termin eintragen"}</h2>
+            <h2>{open === "stay" ? (editingStay ? "Betreuungszeit bearbeiten" : "Betreuungszeit eintragen") : (editingEvent || stayToConvert ? "Termin bearbeiten" : "Termin eintragen")}</h2>
             {error && <p className="error">{error}</p>}
             {open === "event" ? (
               <>
@@ -2218,9 +2257,9 @@ function CalendarScreen({
                   Kind (optional)
                   <select
                     name="child_id"
-                    defaultValue={editingEvent?.child_id || stayToConvert?.child_id || (children.length === 1 ? children[0].id : "")}
+                    defaultValue={editingEvent?.child_id || stayToConvert?.child_id || ""}
                   >
-                    <option value="">Ganze Familie</option>
+                    <option value="">Kein Kind</option>
                     {children.map((c) => (
                       <option value={c.id}>{c.display_name}</option>
                     ))}
@@ -2335,11 +2374,6 @@ function CalendarScreen({
                     </select>
                   </label>
                 )}
-                <AudiencePicker
-                  key={`event-audience-${editingEvent?.id || "new"}`}
-                  people={people}
-                  initialValues={editingEvent?.visible_to_user_ids}
-                />
               </>
             ) : (
               <>
@@ -2388,7 +2422,7 @@ function CalendarScreen({
                   </select>
                 </label>
                 <label>
-                  Bei Person
+                  Das Kind ist bei
                   <select
                     name="responsible_user_id"
                     required
@@ -2758,9 +2792,9 @@ function CalendarScreen({
             >
               ×
             </button>
-            <h2>Aufenthalt anlegen?</h2>
+            <h2>Betreuungszeit anlegen?</h2>
             <p>
-              Du kannst den Aufenthalt beziehungsweise die Serie sofort anlegen
+              Du kannst die Betreuungszeit beziehungsweise die Serie sofort anlegen
               oder der aktuell zuständigen Person zur Bestätigung senden.
             </p>
             {error && <p className="error">{error}</p>}
@@ -2826,7 +2860,7 @@ function CalendarScreen({
             >
               ×
             </button>
-            <h2>Aufenthalt löschen?</h2>
+            <h2>Betreuungszeit löschen?</h2>
             <p>
               Du kannst als Administrator sofort löschen oder der aktuell
               zuständigen Person eine Löschanfrage senden.
@@ -3262,7 +3296,7 @@ function PeopleScreen({
                           name="color"
                           defaultValue={selected?.user.color || "#3BA4E5"}
                         />
-                        <span>Farbe für Aufenthalte dieser Person</span>
+                        <span>Farbe für Betreuungszeiten dieser Person</span>
                       </div>
                     </label>
                   </>
@@ -3808,19 +3842,12 @@ function HolidaysScreen({
       </header>
       {error && <p className="error">{error}</p>}
       {!childId && (
-        <p className="holidayhint">Wähle ein Kind aus, um schulindividuelle Brücken- und freie Tage sowie die Planungsaktionen anzuzeigen.</p>
+        <p className="holidayhint">Wähle ein Kind aus, um auch schulindividuelle Brücken- und freie Tage anzuzeigen.</p>
       )}
       {Object.entries(entriesByYear).map(([entryYear, entries]) => (
         <section className="holidayyear" key={entryYear}>
           <header>
             <h2>{entryYear}</h2>
-            <button
-              className="secondary"
-              disabled={!childId || entries.every(isAlreadyPlanned)}
-              onClick={() => entries.filter((entry) => !isAlreadyPlanned(entry)).forEach(addEntry)}
-            >
-              Alle verfügbaren zur Planung hinzufügen
-            </button>
           </header>
           <div className="holidaylist">
             {entries.map((entry) => {
@@ -3840,15 +3867,6 @@ function HolidaysScreen({
                     <h3>{entry.name} <span className="tag">{entry.kind === "FERIEN" ? "Ferien" : entry.kind === "FEIERTAG" ? "Feiertag" : "Schulkalender"}</span></h3>
                     <p>{date.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}{entry.endsOn !== entry.startsOn ? ` – ${new Date(`${entry.endsOn}T12:00:00`).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}</p>
                     {bridgeDate && <small>Möglicher Brückentag: {bridgeDate.toLocaleDateString("de-DE")}</small>}
-                  </div>
-                  <div className="holidayactions">
-                    <button
-                      disabled={!childId || alreadyPlanned}
-                      onClick={() => addEntry(entry)}
-                    >
-                      {alreadyPlanned ? "Bereits eingeplant" : "Zur Planung hinzufügen"}
-                    </button>
-                    {bridgeDate && <button className="secondary" disabled={!childId} onClick={() => { const day = `${bridgeDate.getFullYear()}-${String(bridgeDate.getMonth() + 1).padStart(2, "0")}-${String(bridgeDate.getDate()).padStart(2, "0")}`; onPlan({ name: `Brückentag zu ${entry.name}`, starts_on: day, ends_on: day, child_id: Number(childId) || null, kind: "BRUECKENTAG" }); }}>Brückentag hinzufügen</button>}
                   </div>
                 </article>
               );
@@ -3908,6 +3926,10 @@ function PlanningScreen({
   }, [sourceChildId, sourceYear, children.length]);
   function addSource(item: Holiday, kind: PlanningItem["kind"]) {
     setError("");
+    if (sourceInDraft(item)) {
+      setError("Dieser Zeitraum ist bereits im aktuellen Planungsentwurf enthalten.");
+      return;
+    }
     onChange([
       ...items,
       {
@@ -3920,6 +3942,13 @@ function PlanningScreen({
         ends_time: "",
       },
     ]);
+  }
+  function sourceInDraft(item: Holiday) {
+    const selectedChild = Number(sourceChildId) || null;
+    return items.some((entry) =>
+      entry.child_id === selectedChild && entry.name === item.name &&
+      entry.starts_on === item.starts_on && entry.ends_on === item.ends_on
+    );
   }
   function dragSource(event: React.DragEvent, item: Holiday, kind: PlanningItem["kind"]) {
     event.dataTransfer.effectAllowed = "copy";
@@ -4075,11 +4104,11 @@ function PlanningScreen({
           <div className="sourcecolumns">
             <details open>
               <summary>Schulferien <span>{sourceHolidays.length}</span></summary>
-              <div className="sourcecards">{sourceHolidays.map((item) => <article key={`${item.name}-${item.starts_on}`} draggable onDragStart={(e) => dragSource(e, item, "FERIEN")}><div><strong>{item.name}</strong><small>{new Date(`${item.starts_on}T12:00`).toLocaleDateString("de-DE")} – {new Date(`${item.ends_on}T12:00`).toLocaleDateString("de-DE")}</small></div><button onClick={() => addSource(item, "FERIEN")}>Hinzufügen</button></article>)}</div>
+              <div className="sourcecards">{sourceHolidays.map((item) => { const used=sourceInDraft(item); return <article className={used?"in-draft":""} key={`${item.name}-${item.starts_on}`} draggable={!used} onDragStart={(e) => !used && dragSource(e, item, "FERIEN")}><div><strong>{item.name}</strong><small>{new Date(`${item.starts_on}T12:00`).toLocaleDateString("de-DE")} – {new Date(`${item.ends_on}T12:00`).toLocaleDateString("de-DE")}</small></div><button disabled={used} onClick={() => addSource(item, "FERIEN")}>{used?"Im Entwurf":"Hinzufügen"}</button></article>})}</div>
             </details>
             <details open>
               <summary>Feiertage <span>{sourcePublic.length}</span></summary>
-              <div className="sourcecards">{sourcePublic.map((item) => <article key={`${item.name}-${item.starts_on}`} draggable onDragStart={(e) => dragSource(e, item, "FEIERTAG")}><div><strong>{item.name}</strong><small>{new Date(`${item.starts_on}T12:00`).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}</small></div><button onClick={() => addSource(item, "FEIERTAG")}>Hinzufügen</button></article>)}</div>
+              <div className="sourcecards">{sourcePublic.map((item) => { const used=sourceInDraft(item); return <article className={used?"in-draft":""} key={`${item.name}-${item.starts_on}`} draggable={!used} onDragStart={(e) => !used && dragSource(e, item, "FEIERTAG")}><div><strong>{item.name}</strong><small>{new Date(`${item.starts_on}T12:00`).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}</small></div><button disabled={used} onClick={() => addSource(item, "FEIERTAG")}>{used?"Im Entwurf":"Hinzufügen"}</button></article>})}</div>
             </details>
           </div>
         )}
@@ -4197,7 +4226,7 @@ function GlobalSearch({
         onChange={(event) => setQuery(event.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => window.setTimeout(() => setFocused(false), 160)}
-        placeholder="Kinder, Personen, Termine und Aufenthalte suchen …"
+        placeholder="Kinder, Personen, Termine und Betreuung suchen …"
         aria-label="FamilienPlan durchsuchen"
       />
       {query && (
@@ -4229,7 +4258,7 @@ function GlobalSearch({
                   {result.kind === "event"
                     ? "Termin"
                     : result.kind === "stay"
-                      ? "Aufenthalt"
+                      ? "Betreuung"
                       : result.kind === "child"
                         ? "Kind"
                         : result.kind === "birthday"
@@ -4336,12 +4365,6 @@ function App() {
             "--green",
             t.primary_color,
           );
-          document.documentElement.style.setProperty(
-            "--holiday",
-            t.holiday_color,
-          );
-          document.documentElement.style.setProperty("--birthday", t.birthday_color);
-          document.documentElement.style.setProperty("--school", t.school_color);
         })
         .catch(() => {});
       api<CalendarColorPreferences>("/settings/calendar-colors")
@@ -4840,19 +4863,22 @@ function CalendarSourceOverview() {
 
 type AuditEntry = { id:number; user_id:number|null; user_name:string; action:string; target_type:string|null; target_id:string|null; details:Record<string,unknown>; ip_address:string|null; created_at:string };
 const auditActionLabels: Record<string,string> = {
+  PASSWORD_CHANGED:"hat das eigene Passwort geändert",
+  PASSWORD_RESET_REQUESTED:"hat einen Passwort-Reset angefordert",
+  PASSWORD_RESET_COMPLETED:"hat das Passwort über einen Reset-Link geändert",
   LOGIN:"hat sich angemeldet", LOGOUT:"hat sich abgemeldet", LOGIN_FAILED:"Anmeldung fehlgeschlagen",
   INITIAL_ADMIN_CREATED:"hat FamilienPlan eingerichtet", PERSON_ACCESS_CHANGED:"hat die Rechte einer Person geändert", PERSON_DELETED:"hat eine Person gelöscht",
   INVITATION_CREATED:"hat eine Einladung erstellt", INVITATION_RENEWED:"hat einen Einladungslink erneuert", INVITATION_SENT:"hat eine Einladung versendet", INVITATION_ACCEPTED:"hat eine Einladung angenommen",
   CHILD_CREATED:"hat ein Kind angelegt", CHILD_CHANGED:"hat ein Kind geändert", CHILD_PERMISSION_CHANGED:"hat Kinderrechte geändert",
-  STAY_CREATED:"hat einen Aufenthalt angelegt", STAY_CHANGED:"hat einen Aufenthalt geändert", STAY_DELETED:"hat einen Aufenthalt gelöscht", STAY_SERIES_CREATED:"hat eine Aufenthaltsserie angelegt", STAY_SERIES_CHANGED:"hat eine Aufenthaltsserie geändert",
-  STAY_SERIES_EXTENDED:"hat eine Aufenthaltsserie verlängert", NEW_STAY_PROPOSED:"hat einen neuen Aufenthalt vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Aufenthaltsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen eines Aufenthalts vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",
+  STAY_CREATED:"hat eine Betreuungszeit angelegt", STAY_CHANGED:"hat eine Betreuungszeit geändert", STAY_DELETED:"hat eine Betreuungszeit gelöscht", STAY_SERIES_CREATED:"hat eine Betreuungsserie angelegt", STAY_SERIES_CHANGED:"hat eine Betreuungsserie geändert",
+  STAY_SERIES_EXTENDED:"hat eine Betreuungsserie verlängert", NEW_STAY_PROPOSED:"hat eine neue Betreuungszeit vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Betreuungsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen einer Betreuungszeit vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",
   CALENDAR_EVENT_CREATED:"hat einen Termin angelegt", CALENDAR_EVENT_CHANGED:"hat einen Termin geändert", CALENDAR_EVENT_DELETED:"hat einen Termin gelöscht", CALENDAR_EVENT_SERIES_CREATED:"hat eine Terminserie angelegt", CALENDAR_EVENT_SERIES_CHANGED:"hat eine Terminserie geändert", CALENDAR_EVENT_SERIES_DELETED:"hat eine Terminserie gelöscht",
   BIRTHDAY_CREATED:"hat einen Geburtstag angelegt", BIRTHDAY_CHANGED:"hat einen Geburtstag geändert", BIRTHDAY_DELETED:"hat einen Geburtstag gelöscht",
   SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
   SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender eingerichtet",
   SYSTEM_UPDATE_REQUESTED:"hat ein Systemupdate gestartet", IMPERSONATION_STARTED:"hat die Ansicht einer Person übernommen", IMPERSONATION_STOPPED:"hat die übernommene Ansicht beendet",
 };
-const auditTargetLabels:Record<string,string>={user:"Person",child:"Kind",stay:"Aufenthalt",recurrence_rule:"Aufenthaltsserie",calendar_event:"Termin",calendar_event_series:"Terminserie",birthday:"Geburtstag",invitation:"Einladung",change_request:"Anfrage",calendar_source:"Kalenderquelle",setting:"Einstellung",system:"System",username:"Benutzername"};
+const auditTargetLabels:Record<string,string>={user:"Person",child:"Kind",stay:"Betreuungszeit",recurrence_rule:"Betreuungsserie",calendar_event:"Termin",calendar_event_series:"Terminserie",birthday:"Geburtstag",invitation:"Einladung",change_request:"Anfrage",calendar_source:"Kalenderquelle",setting:"Einstellung",system:"System",username:"Benutzername"};
 const auditDetailLabels:Record<string,string>={title:"Titel",name:"Name",display_name:"Anzeigename",event_type:"Terminart",starts_at:"Beginn",ends_at:"Ende",birth_date:"Geburtsdatum",description:"Beschreibung",note:"Notiz",scope:"Umfang",affected:"Betroffene Einträge",occurrences:"Einträge",children:"Freigegebene Kinder",role:"Rolle",email:"E-Mail-Adresse",user_id:"Person",responsible_user_id:"Zuständige Person",child_id:"Kind",from_version:"Ausgangsversion",removed:"Entfernt",events:"Termine",visibility:"Sichtbar für",changed_values:"Geänderte Werte"};
 
 function AuditLogSettings({ people }: { people: User[] }) {
@@ -4911,6 +4937,7 @@ function SettingsScreen({
     [updateCheckMessage, setUpdateCheckMessage] = useState(""),
     [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
     [error, setError] = useState("");
+  async function changePassword(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");setSaved(false);const form=e.currentTarget,f=new FormData(form);try{await api("/profile/password",{method:"PUT",body:JSON.stringify({current_password:f.get("current_password"),password:f.get("password"),password_confirm:f.get("password_confirm")})});form.reset();setSaved(true)}catch(x){setError((x as Error).message)}}
   useEffect(() => {
     api<{ primary_color: string; holiday_color: string; birthday_color: string; school_color: string }>(
       "/settings/theme",
@@ -4920,11 +4947,14 @@ function SettingsScreen({
       setBirthdayColor(r.birthday_color);
       setSchoolColor(r.school_color);
       document.documentElement.style.setProperty("--green", r.primary_color);
-      document.documentElement.style.setProperty("--holiday", r.holiday_color);
-      document.documentElement.style.setProperty("--birthday", r.birthday_color);
-      document.documentElement.style.setProperty("--school", r.school_color);
     });
-    api<CalendarColorPreferences>("/settings/calendar-colors").then(setCalendarColors);
+    api<CalendarColorPreferences>("/settings/calendar-colors").then((colors) => {
+      setCalendarColors(colors);
+      document.documentElement.style.setProperty("--holiday", colors.holiday_color);
+      document.documentElement.style.setProperty("--birthday", colors.birthday_color);
+      document.documentElement.style.setProperty("--school", colors.school_color);
+      document.documentElement.style.setProperty("--waste", colors.waste_color);
+    });
   }, []);
   function preview(value: string) {
     setColor(value);
@@ -5048,6 +5078,14 @@ function SettingsScreen({
           {user.display_name}
         </div>
         <button onClick={savePersonColor}>Profil speichern</button>
+        <form className="password-settings" onSubmit={changePassword}>
+          <h2>Passwort ändern</h2>
+          <p className="muted">Dabei werden alle anderen angemeldeten Geräte abgemeldet.</p>
+          <Field label="Aktuelles Passwort" name="current_password" type="password" />
+          <Field label="Neues Passwort (mindestens 12 Zeichen)" name="password" type="password" />
+          <Field label="Neues Passwort bestätigen" name="password_confirm" type="password" />
+          <button>Passwort ändern</button>
+        </form>
       </section>}
       {settingsSection === "calendar" && <section id="settings-calendar" className="themebox settings-card">
         <h2>Meine Kalenderfarben</h2>
@@ -5084,60 +5122,8 @@ function SettingsScreen({
             <code>{color.toUpperCase()}</code>
           </div>
           <div className="themepreview">Vorschau</div>
-          <h3>Ferienfarbe</h3>
-          <p className="muted">
-            Schraffierung und Beschriftung der Schulferien im Kalender.
-          </p>
-          <div className="themepicker">
-            <input
-              type="color"
-              value={holidayColor}
-              onChange={(e) => {
-                setHolidayColor(e.target.value);
-                document.documentElement.style.setProperty(
-                  "--holiday",
-                  e.target.value,
-                );
-                setSaved(false);
-              }}
-              aria-label="Ferienfarbe auswählen"
-            />
-            <code>{holidayColor.toUpperCase()}</code>
-          </div>
-          <div className="holidaypreview">Schulferien</div>
-          <h3>Geburtstagsfarbe</h3>
-          <p className="muted">Diese Farbe gilt für alle Geburtstage im Kalender.</p>
-          <div className="themepicker">
-            <input
-              type="color"
-              value={birthdayColor}
-              onChange={(e) => {
-                setBirthdayColor(e.target.value);
-                document.documentElement.style.setProperty("--birthday", e.target.value);
-                setSaved(false);
-              }}
-              aria-label="Geburtstagsfarbe auswählen"
-            />
-            <code>{birthdayColor.toUpperCase()}</code>
-          </div>
-          <div className="birthdaypreview" style={{ backgroundColor: `color-mix(in srgb, ${birthdayColor} 24%, white)`, borderLeftColor: birthdayColor, color: birthdayColor }}>🎂 Geburtstag</div>
-          <h3>Schulfarbe</h3>
-          <p className="muted">Diese Farbe gilt für alle Termine der Terminart Schule.</p>
-          <div className="themepicker">
-            <input
-              type="color"
-              value={schoolColor}
-              onChange={(e) => {
-                setSchoolColor(e.target.value);
-                document.documentElement.style.setProperty("--school", e.target.value);
-                setSaved(false);
-              }}
-              aria-label="Schulfarbe auswählen"
-            />
-            <code>{schoolColor.toUpperCase()}</code>
-          </div>
-          <div className="birthdaypreview" style={{ backgroundColor: `color-mix(in srgb, ${schoolColor} 20%, white)`, borderLeftColor: schoolColor, color: schoolColor }}>🏫 Schule</div>
-          <button onClick={save}>Farbe speichern</button>
+          <p className="hint">Farben für Schule, Ferien, Geburtstage und Abfall stellst du ausschließlich im Bereich „Kalender“ ein.</p>
+          <button onClick={save}>Akzentfarbe speichern</button>
         </section>
       )}
       </div>
@@ -5216,7 +5202,7 @@ function IntegrationSettings() {
     {showOutbox && <div className="outbox"><header><strong>Letzte Zustellungen</strong><button className="quiet" onClick={()=>void reload()}>Aktualisieren</button></header>{outbox.length===0?<p className="muted">Noch keine Nachrichten vorhanden.</p>:outbox.map((item)=><article key={item.id}><span className={`delivery-state ${item.delivered_at?"sent":item.last_error?"failed":"waiting"}`}>{item.delivered_at?"Versendet":item.last_error?"Fehlgeschlagen":"Wartet"}</span><div><strong>{item.channel==="email"?"E-Mail":"Webhook"} · {item.event_type}</strong><small>An: {item.recipient} · {new Date(item.created_at).toLocaleString("de-DE")}{item.attempts?` · ${item.attempts} Versuche`:""}</small>{item.last_error&&<p className="delivery-error">{item.last_error}</p>}</div></article>)}</div>}
     </div>
     <div className="integration-card">
-    <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen. Kalenderdaten einschließlich Aufenthalten: <code>/api/v1/integrations/v1/calendar</code></p></div><span className="integration-badge">Nur Lesen</span></div>
+    <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen. Kalenderdaten einschließlich Betreuungszeiten: <code>/api/v1/integrations/v1/calendar</code></p></div><span className="integration-badge">Nur Lesen</span></div>
     <p className="muted">Der Schlüssel wird nur einmal vollständig angezeigt. Basis: <code>/api/v1/integrations/v1</code></p>
     <fieldset><legend>Freigegebene Kinder</legend>{apiChildren.map((child)=><label key={child.id} className="checkline"><input type="checkbox" checked={selectedChildren.includes(child.id)} onChange={(e)=>setSelectedChildren(e.target.checked?[...selectedChildren,child.id]:selectedChildren.filter((id)=>id!==child.id))}/>{child.display_name}</label>)}<label className="checkline"><input type="checkbox" checked={privateAccess} onChange={(e)=>setPrivateAccess(e.target.checked)}/>Auch private Termine und Geburtstage freigeben</label></fieldset>
     <div className="buttonrow"><input value={tokenName} onChange={(e)=>setTokenName(e.target.value)} aria-label="Name des API-Schlüssels"/><button onClick={createToken}>API-Schlüssel erstellen</button></div>
@@ -5265,7 +5251,7 @@ class AppErrorBoundary extends React.Component<
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      {location.pathname.startsWith("/invite/") ? <InviteAccept /> : <App />}
+      {location.pathname.startsWith("/invite/") ? <InviteAccept /> : location.pathname.startsWith("/reset-password/") ? <ResetPassword /> : <App />}
     </AppErrorBoundary>
   </React.StrictMode>,
 );

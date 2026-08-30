@@ -23,8 +23,8 @@ from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
-from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, get_waste_config, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -241,6 +241,38 @@ def login(data: Login, request: Request, response: Response, db: Session = Depen
     return result
 
 
+@router.post("/auth/password/forgot", status_code=202)
+def forgot_password(data: PasswordForgot, request: Request, db: Session = Depends(get_db)):
+    """Always answer identically so an address cannot be tested for membership."""
+    user = db.scalar(select(User).where(func.lower(User.email) == str(data.email).lower(), User.is_active.is_(True), User.is_pending.is_(False)))
+    if user:
+        raw = new_token()
+        db.execute(update(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None)).values(used_at=utcnow()))
+        db.add(PasswordResetToken(user_id=user.id, token_hash=token_hash(raw), expires_at=utcnow() + timedelta(hours=1)))
+        from app.integrations import mail_config
+        app_url = mail_config(db).get("app_url") or settings.app_origin
+        queue_mail(db, user.id, f"password-reset:{user.id}:{uuid.uuid4().hex}", "password.reset", "Passwort für FamilienPlan zurücksetzen", "Über diesen Link kannst du innerhalb einer Stunde ein neues Passwort festlegen. Falls du das nicht angefordert hast, ignoriere diese Nachricht.", f"{app_url}/reset-password/{raw}")
+        audit(db, request, "PASSWORD_RESET_REQUESTED", user.id, ("user", str(user.id)))
+    db.commit()
+    return {"message": "Wenn die E-Mail-Adresse registriert ist, wurde ein Link zum Zurücksetzen versendet."}
+
+
+@router.post("/auth/password/reset")
+def reset_password(data: PasswordReset, request: Request, db: Session = Depends(get_db)):
+    reset = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash(data.token)).with_for_update())
+    if not reset or reset.used_at or reset.expires_at <= utcnow():
+        raise HTTPException(status.HTTP_410_GONE, "Dieser Link ist ungültig oder abgelaufen")
+    user = db.get(User, reset.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status.HTTP_410_GONE, "Dieser Link ist ungültig oder abgelaufen")
+    user.password_hash = hash_password(data.password)
+    reset.used_at = utcnow()
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    audit(db, request, "PASSWORD_RESET_COMPLETED", user.id, ("user", str(user.id)))
+    db.commit()
+    return {"message": "Das Passwort wurde geändert. Du kannst dich jetzt anmelden."}
+
+
 @router.get("/auth/me", response_model=SessionOut)
 def me(request: Request, user: User = Depends(current_user), admin_session_token: str | None = Cookie(default=None)):
     session = getattr(request.state, "auth_session", None)
@@ -398,7 +430,12 @@ def resolved_calendar_colors(db: Session, user_id: int) -> dict:
         "waste_color": waste.get("color", "#5C8B58"),
     }
     row = db.get(ApplicationSetting, f"calendar_colors_{user_id}")
-    return {**defaults, **(row.value if row else {})}
+    personal = dict(row.value or {}) if row else {}
+    # A short-lived older version initialized the personal holiday color as
+    # black. Treat only that legacy value as unset, like the global fallback.
+    if str(personal.get("holiday_color", "")).upper() == "#000000":
+        personal.pop("holiday_color", None)
+    return {**defaults, **personal}
 
 
 @router.get("/settings/calendar-colors", response_model=CalendarColorPreferences)
@@ -690,6 +727,23 @@ def update_own_profile(data: ProfileUpdate, request: Request, db: Session = Depe
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.put("/profile/password", status_code=204, dependencies=[Depends(require_csrf)])
+def change_own_password(data: PasswordChange, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Das aktuelle Passwort ist nicht korrekt")
+    if verify_password(data.password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Das neue Passwort muss sich vom bisherigen unterscheiden")
+    user.password_hash = hash_password(data.password)
+    current_session = getattr(request.state, "auth_session", None)
+    statement = delete(UserSession).where(UserSession.user_id == user.id)
+    if current_session:
+        statement = statement.where(UserSession.id != current_session.id)
+    db.execute(statement)
+    audit(db, request, "PASSWORD_CHANGED", user.id, ("user", str(user.id)))
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/invitations", response_model=InvitationOut, status_code=201, dependencies=[Depends(require_csrf)])
@@ -1024,9 +1078,9 @@ async def synchronize_child_calendar(db: Session, child: Child) -> dict:
     text_data = re.sub(r"\r?\n[ \t]", "", response.text)
     if "BEGIN:VCALENDAR" not in text_data:
         return {"imported": 0, "message": "Die gespeicherte Adresse ist eine Webseite, aber kein öffentlicher iCal-Kalender"}
-    source = db.scalar(select(CalendarSource).where(CalendarSource.key == f"child-{child_id}-school"))
+    source = db.scalar(select(CalendarSource).where(CalendarSource.key == f"child-{child.id}-school"))
     if not source:
-        source = CalendarSource(key=f"child-{child_id}-school", name=child.school or "Schulkalender", kind="SCHOOL", url=url)
+        source = CalendarSource(key=f"child-{child.id}-school", name=child.school or "Schulkalender", kind="SCHOOL", url=url)
         db.add(source); db.flush()
     imported = 0
     seen_external_ids: set[str] = set()
@@ -1051,6 +1105,11 @@ async def synchronize_child_calendar(db: Session, child: Child) -> dict:
             event = CalendarEvent(source_id=source.id, external_id=external_id); db.add(event)
         event.child_id, event.title, event.description = child.id, fields["SUMMARY"], fields.get("DESCRIPTION")
         event.starts_at, event.ends_at, event.all_day, event.category, event.event_type, event.url = starts_at, ends_at, all_day, "SCHOOL", "SCHOOL", fields.get("URL")
+        event.raw_data = {
+            "calendar_kind": "school",
+            "all_day_start": starts_at.date().isoformat() if all_day else None,
+            "all_day_end_exclusive": ends_at.date().isoformat() if all_day else None,
+        }
         imported += 1
     removed = 0
     for stale in db.scalars(select(CalendarEvent).where(CalendarEvent.source_id == source.id)):
@@ -1136,10 +1195,10 @@ def stays(child_id: int, from_at: datetime | None = None, to_at: datetime | None
 @router.post("/stays", response_model=StayOut, status_code=201, dependencies=[Depends(require_csrf)])
 def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if "STAY" not in (user.allowed_event_types or []):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Aufenthalt ist für dich nicht freigeschaltet")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Betreuung ist für dich nicht freigeschaltet")
     assert_child_access(db, user, data.child_id, edit=True)
     if user.role != Role.ADMIN and data.status == PlanStatus.CONFIRMED:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Aufenthalte erfordern Zustimmung")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Betreuungszeiten erfordern Zustimmung")
     if data.recurrence_interval_weeks and data.recurrence_until:
         duration_minutes = int((data.ends_at - data.starts_at).total_seconds() / 60)
         matching_rule = None
@@ -1240,7 +1299,7 @@ def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User =
 @router.post("/stay-proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
 def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if "STAY" not in (user.allowed_event_types or []):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Aufenthalt ist für dich nicht freigeschaltet")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Betreuung ist für dich nicht freigeschaltet")
     assert_child_access(db, user, data.child_id, edit=True)
     child = db.get(Child, data.child_id)
     if data.recurrence_interval_weeks and data.recurrence_until:
@@ -1277,7 +1336,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None},
     )
     db.add(item); db.flush()
-    notify(db, affected_id, "STAY_PROPOSAL", "Neuer Aufenthaltsvorschlag", f"{user.display_name} schlägt einen neuen Aufenthalt vor.", item.id)
+    notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine neue Betreuungszeit vor.", item.id)
     audit(db, request, "NEW_STAY_PROPOSED", user.id, ("change_request", str(item.id)), {"occurrences": len(created)})
     db.commit(); db.refresh(item)
     return change_request_payload(db, item)
@@ -1287,14 +1346,14 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
 def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     stay = db.get(Stay, stay_id)
     if not stay:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Aufenthalt nicht gefunden")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
     if user.role != Role.ADMIN and stay.status == PlanStatus.CONFIRMED and not getattr(request.state, "approved_change", False):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Aufenthalte müssen über eine Änderungsanfrage geändert werden")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Betreuungszeiten müssen über eine Änderungsanfrage geändert werden")
     rule = inferred_recurrence_rule(db, stay)
     rule_id = rule.id if rule else None
     if data.scope != "occurrence" and not rule_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Dieser Aufenthalt gehört zu keiner Serie")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Diese Betreuungszeit gehört zu keiner Serie")
     query = select(Stay).where(Stay.id == stay.id)
     if data.scope == "future":
         query = select(Stay).where(((Stay.recurrence_rule_id == rule_id) | (Stay.id == stay.id)), Stay.starts_at >= stay.starts_at)
@@ -1405,7 +1464,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
 def stay_scope_targets(db: Session, stay: Stay, scope: str) -> list[Stay]:
     rule = inferred_recurrence_rule(db, stay)
     if scope != "occurrence" and not rule:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Dieser Aufenthalt gehört zu keiner Serie")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Diese Betreuungszeit gehört zu keiner Serie")
     query = select(Stay).where(Stay.id == stay.id)
     if scope == "future":
         query = select(Stay).where(
@@ -1423,7 +1482,7 @@ def delete_stay(stay_id: int, scope: str, request: Request, db: Session = Depend
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ungültiger Löschumfang")
     stay = db.get(Stay, stay_id)
     if not stay:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Aufenthalt nicht gefunden")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     targets = stay_scope_targets(db, stay, scope)
     for target in targets:
         db.delete(target)
@@ -1438,7 +1497,7 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ungültiger Löschumfang")
     stay = db.get(Stay, stay_id)
     if not stay:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Aufenthalt nicht gefunden")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
     child = db.get(Child, stay.child_id)
     affected_id = stay.responsible_user_id if stay.responsible_user_id != user.id else child.default_responsible_user_id
@@ -1451,7 +1510,7 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
         proposed_data={"action": "DELETE", "scope": scope},
     )
     db.add(item); db.flush()
-    notify(db, affected_id, "STAY_DELETE_PROPOSAL", "Aufenthalt löschen", f"{user.display_name} schlägt vor, einen Aufenthalt zu löschen.", item.id)
+    notify(db, affected_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", f"{user.display_name} schlägt vor, eine Betreuungszeit zu löschen.", item.id)
     audit(db, request, "STAY_DELETE_PROPOSED", user.id, ("change_request", str(item.id)), {"scope": scope})
     db.commit(); db.refresh(item)
     return change_request_payload(db, item)
@@ -1477,7 +1536,7 @@ def change_request_details(db: Session, item: ChangeRequest) -> str:
     child = db.get(Child, stay.child_id) if stay else None
     if proposed.get("action") == "GROUP_CREATE":
         return f"{proposed.get('title') or 'Gruppenplanung'} · {len(proposed.get('items') or [])} Zeiträume"
-    parts = [child.display_name if child else "Aufenthalt"]
+    parts = [child.display_name if child else "Betreuung"]
 
     def format_date(value):
         if not value:
@@ -1625,7 +1684,7 @@ def change_requests(db: Session = Depends(get_db), user: User = Depends(current_
 def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     stay = db.get(Stay, stay_id)
     if not stay:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Aufenthalt nicht gefunden")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
     # The person who currently has the child in the selected period confirms.
     # If the matched database row already belongs to the requester, look for
@@ -1656,7 +1715,7 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
     proposed = data.model_dump(mode="json")
     item = ChangeRequest(object_type="stay", object_id=stay.id, requested_by_id=user.id, affected_user_id=affected.id, status=PlanStatus.PROPOSED, before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "note": stay.note}, proposed_data=proposed)
     db.add(item); db.flush()
-    notify(db, affected.id, "STAY_PROPOSAL", "Neue Aufenthaltsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
+    notify(db, affected.id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
     audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected.id, "scope": data.scope})
     db.commit(); db.refresh(item)
     return change_request_payload(db, item)
@@ -1677,7 +1736,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         request.state.approved_change = True
         item.status = PlanStatus.CONFIRMED
         is_group = item.proposed_data.get("action") == "GROUP_CREATE"
-        notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt" if is_group else "Aufenthaltsanfrage bestätigt", f"{user.display_name} hat deinen Vorschlag bestätigt. {details}{f' · Kommentare: {decision_comment}' if decision_comment else ''}")
+        notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt" if is_group else "Betreuungsanfrage bestätigt", f"{user.display_name} hat deinen Vorschlag bestätigt. {details}{f' · Kommentare: {decision_comment}' if decision_comment else ''}")
         if item.proposed_data.get("action") == "GROUP_CREATE":
             proposed_stays = [db.get(Stay, stay_id) for stay_id in item.proposed_data.get("stay_ids", [])]
             confirmed_count = 0
@@ -1728,7 +1787,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                     rule = db.get(RecurrenceRule, rule_id)
                     if rule:
                         db.delete(rule)
-        notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt" if item.proposed_data.get("action") == "GROUP_CREATE" else "Aufenthaltsanfrage abgelehnt", f"{user.display_name} hat den Vorschlag abgelehnt. {details} · Begründung: {decision_comment}")
+        notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt" if item.proposed_data.get("action") == "GROUP_CREATE" else "Betreuungsanfrage abgelehnt", f"{user.display_name} hat den Vorschlag abgelehnt. {details} · Begründung: {decision_comment}")
         db.commit()
     else:
         if not data.counter_proposal:
@@ -1761,7 +1820,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         else:
             item.proposed_data = data.counter_proposal.model_dump(mode="json") if hasattr(data.counter_proposal, "model_dump") else data.counter_proposal
         item.status = PlanStatus.CHANGE_PROPOSED
-        notify(db, previous_requester, "STAY_COUNTER", "Gegenvorschlag zur Gruppenplanung" if item.proposed_data.get("action") == "GROUP_CREATE" else "Gegenvorschlag zum Aufenthalt", f"{user.display_name} hat einen Gegenvorschlag gesendet. {change_request_details(db, item)}{f' · Kommentare: {decision_comment}' if decision_comment else ''}", item.id)
+        notify(db, previous_requester, "STAY_COUNTER", "Gegenvorschlag zur Gruppenplanung" if item.proposed_data.get("action") == "GROUP_CREATE" else "Gegenvorschlag zur Betreuung", f"{user.display_name} hat einen Gegenvorschlag gesendet. {change_request_details(db, item)}{f' · Kommentare: {decision_comment}' if decision_comment else ''}", item.id)
         db.commit()
     db.refresh(item)
     return change_request_payload(db, item)
@@ -2024,7 +2083,7 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
             "kind": "stay",
             "id": stay.id,
             "title": f"{child.display_name} bei {person.display_name}",
-            "subtitle": stay.note or "Aufenthalt",
+            "subtitle": stay.note or "Betreuung",
             "starts_at": stay.starts_at,
         }
         for stay, child, person in found_stays

@@ -2,6 +2,20 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.30 – 30. August 2026
+
+### Kalender, Rechte und Kontosicherheit
+
+- „Aufenthalt“ heißt in der Oberfläche verständlicher „Betreuung“ beziehungsweise „Betreuungszeit“; Formulare erklären mit „Das Kind ist bei“ eindeutig den Zweck.
+- Normale Termine verwenden standardmäßig „Kein Kind“, während Betreuungszeiten weiterhin zwingend einem Kind zugeordnet werden.
+- Benutzer mit reinen Leserechten sehen keine Schaltflächen oder Eingabemasken zum Anlegen, Bearbeiten und Löschen; vorhandene Einträge öffnen eine reine Detailansicht.
+- Die Sichtbarkeit normaler Termine richtet sich einheitlich nach Rubrik- und Kinderfreigaben statt nach einer zusätzlichen Personenauswahl.
+- Bereits gewählte Ferien und Feiertage sind im Planungsentwurf gesperrt und können nicht doppelt übernommen werden; Planungsaktionen wurden aus der Ferienübersicht entfernt.
+- Persönliche Kalenderfarben besitzen nur noch eine eindeutige Quelle. Die globale Darstellung verwaltet ausschließlich die Akzentfarbe und überschreibt keine persönlichen Kalenderfarben mehr.
+- Eigene Passwörter lassen sich in den Einstellungen ändern. „Passwort vergessen“ verwendet einen eine Stunde gültigen Einmal-Link, beendet alte Sitzungen und protokolliert niemals Passwörter, Hashes oder Reset-Token.
+- Die globale Suche bleibt auf Desktop und Mobilgeräten fest sichtbar; aufklappbare Kalenderbereiche wurden einheitlich gestaltet.
+- Die manuelle Schulkalender-Synchronisierung funktioniert wieder. Ganztägige Schul- und Abfalltermine werden über lokale Datumsgrenzen ohne UTC-Tagesverschiebung ausgewertet.
+
 ## 0.1.29 – 30. August 2026
 
 ### Navigation, Kalender und Logbuch

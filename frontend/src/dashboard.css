@@ -146,16 +146,20 @@
 }
 
 .globalheader {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 8;
+  left: 260px;
+  right: 0;
+  z-index: 18;
   display: flex;
   justify-content: center;
-  margin: calc(clamp(1.5rem, 4vw, 4rem) * -1) 0 2rem;
+  margin: 0;
   padding: 1rem 4rem 0.8rem;
   background: color-mix(in srgb, var(--cream) 94%, transparent);
   backdrop-filter: blur(10px);
 }
+
+.content { padding-top: 6.5rem; }
 
 .globalsearch {
   position: relative;

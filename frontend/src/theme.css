@@ -91,6 +91,8 @@
 }
 .settings-layout .globaltheme { margin-top: 0; }
 .settings-tab-content { grid-template-columns: minmax(0, 1fr); max-width: 1000px; }
+.password-settings { margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+.password-settings h2 { margin-top:0; }
 .settings-tab-content .settings-card { grid-column: 1; }
 .audit-log { max-width:none; }
 .audit-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }

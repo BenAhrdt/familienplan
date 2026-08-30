@@ -32,6 +32,34 @@ class Login(BaseModel):
     remember: bool = False
 
 
+class PasswordChange(BaseModel):
+    current_password: str
+    password: str = Field(min_length=12, max_length=256)
+    password_confirm: str
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.password_confirm:
+            raise ValueError("Die Passwörter stimmen nicht überein")
+        return self
+
+
+class PasswordForgot(BaseModel):
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    token: str
+    password: str = Field(min_length=12, max_length=256)
+    password_confirm: str
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.password_confirm:
+            raise ValueError("Die Passwörter stimmen nicht überein")
+        return self
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

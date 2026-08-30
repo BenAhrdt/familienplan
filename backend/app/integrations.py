@@ -61,7 +61,7 @@ def queue_mail(db, user_id: int, event_key: str, event_type: str, subject: str, 
                 payload={"subject": subject, "body": body, "action_url": action_url, "entries": [entry]}))
         return
     db.add(OutboxMessage(channel="email", recipient_key=user.email, event_key=event_key,
-                         event_type=event_type, payload={"subject": subject, "body": body, "action_url": action_url}))
+                         event_type=event_type, payload={"subject": subject, "body": body, "action_url": action_url, "event_type": event_type}))
 
 
 def queue_webhooks(db, event_key: str, event_type: str, data: dict):
@@ -85,7 +85,8 @@ def _send_mail(config: dict, recipient: str, payload: dict):
     if payload.get("action_url"):
         import html
         subject, body, url = (html.escape(str(payload[key])) for key in ("subject", "body", "action_url"))
-        message.add_alternative(f'''<!doctype html><html><body style="margin:0;background:#f5f6f2;font-family:Arial,sans-serif;color:#23332e"><div style="max-width:600px;margin:30px auto;background:white;border:1px solid #dfe5e0;border-radius:14px;padding:32px"><h1 style="font-family:Georgia,serif;font-size:28px">{subject}</h1><p style="line-height:1.6;white-space:pre-line">{body}</p><p style="margin-top:28px"><a href="{url}" style="display:inline-block;background:#3ba4e5;color:white;text-decoration:none;font-weight:bold;padding:13px 18px;border-radius:9px">Vorschlag in FamilienPlan öffnen</a></p><p style="margin-top:24px;color:#708079;font-size:12px">Falls der Button nicht funktioniert:<br>{url}</p></div></body></html>''', subtype="html")
+        button_label = "Passwort festlegen" if payload.get("event_type") == "password.reset" else "In FamilienPlan öffnen"
+        message.add_alternative(f'''<!doctype html><html><body style="margin:0;background:#f5f6f2;font-family:Arial,sans-serif;color:#23332e"><div style="max-width:600px;margin:30px auto;background:white;border:1px solid #dfe5e0;border-radius:14px;padding:32px"><h1 style="font-family:Georgia,serif;font-size:28px">{subject}</h1><p style="line-height:1.6;white-space:pre-line">{body}</p><p style="margin-top:28px"><a href="{url}" style="display:inline-block;background:#3ba4e5;color:white;text-decoration:none;font-weight:bold;padding:13px 18px;border-radius:9px">{button_label}</a></p><p style="margin-top:24px;color:#708079;font-size:12px">Falls der Button nicht funktioniert:<br>{url}</p></div></body></html>''', subtype="html")
     smtp_class = smtplib.SMTP_SSL if config.get("security") == "ssl" else smtplib.SMTP
     with smtp_class(config["host"], config["port"], timeout=15) as smtp:
         if config.get("security") == "starttls":

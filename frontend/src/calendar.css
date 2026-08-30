@@ -10,6 +10,7 @@
   overflow: hidden;
   margin-bottom: 1.8rem;
 }
+.calendar-readonly .dayevent,.calendar-readonly .daystay { cursor:default; }
 .calendar-footer-nav {
   border-top: 1px solid var(--line);
   background: #fbfcfa;
@@ -19,23 +20,25 @@
 .calendar-content .monthcalendar { order:1; }
 .calendar-content .calendar-type-filters { order:2; }
 .calendar-content .series-list { order:3; }
-.calendar-collapsible { overflow:hidden; transition:border-color .2s,box-shadow .2s,background .2s; }
+.calendar-collapsible { overflow:hidden; padding:0; transition:border-color .2s,box-shadow .2s,background .2s; }
 .calendar-collapsible:hover { border-color:color-mix(in srgb,var(--green) 38%,var(--line)); }
 .calendar-collapsible[open] { box-shadow:0 8px 24px #18332a0b; }
 .calendar-collapsible > summary { position:relative; display:flex; align-items:center; gap:.75rem; min-height:48px; padding:.65rem 3.2rem .65rem .85rem; cursor:pointer; list-style:none; border-radius:10px; background:linear-gradient(90deg,color-mix(in srgb,var(--green) 8%,white),white); color:var(--ink); font-family:Georgia,serif; font-size:1.25rem; font-weight:700; transition:background .2s,color .2s; }
 .calendar-collapsible > summary::-webkit-details-marker { display:none; }
+.calendar-collapsible > summary:focus { outline:none; }
+.calendar-collapsible > summary:focus-visible { box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--green) 35%,transparent); }
 .calendar-collapsible > summary::after { content:"+"; position:absolute; right:.8rem; width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:var(--sage); color:var(--green); font:800 1.2rem/1 Inter,sans-serif; transition:transform .25s,background .2s,color .2s; }
 .calendar-collapsible[open] > summary { background:color-mix(in srgb,var(--green) 13%,white); color:var(--green); }
 .calendar-collapsible[open] > summary::after { content:"−"; transform:rotate(180deg); background:var(--green); color:white; }
 .calendar-collapsible[open] > :not(summary) { animation:accordion-reveal .22s ease-out; }
 @keyframes accordion-reveal { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
-.calendar-filter-options { display:flex; align-items:center; flex-wrap:wrap; gap:.55rem .9rem; padding-top:.8rem; }
+.calendar-filter-options { display:flex; align-items:center; flex-wrap:wrap; gap:.55rem .9rem; padding:.8rem 1rem 1rem; }
 .calendar-type-filters {
   display: block;
-  padding: .85rem 1rem;
+  padding: 0;
   margin-bottom: 1rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: white;
 }
 .calendar-type-filters .event-type-chip { position:relative; display:flex; align-items:center; gap:.45rem; padding:.48rem .7rem; overflow:hidden; border:1px solid color-mix(in srgb,var(--chip-color) 42%,white); border-left:4px solid var(--chip-color); border-radius:8px; background:color-mix(in srgb,var(--chip-color) 18%,white); color:color-mix(in srgb,var(--chip-color) 72%,#172d27); font-size:.82rem; font-weight:750; cursor:pointer; transition:opacity .18s,transform .18s,background .18s; }
@@ -53,9 +56,10 @@
   background: white;
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 1rem 1.35rem;
+  padding: 0;
   margin-bottom: 1.25rem;
 }
+.series-list > p,.series-list > article { margin-left:1rem; margin-right:1rem; }
 .series-list h2 {
   font-family: Georgia, serif;
   margin: 0;
@@ -399,6 +403,7 @@
 .sourcecards article { display: flex; justify-content: space-between; align-items: center; gap: .7rem; padding: .65rem .2rem; border-bottom: 1px solid var(--line); cursor: grab; }
 .sourcecards article:last-child { border: 0; }
 .sourcecards article:active { cursor: grabbing; opacity: .65; }
+.sourcecards article.in-draft { cursor:default; opacity:.48; background:#f4f5f3; }
 .sourcecards article div { display: grid; gap: .2rem; }
 .sourcecards small { color: var(--muted); }
 .sourcecards button { padding: .45rem .65rem; font-size: .78rem; }
