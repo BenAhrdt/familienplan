@@ -2985,6 +2985,8 @@ function PeopleScreen({
     [invite, setInvite] = useState(""),
     [inviteEmail, setInviteEmail] = useState<string | null>(null),
     [copied, setCopied] = useState(false),
+    [notice, setNotice] = useState<{ title: string; message: string } | null>(null),
+    [impersonateChoice, setImpersonateChoice] = useState<User | null>(null),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
     [access, setAccess] = useState<PersonAccess[]>([]);
@@ -3200,7 +3202,7 @@ function PeopleScreen({
                         }}>Neuen Einladungslink erzeugen</button>
                         {inviteEmail && <button type="button" onClick={async () => {
                           await api(`/people/${selected.user.id}/invitation/send`, { method: "POST" });
-                          window.alert(`Einladung an ${inviteEmail} wurde in die Versandwarteschlange gelegt.`);
+                          setNotice({ title: "Einladung wird versendet", message: `Die Einladung an ${inviteEmail} wurde in die Versandwarteschlange gelegt.` });
                         }}>Einladung jetzt per E-Mail senden</button>}
                       </div>
                     )}
@@ -3297,17 +3299,15 @@ function PeopleScreen({
                     : "Einladung erstellen"}
                 </button>
                 {open === "edit" && selected && !selected.user.is_pending && selected.user.role !== "ADMIN" && (
-                  <button type="button" className="secondary" onClick={async () => {
-                    if (!window.confirm(`FamilienPlan als ${selected.user.display_name} öffnen?`)) return;
-                    await api(`/people/${selected.user.id}/impersonate`, { method: "POST" });
-                    location.reload();
-                  }}>Als diese Person anmelden</button>
+                  <button type="button" className="secondary" onClick={() => setImpersonateChoice(selected.user)}>Als diese Person anmelden</button>
                 )}
               </>
             )}
           </form>
         </div>
       )}
+      {notice && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setNotice(null)} aria-label="Schließen">×</button><h2>{notice.title}</h2><p>{notice.message}</p><div className="modalactions"><button type="button" onClick={() => setNotice(null)}>Verstanden</button></div></section></div>}
+      {impersonateChoice && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setImpersonateChoice(null)} aria-label="Schließen">×</button><h2>Ansicht übernehmen?</h2><p>FamilienPlan wird als {impersonateChoice.display_name} geöffnet. Du kannst anschließend wieder zu deinem Administratorkonto zurückkehren.</p><div className="modalactions"><button type="button" onClick={async () => { await api(`/people/${impersonateChoice.id}/impersonate`, { method: "POST" }); location.reload(); }}>Als {impersonateChoice.display_name} öffnen</button><button type="button" className="secondary" onClick={() => setImpersonateChoice(null)}>Abbrechen</button></div></section></div>}
     </>
   );
 }

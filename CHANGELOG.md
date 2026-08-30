@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.24 – 30. August 2026
+
+### Einheitliche Dialoge
+
+- Der Einladungsversand bestätigt die Warteschlange in einem eigenen FamilienPlan-Dialog.
+- Das Übernehmen der Ansicht einer anderen Person verwendet einen eigenen Bestätigungsdialog.
+- Die Oberfläche enthält keine nativen Browserdialoge über `alert`, `confirm` oder `prompt` mehr.
+
 ## 0.1.23 – 30. August 2026
 
 ### Synchronisierung und Aktualisierung der Ansichten
