@@ -1,9 +1,11 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import router
 from app.api.v1.integration_router import router as integration_router
@@ -41,3 +43,21 @@ async def unhandled_error(_: Request, exc: Exception):
     import logging
     logging.getLogger("familienplan").exception("Unhandled request error", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Ein interner Fehler ist aufgetreten"})
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        try:
+            response = await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code == 404 and not path.startswith("api/"):
+                return await super().get_response("index.html", scope)
+            raise
+        if response.status_code == 404 and not path.startswith("api/"):
+            return await super().get_response("index.html", scope)
+        return response
+
+
+frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if frontend_dist.is_dir():
+    app.mount("/", SPAStaticFiles(directory=frontend_dist, html=True), name="frontend")

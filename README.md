@@ -2,11 +2,11 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.3** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.4** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 
-Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL und nginx, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die öffentliche Basisadresse ab, baut die Anwendung und richtet einen automatisch startenden `familienplan.service` ein. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
+Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die öffentliche Basisadresse ab, baut die Anwendung und richtet einen automatisch startenden `familienplan.service` ein. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
 
 ```bash
 git clone https://github.com/BenAhrdt/familienplan.git
@@ -16,14 +16,14 @@ cd familienplan
 
 Bei einer HTTPS-Adresse setzt der Installer automatisch den Produktivmodus und sichere Sitzungscookies. Einstellungen wie SMTP werden später in der Weboberfläche vorgenommen. Eine vorhandene vollständige `.env` kann bei einem erneuten Aufruf beibehalten werden. Liefert das Betriebssystem eine zu alte Node.js-Version, richtet der Installer das signierte NodeSource-Repository für Node.js 22 LTS ein.
 
-### DNS, Reverse Proxy und HTTPS
+### DNS, Zoraxy und HTTPS
 
-Lege für die eingegebene Subdomain einen DNS-Record an: `A` zeigt auf die öffentliche IPv4-Adresse, `AAAA` nur bei tatsächlich erreichbarer IPv6-Adresse. Steht vor dem LXC ein Reverse Proxy, zeigen die DNS-Einträge auf dessen öffentliche Adresse; als Weiterleitungsziel wird die interne IP des LXC mit Port 80 verwendet. Am vorgeschalteten Reverse Proxy muss HTTPS/TLS aktiviert und die ursprüngliche HTTPS-Information per `X-Forwarded-Proto` weitergegeben werden. Bei direkter Veröffentlichung müssen Portweiterleitung und TLS separat eingerichtet werden.
+Lege für die eingegebene Subdomain einen DNS-Record an: `A` zeigt auf die öffentliche IPv4-Adresse von Zoraxy, `AAAA` nur bei tatsächlich erreichbarer IPv6-Adresse. In Zoraxy wird ein Proxy-Eintrag für die öffentliche Subdomain angelegt. Als Upstream beziehungsweise Proxy-Ziel dient `http://IP-DES-FAMILIENPLAN-LXC:8000`. HTTPS/TLS wird in Zoraxy für diese Subdomain aktiviert. FamilienPlan liefert Frontend und API gemeinsam über Port 8000 aus; ein zusätzlicher nginx im LXC ist nicht erforderlich.
 
-Der Anwendungsdienst und nginx starten nach einem Neustart automatisch. Status und Protokoll lassen sich so prüfen:
+Der Anwendungsdienst startet nach einem Neustart automatisch. Status und Protokoll lassen sich so prüfen:
 
 ```bash
-systemctl status familienplan nginx
+systemctl status familienplan
 journalctl -u familienplan -n 100 --no-pager
 ```
 
@@ -155,10 +155,10 @@ Bei der Anlage und Bearbeitung eines Kindes können Schule und Betreuung anhand 
 1. Projekt nach `/opt/familienplan` kopieren und eigenen Systembenutzer `familienplan` verwenden.
 2. Python-Umgebung installieren, Migrationen ausführen und `frontend` mit `npm ci && npm run build` bauen.
 3. `.env` als `familienplan:familienplan`, Modus `0600`, ablegen; in Produktion `APP_ENV=production`, korrekte HTTPS-Origin und `SESSION_COOKIE_SECURE=true` setzen.
-4. [deploy/familienplan.service](deploy/familienplan.service) nach `/etc/systemd/system/` und [deploy/nginx.conf](deploy/nginx.conf) in nginx übernehmen.
-5. `systemctl daemon-reload && systemctl enable --now familienplan`; TLS etwa mit Certbot oder Caddy aktivieren.
+4. [deploy/familienplan.service](deploy/familienplan.service) nach `/etc/systemd/system/` übernehmen.
+5. `systemctl daemon-reload && systemctl enable --now familienplan`; Zoraxy auf `http://IP-DES-LXC:8000` weiterleiten lassen und dort TLS aktivieren.
 
-Der API-Prozess lauscht nur auf Loopback. Schreibzugriff erhält der gehärtete Dienst ausschließlich auf `uploads`. Reverse Proxy und Anwendung müssen HTTPS verwenden.
+Der Anwendungsprozess lauscht für Zoraxy auf Port 8000 im LXC-Netz. Dieser Port sollte per Firewall nur aus dem vertrauenswürdigen internen Netz erreichbar sein. Schreibzugriff erhält der gehärtete Dienst ausschließlich auf `uploads`; öffentlich erfolgt der Zugriff ausschließlich per HTTPS über Zoraxy.
 
 ## Backup und Restore
 

@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.4 – 30. August 2026
+
+### Reverse Proxy
+
+- FamilienPlan liefert Produktionsfrontend und API gemeinsam über Port 8000 aus.
+- Der systemd-Dienst ist im LXC-Netz direkt für Zoraxy erreichbar; ein zusätzlicher nginx entfällt.
+- Dokumentation und Abschlussmeldung nennen das korrekte Zoraxy-Ziel.
+
 ## 0.1.3 – 30. August 2026
 
 ### Produktionsbetrieb
