@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.5 – 30. August 2026
+
+### Installation
+
+- Der irreführende Entwicklungsstandard `http://localhost:5173` wurde aus der Produktionsinstallation entfernt.
+- Die öffentliche Adresse wird nun als vollständige HTTP(S)-URL abgefragt und validiert.
+
 ## 0.1.4 – 30. August 2026
 
 ### Reverse Proxy

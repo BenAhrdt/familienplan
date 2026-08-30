@@ -22,10 +22,17 @@ run_as_postgres() {
   fi
 }
 
-ask() {
-  local prompt="$1" default_value="$2" answer
-  read -r -p "$prompt [$default_value]: " answer
-  printf '%s' "${answer:-$default_value}"
+ask_public_origin() {
+  local answer
+  while true; do
+    read -r -p "Öffentliche Adresse (z. B. https://familienplan.example.de): " answer
+    answer="${answer%/}"
+    if [[ "$answer" =~ ^https?://[^/]+$ ]]; then
+      printf '%s' "$answer"
+      return
+    fi
+    echo "Bitte eine vollständige Adresse mit http:// oder https:// ohne Pfad eingeben." >&2
+  done
 }
 
 env_value() {
@@ -112,9 +119,7 @@ if [[ "$reuse_config" == true ]]; then
   echo "Bestehende Konfiguration wird beibehalten."
   configure_database=false
 else
-  default_origin="$(env_value APP_ORIGIN)"
-  [[ -n "$default_origin" ]] || default_origin="http://localhost:5173"
-  app_origin="$(ask "Adresse, unter der FamilienPlan aufgerufen wird" "$default_origin")"
+  app_origin="$(ask_public_origin)"
   if [[ "$app_origin" == https://* ]]; then
     app_env="production"; cookie_secure="true"
   else
