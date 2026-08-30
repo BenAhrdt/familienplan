@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.20 – 30. August 2026
+
+### Synchronisationsübersicht
+
+- Die Gesamtübersicht aller externen Kalenderquellen befindet sich nun als eigener Admin-Bereich „Externe Kalender“ in den Einstellungen.
+- Der Abfallkalender zeigt nur noch den Status seiner eigenen Quelle und die manuell angelegten Abholtermine.
+
 ## 0.1.19 – 30. August 2026
 
 ### Serienausnahmen und Kalenderanzeige

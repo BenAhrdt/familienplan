@@ -3416,7 +3416,6 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
     [error, setError] = useState(""),
     [calendarSettings, setCalendarSettings] = useState<WasteCalendarSetting | null>(null),
     [calendarOpen, setCalendarOpen] = useState(false),
-    [sourceStatuses, setSourceStatuses] = useState<CalendarSourceStatus[]>([]),
     [syncing, setSyncing] = useState(false),
     [syncMessage, setSyncMessage] = useState("");
   const canEdit = true;
@@ -3424,7 +3423,6 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
   useEffect(() => {
     void load();
     api<WasteCalendarSetting>("/waste-calendar/settings").then(setCalendarSettings).catch(() => {});
-    if (getSessionUser()?.role === "ADMIN") api<CalendarSourceStatus[]>("/calendar-sources/status").then(setSourceStatuses).catch(() => {});
   }, []);
   async function saveCalendar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3501,7 +3499,6 @@ function WasteCollectionScreen({ people, children }: { people: User[]; children:
       {calendarSettings.last_error && <p className="error">{calendarSettings.last_error}</p>}</div>
       <div className="waste-import-actions"><button type="button" className="secondary" onClick={() => setCalendarOpen(true)}>Einrichten</button>{calendarSettings.enabled && <button type="button" onClick={syncCalendar} disabled={syncing}>{syncing ? "Synchronisiere …" : "Jetzt synchronisieren"}</button>}</div>
     </section>}
-    {!!sourceStatuses.length && <section className="sync-overview"><h2>Synchronisationsübersicht</h2><p className="muted">Status aller angebundenen Kalenderquellen.</p>{sourceStatuses.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}</div></article>)}</section>}
     <h2 className="sectiontitle">Manuell angelegte Abholtermine</h2>
     {!items.length && <p className="hint">Keine manuellen Abholtermine vorhanden. Automatisch importierte Termine findest du im normalen Kalender.</p>}
     <div className="cards">{items.map((item) => <button className="childcard" key={item.id} onClick={() => { if (!canEdit) return; setRepeat(item.recurrence_frequency === "MONTHLY" ? item.recurrence_interval === 1 ? "monthlySame" : "monthlyCustom" : item.recurrence_frequency === "WEEKLY" ? item.recurrence_interval === 2 ? "weekly2" : item.recurrence_interval === 1 ? "weekly1" : "weeklyCustom" : "once"); setEditing(item); }} disabled={!canEdit}><div className="avatar"><Trash2 size={18}/></div><h2>{item.title}</h2><p>{new Date(item.starts_at).toLocaleString("de-DE")}</p><span className="tag">Termin · Abfallkalender{item.recurrence_group ? " · Serie" : ""}</span></button>)}</div>
@@ -4774,6 +4771,12 @@ function SectionAccessSettings({ people, value, onChange }: { people: User[]; va
   </section>;
 }
 
+function CalendarSourceOverview() {
+  const [sources, setSources] = useState<CalendarSourceStatus[]>([]), [error, setError] = useState("");
+  useEffect(() => { api<CalendarSourceStatus[]>("/calendar-sources/status").then(setSources).catch((x) => setError((x as Error).message)); }, []);
+  return <section className="sync-overview settings-card"><h2>Externe Kalender</h2><p className="muted">Synchronisationsstatus aller angebundenen Kalenderquellen.</p>{error && <p className="error">{error}</p>}{!error && !sources.length && <p className="hint">Noch keine externe Kalenderquelle eingerichtet.</p>}{sources.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}</div></article>)}</section>;
+}
+
 function SettingsScreen({
   user,
   people,
@@ -4943,6 +4946,7 @@ function SettingsScreen({
       {user.role === "ADMIN" && (
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />
       )}
+      {user.role === "ADMIN" && <CalendarSourceOverview />}
       {user.role === "ADMIN" && <section className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
       {user.role === "ADMIN" && (
         <IntegrationSettings />
