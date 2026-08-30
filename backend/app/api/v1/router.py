@@ -79,6 +79,18 @@ async def application_meta(_: User = Depends(current_user)):
     return result
 
 
+@router.post("/system/update", status_code=202, dependencies=[Depends(require_csrf)])
+def start_system_update(request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    marker = settings.upload_dir.resolve() / ".update-requested"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if marker.exists():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ein Update wurde bereits angefordert")
+    marker.write_text(f"requested_by={user.id}\nfrom_version={VERSION}\n", encoding="utf-8")
+    audit(db, request, "SYSTEM_UPDATE_REQUESTED", user.id, ("system", "familienplan"), {"from_version": VERSION})
+    db.commit()
+    return {"started": True, "from_version": VERSION}
+
+
 def school_event_matches_class(title: str, description: str | None, school_class: str | None) -> bool:
     """Keep school-wide events and reject only events clearly aimed at other classes."""
     target = re.sub(r"[^0-9a-z]", "", (school_class or "").lower())

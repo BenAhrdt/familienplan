@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.10 – 30. August 2026
+
+### Ein-Klick-Aktualisierung
+
+- Administratoren können erkannte Updates direkt über die Versionsanzeige installieren.
+- Ein fest definierter systemd-Path-Dienst startet Backup und Update als root, ohne `sudo`, freie Befehle oder Parameter.
+- Die Oberfläche wartet während des Neustarts und lädt nach dem erfolgreichen Versionswechsel automatisch neu.
+
 ## 0.1.9 – 30. August 2026
 
 ### E-Mail-Benachrichtigungen

@@ -2,7 +2,7 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.9** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.10** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 
@@ -37,6 +37,8 @@ cd familienplan
 ```
 
 Vor einem produktiven Update sollte das erzeugte Backup zusätzlich auf ein getrenntes, verschlüsseltes Medium kopiert werden. Release-Hinweise und mögliche besondere Migrationsschritte stehen im [Änderungsprotokoll](CHANGELOG.md).
+
+Administratoren können erkannte Updates über die gelbe Schaltfläche neben der Versionsnummer installieren. Der Installer richtet dafür einen fest definierten systemd-Path-Dienst ein: Die Anwendung kann lediglich eine Updateanforderung auslösen; systemd startet daraufhin als root das unveränderlich festgelegte `scripts/update.sh`. Es werden weder `sudo` noch frei eingebbare Befehle oder Parameter verwendet.
 
 Damit die Anwendung verfügbare Updates in den Einstellungen anzeigen kann, muss nach Erstellung des öffentlichen Repositorys Folgendes in `.env` stehen:
 

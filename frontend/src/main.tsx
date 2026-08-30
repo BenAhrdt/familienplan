@@ -4118,6 +4118,7 @@ function App() {
     [notifications, setNotifications] = useState<AppNotification[]>([]),
     [notificationsOpen, setNotificationsOpen] = useState(false),
     [meta, setMeta] = useState<ApplicationMeta | null>(null),
+    [updateStarting, setUpdateStarting] = useState(false),
     [showChangelog, setShowChangelog] = useState(false),
     [markingNotificationsRead, setMarkingNotificationsRead] = useState(false),
     [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(null),
@@ -4197,6 +4198,36 @@ function App() {
   useEffect(() => {
     localStorage.setItem("familienplan.planningDraft", JSON.stringify(planningItems));
   }, [planningItems]);
+  async function installUpdate() {
+    if (!meta?.update_available || updateStarting) return;
+    if (!window.confirm(`FamilienPlan ${meta.latest_version} jetzt installieren? Vorher wird automatisch ein Backup erstellt.`)) return;
+    setUpdateStarting(true);
+    try {
+      await api("/system/update", { method: "POST" });
+      const previousVersion = meta.version;
+      const deadline = Date.now() + 5 * 60_000;
+      const poll = window.setInterval(async () => {
+        if (Date.now() > deadline) {
+          window.clearInterval(poll);
+          setUpdateStarting(false);
+          window.alert("Das Update dauert länger als erwartet. Prüfe bitte: systemctl status familienplan-update.service");
+          return;
+        }
+        try {
+          const current = await api<ApplicationMeta>("/meta", { background: true });
+          if (current.version !== previousVersion) {
+            window.clearInterval(poll);
+            location.reload();
+          }
+        } catch {
+          // Während des Dienstneustarts ist die Anwendung kurz nicht erreichbar.
+        }
+      }, 4000);
+    } catch (error) {
+      setUpdateStarting(false);
+      window.alert((error as Error).message);
+    }
+  }
   useEffect(() => {
     if (!user || user.role === "ADMIN") return;
     if (screen === "people" || (screen === "birthdays" && !sectionAccess.birthdays.includes(user.id)) || (screen === "waste" && !sectionAccess.waste_collection.includes(user.id))) setScreen("home");
@@ -4340,10 +4371,10 @@ function App() {
             <button type="button" className="brand-version" onClick={() => setShowChangelog(true)} disabled={!meta} title={meta?.update_check_error || "Änderungsprotokoll anzeigen"}>
               Version {meta?.version || "…"}
             </button>
-            {meta?.update_available && (
-              <a className="brand-update" href={meta.release_url || undefined} target="_blank" rel="noreferrer">
-                Update {meta.latest_version} verfügbar
-              </a>
+            {meta?.update_available && user.role === "ADMIN" && !impersonating && (
+              <button className="brand-update" type="button" onClick={installUpdate} disabled={updateStarting}>
+                {updateStarting ? "Update wird installiert …" : `Update ${meta.latest_version} installieren`}
+              </button>
             )}
           </div>
         </div>

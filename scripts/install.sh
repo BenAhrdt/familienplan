@@ -201,6 +201,38 @@ EOF
 run_as_root install -m 644 "$service_file" /etc/systemd/system/familienplan.service
 rm -f "$service_file"
 
+update_service_file="$(mktemp)"
+cat > "$update_service_file" <<EOF
+[Unit]
+Description=FamilienPlan sicher aktualisieren
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStartPre=/usr/bin/rm -f $INSTALL_DIR/uploads/.update-requested
+ExecStart=$INSTALL_DIR/scripts/update.sh
+TimeoutStartSec=infinity
+EOF
+run_as_root install -m 644 "$update_service_file" /etc/systemd/system/familienplan-update.service
+rm -f "$update_service_file"
+
+update_path_file="$(mktemp)"
+cat > "$update_path_file" <<EOF
+[Unit]
+Description=FamilienPlan Updateanforderung überwachen
+
+[Path]
+PathExists=$INSTALL_DIR/uploads/.update-requested
+Unit=familienplan-update.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+run_as_root install -m 644 "$update_path_file" /etc/systemd/system/familienplan-update.path
+rm -f "$update_path_file"
+
 # Entfernt ausschließlich die kurzzeitig von Version 0.1.3 angelegte lokale nginx-Site.
 if [[ -e /etc/nginx/sites-enabled/familienplan || -e /etc/nginx/sites-available/familienplan ]]; then
   run_as_root rm -f /etc/nginx/sites-enabled/familienplan /etc/nginx/sites-available/familienplan
@@ -210,6 +242,7 @@ if [[ -e /etc/nginx/sites-enabled/familienplan || -e /etc/nginx/sites-available/
 fi
 
 run_as_root systemctl daemon-reload
+run_as_root systemctl enable --now familienplan-update.path
 run_as_root systemctl enable --now familienplan
 run_as_root systemctl restart familienplan
 sleep 2
