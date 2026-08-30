@@ -4,7 +4,7 @@ export type User = {
   display_name: string;
   first_name: string | null;
   last_name: string | null;
-  email: string;
+  email: string | null;
   role: "VIEWER" | "EDITOR" | "ADMIN";
   color: string;
   birth_date: string | null;

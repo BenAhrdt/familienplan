@@ -2,6 +2,19 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.27 – 30. August 2026
+
+### Einstellungen, Kalender und API
+
+- Die Einstellungsseite nutzt auf großen Bildschirmen eine kompakte zweispaltige Gliederung, Sprungmarken und breite Bereiche für externe Kalender und Integrationen.
+- Rubrikenfreigabe und Abfallkalender verwenden denselben Berechtigungsstand; ein älterer Einrichtungsstand kann Freigaben nicht länger zurücksetzen.
+- Ausstehende Personen ohne E-Mail-Adresse werden korrekt geladen und lassen nicht mehr die gesamte Personenliste leer erscheinen.
+- Die Integrations-API bietet mit `/api/v1/integrations/v1/calendar` einen zentralen, berechtigungsgefilterten Kalenderabruf einschließlich bestätigter Aufenthalte; `/events` bleibt kompatibel.
+- Importierte Kalendertermine zeigen beim Anklicken Datum, Uhrzeit und vorhandene Beschreibung zusätzlich zum Schreibschutzhinweis.
+- Unterhalb des Monatskalenders stehen eine gespiegelte Monatsnavigation und ein weiterer Knopf zum Anlegen eines Termins bereit.
+- Mobile Dialoge bleiben mit eingeblendeter Tastatur scrollbar; die Suchleiste überdeckt auf kleinen Bildschirmen keine Seiteninhalte mehr.
+- Die Suche berücksichtigt nun dieselben Terminarten und persönlichen Sichtbarkeiten wie der Kalender.
+
 ## 0.1.26 – 30. August 2026
 
 ### Mobile App-Ansicht

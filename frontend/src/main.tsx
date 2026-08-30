@@ -2089,13 +2089,19 @@ function CalendarScreen({
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
                         if (event.source_id) {
+                          const start = new Date(event.starts_at);
+                          const end = new Date(event.ends_at);
+                          const timing = event.all_day
+                            ? `${start.toLocaleDateString("de-DE")} · ganztägig`
+                            : `${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}`;
+                          const details = event.description?.trim() ? `\n\n${event.description.trim()}` : "";
                           setReadOnlyInfo({
                             title: event.title,
-                            message: event.event_type === "WASTE"
+                            message: `${timing}${details}\n\n${event.event_type === "WASTE"
                               ? "Dieser Termin wurde aus dem externen Abfallkalender übernommen. Änderungen erfolgen an der Onlinequelle oder über die Einrichtung des Abfallkalenders."
                               : event.event_type === "SCHOOL"
                                 ? "Dieser Termin wurde aus dem Schulkalender übernommen. Änderungen erfolgen an der Onlinequelle der Schule."
-                                : "Dieser Termin wurde aus einer externen Kalenderquelle übernommen und kann hier nicht bearbeitet werden.",
+                                : "Dieser Termin wurde aus einer externen Kalenderquelle übernommen und kann hier nicht bearbeitet werden."}`,
                           });
                         } else openCalendarEvent(event);
                       }}
@@ -2150,9 +2156,14 @@ function CalendarScreen({
             );
           })}
         </div>
+        <footer className="calendar-footer-nav">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={18}/> Vorheriger Monat</button>
+          <button className="calendar-footer-create" onClick={() => { setSelectedDay(new Date()); setEditingEvent(null); setEventType("GENERAL"); setEventRepeatKind("once"); setOpen("event"); }}>+ Termin anlegen</button>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>Nächster Monat <ChevronRight size={18}/></button>
+        </footer>
       </section>
       </div>
-      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p>{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
+      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
       {open && (
         <div className="modal">
           <form
@@ -4807,7 +4818,7 @@ function SectionAccessSettings({ people, value, onChange }: { people: User[]; va
     try { const saved = await api<SectionAccess>("/settings/sections", { method: "PUT", body: JSON.stringify(draft) }); onChange(saved); setMessage("Rubrikenfreigaben gespeichert."); setError(""); }
     catch (x) { setError((x as Error).message); }
   }
-  return <section className="themebox section-access-settings settings-card"><h2>Rubriken freigeben</h2><p className="muted">Administratoren sehen alle Rubriken. Hier wählst du weitere Personen aus.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
+  return <section id="settings-access" className="themebox section-access-settings settings-card"><h2>Rubriken freigeben</h2><p className="muted">Administratoren sehen alle Rubriken. Hier wählst du weitere Personen aus.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
     {(Object.keys(sectionLabels) as Array<keyof SectionAccess>).map((section) => <div className="integration-row" key={section}><span><strong>{sectionLabels[section]}</strong><small>{draft[section].length ? `${draft[section].length} Person(en) freigegeben` : "Nur Administratoren"}</small></span><button type="button" className="secondary" onClick={() => setOpen(section)}>Personen auswählen</button></div>)}
     <button onClick={save}>Freigaben speichern</button>
     {open && <div className="modal"><section className="panel"><button type="button" className="close" onClick={() => setOpen(null)}>×</button><h2>{sectionLabels[open]} freigeben</h2><div className="audience-list">{people.filter((person) => person.role !== "ADMIN").map((person) => <label key={person.id}><input type="checkbox" checked={draft[open].includes(person.id)} onChange={(event) => setDraft((current) => ({ ...current, [open]: event.target.checked ? [...current[open], person.id] : current[open].filter((id) => id !== person.id) }))}/><span>{person.display_name}</span></label>)}</div><button type="button" className="audience-done" onClick={() => setOpen(null)}>Fertig</button></section></div>}
@@ -4827,7 +4838,7 @@ function CalendarSourceOverview() {
     } catch (x) { setError((x as Error).message); }
     finally { setSyncing(null); }
   }
-  return <section className="sync-overview settings-card"><h2>Externe Kalender</h2><p className="muted">Synchronisationsstatus aller angebundenen Kalenderquellen.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}{!error && !sources.length && <p className="hint">Noch keine externe Kalenderquelle eingerichtet.</p>}{sources.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div className="sync-source-actions"><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}<button type="button" onClick={() => sync(source)} disabled={syncing !== null}>{syncing === source.id ? "Synchronisiere …" : "Jetzt synchronisieren"}</button></div></article>)}</section>;
+  return <section id="settings-sources" className="sync-overview settings-card settings-wide"><h2>Externe Kalender</h2><p className="muted">Synchronisationsstatus aller angebundenen Kalenderquellen.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}{!error && !sources.length && <p className="hint">Noch keine externe Kalenderquelle eingerichtet.</p>}{sources.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div className="sync-source-actions"><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}<button type="button" onClick={() => sync(source)} disabled={syncing !== null}>{syncing === source.id ? "Synchronisiere …" : "Jetzt synchronisieren"}</button></div></article>)}</section>;
 }
 
 function SettingsScreen({
@@ -4944,7 +4955,12 @@ function SettingsScreen({
           <p>Darstellung von FamilienPlan anpassen.</p>
         </div>
       </header>
-      <section className="themebox settings-card">
+      <nav className="settings-jumps" aria-label="Einstellungsbereiche">
+        <a href="#settings-profile">Profil</a><a href="#settings-calendar">Kalender</a>
+        {user.role === "ADMIN" && <><a href="#settings-access">Freigaben</a><a href="#settings-sources">Externe Kalender</a><a href="#settings-integrations">Integrationen</a></>}
+      </nav>
+      <div className="settings-layout">
+      <section id="settings-profile" className="themebox settings-card">
         <h2>Meine Kalenderfarbe</h2>
         <p className="muted">
           Diese Farbe kennzeichnet im Kalender die Tage, an denen ein Kind bei
@@ -4987,7 +5003,7 @@ function SettingsScreen({
         </div>
         <button onClick={savePersonColor}>Profil speichern</button>
       </section>
-      <section className="themebox settings-card">
+      <section id="settings-calendar" className="themebox settings-card">
         <h2>Meine Kalenderfarben</h2>
         <p className="muted">Diese Farben gelten nur für deine persönliche Kalenderansicht.</p>
         <h3>Schule</h3><div className="themepicker"><input type="color" value={calendarColors.school_color} onChange={(event) => setCalendarColors({...calendarColors, school_color: event.target.value})}/><code>{calendarColors.school_color.toUpperCase()}</code></div>
@@ -5000,12 +5016,12 @@ function SettingsScreen({
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />
       )}
       {user.role === "ADMIN" && <CalendarSourceOverview />}
-      {user.role === "ADMIN" && <section className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
+      {user.role === "ADMIN" && <section id="settings-updates" className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
       {user.role === "ADMIN" && (
         <IntegrationSettings />
       )}
       {user.role === "ADMIN" && (
-        <section className="themebox globaltheme settings-card">
+        <section id="settings-global-theme" className="themebox globaltheme settings-card">
           <h2>Akzentfarbe</h2>
           <p className="muted">
             Die Farbe wird appweit für Navigation, Schaltflächen und
@@ -5077,6 +5093,7 @@ function SettingsScreen({
           <button onClick={save}>Farbe speichern</button>
         </section>
       )}
+      </div>
     </>
   );
 }
@@ -5133,7 +5150,7 @@ function IntegrationSettings() {
     try { const x = await api<{secret:string}>("/webhooks", { method:"POST", body:JSON.stringify({name:hookName,url:hookUrl,events:["*"]}) }); setNewSecret(x.secret); setHookUrl(""); await reload(); }
     catch (x) { setError((x as Error).message); }
   }
-  return <section className="themebox integration-settings settings-card">
+  return <section id="settings-integrations" className="themebox integration-settings settings-card settings-wide">
     <h2>Integrationen</h2>
     <p className="muted">REST-API, signierte Webhooks und E-Mail-Benachrichtigungen zentral verwalten. MQTT ist bewusst noch nicht enthalten.</p>
     {error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
@@ -5152,7 +5169,7 @@ function IntegrationSettings() {
     {showOutbox && <div className="outbox"><header><strong>Letzte Zustellungen</strong><button className="quiet" onClick={()=>void reload()}>Aktualisieren</button></header>{outbox.length===0?<p className="muted">Noch keine Nachrichten vorhanden.</p>:outbox.map((item)=><article key={item.id}><span className={`delivery-state ${item.delivered_at?"sent":item.last_error?"failed":"waiting"}`}>{item.delivered_at?"Versendet":item.last_error?"Fehlgeschlagen":"Wartet"}</span><div><strong>{item.channel==="email"?"E-Mail":"Webhook"} · {item.event_type}</strong><small>An: {item.recipient} · {new Date(item.created_at).toLocaleString("de-DE")}{item.attempts?` · ${item.attempts} Versuche`:""}</small>{item.last_error&&<p className="delivery-error">{item.last_error}</p>}</div></article>)}</div>}
     </div>
     <div className="integration-card">
-    <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen.</p></div><span className="integration-badge">Nur Lesen</span></div>
+    <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen. Kalenderdaten einschließlich Aufenthalten: <code>/api/v1/integrations/v1/calendar</code></p></div><span className="integration-badge">Nur Lesen</span></div>
     <p className="muted">Der Schlüssel wird nur einmal vollständig angezeigt. Basis: <code>/api/v1/integrations/v1</code></p>
     <fieldset><legend>Freigegebene Kinder</legend>{apiChildren.map((child)=><label key={child.id} className="checkline"><input type="checkbox" checked={selectedChildren.includes(child.id)} onChange={(e)=>setSelectedChildren(e.target.checked?[...selectedChildren,child.id]:selectedChildren.filter((id)=>id!==child.id))}/>{child.display_name}</label>)}<label className="checkline"><input type="checkbox" checked={privateAccess} onChange={(e)=>setPrivateAccess(e.target.checked)}/>Auch private Termine und Geburtstage freigeben</label></fieldset>
     <div className="buttonrow"><input value={tokenName} onChange={(e)=>setTokenName(e.target.value)} aria-label="Name des API-Schlüssels"/><button onClick={createToken}>API-Schlüssel erstellen</button></div>

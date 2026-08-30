@@ -39,12 +39,19 @@ class UserOut(BaseModel):
     display_name: str
     first_name: str | None = None
     last_name: str | None = None
-    email: EmailStr
+    email: EmailStr | None
     role: Role
     color: str
     birth_date: date | None = None
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
     is_pending: bool = False
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def hide_internal_pending_address(cls, value):
+        if isinstance(value, str) and value.endswith("@familienplan.invalid"):
+            return None
+        return value
 
 
 class SessionOut(BaseModel):

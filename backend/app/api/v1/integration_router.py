@@ -106,7 +106,8 @@ def integration_children(context=Depends(api_context), db: Session = Depends(get
             for x in db.scalars(select(Child).where(Child.id.in_(ids)).order_by(Child.display_name))]
 
 
-@router.get("/integrations/v1/events")
+@router.get("/integrations/v1/events", include_in_schema=False)
+@router.get("/integrations/v1/calendar")
 def integration_events(from_at: datetime, to_at: datetime, child_id: int | None = None,
                        context=Depends(api_context), db: Session = Depends(get_db)):
     if to_at <= from_at or to_at - from_at > timedelta(days=366):

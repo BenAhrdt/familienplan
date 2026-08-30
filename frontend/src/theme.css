@@ -41,6 +41,56 @@
 .settings-card + .settings-card {
   margin-top: 1.4rem;
 }
+.settings-jumps {
+  position: sticky;
+  top: 4.7rem;
+  z-index: 7;
+  display: flex;
+  gap: .55rem;
+  width: min(1240px, 100%);
+  margin: -1.6rem 0 1.35rem;
+  padding: .6rem;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, white 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+.settings-jumps a {
+  flex: 0 0 auto;
+  padding: .55rem .75rem;
+  border-radius: 8px;
+  background: var(--sage);
+  color: var(--green);
+  font-size: .82rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 1.25rem;
+  width: min(1240px, 100%);
+}
+.settings-layout .settings-card {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  scroll-margin-top: 9rem;
+}
+.settings-layout .settings-wide,
+.settings-layout .integration-settings {
+  grid-column: 1 / -1;
+}
+.settings-layout .globaltheme { margin-top: 0; }
+@media (max-width: 820px) {
+  .settings-jumps { top: calc(64px + env(safe-area-inset-top)); margin-top: -.5rem; }
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-layout .settings-wide,
+  .settings-layout .integration-settings { grid-column: auto; }
+  .settings-layout .themebox { padding: 1.15rem; }
+}
 .themepicker {
   display: flex;
   align-items: center;

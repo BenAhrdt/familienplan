@@ -430,6 +430,12 @@ def update_section_access(data: SectionAccessSetting, request: Request, db: Sess
         row.value = value
     else:
         db.add(ApplicationSetting(key="section_access", value=value))
+    # Keep the automatic waste importer on the same canonical audience. Older
+    # versions stored this value in two places, allowing a later importer save
+    # to accidentally restore an outdated selection.
+    waste = dict(get_waste_config(db))
+    waste["visible_to_user_ids"] = list(data.waste_collection)
+    save_waste_config(db, waste)
     audit(db, request, "SECTION_ACCESS_CHANGED", user.id, ("setting", "section_access"), value)
     db.commit()
     return data
@@ -454,7 +460,9 @@ def waste_appointments(db: Session = Depends(get_db), user: User = Depends(curre
 
 @router.get("/waste-calendar/settings", response_model=WasteCalendarSetting)
 def waste_calendar_settings(db: Session = Depends(get_db), _: User = Depends(admin)):
-    return get_waste_config(db)
+    value = dict(get_waste_config(db))
+    value["visible_to_user_ids"] = section_access(db)["waste_collection"]
+    return value
 
 
 @router.get("/calendar-sources/status")
@@ -1779,8 +1787,10 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
     )
     if user.role != Role.ADMIN:
         event_query = event_query.where(
+            CalendarEvent.event_type.in_(user.allowed_event_types or []),
             (CalendarEvent.is_private.is_(False))
-            | (CalendarEvent.created_by_id == user.id),
+            | (CalendarEvent.created_by_id == user.id)
+            | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
             (CalendarEvent.child_id.is_(None))
             | (CalendarEvent.child_id.in_(allowed_child_ids or [])),
         )

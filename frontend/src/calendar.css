@@ -10,6 +10,36 @@
   overflow: hidden;
   margin-bottom: 1.8rem;
 }
+.calendar-footer-nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem;
+  border-top: 1px solid var(--line);
+  background: #fbfcfa;
+}
+.calendar-footer-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  min-height: 42px;
+  padding: .65rem .8rem;
+  border-radius: 9px;
+  background: var(--sage);
+  color: var(--green);
+  font-weight: 750;
+}
+.calendar-footer-nav button:first-child { justify-self: start; }
+.calendar-footer-nav button:last-child { justify-self: end; }
+.calendar-footer-nav .calendar-footer-create { background: var(--green); color: white; }
+.readonly-details { white-space: pre-line; line-height: 1.55; }
+@media (max-width: 620px) {
+  .calendar-footer-nav { grid-template-columns: 1fr 1fr; }
+  .calendar-footer-nav .calendar-footer-create { grid-column: 1 / -1; grid-row: 1; }
+  .calendar-footer-nav button { font-size: .78rem; }
+}
 .calendar-content { display:flex; flex-direction:column; }
 .calendar-content .monthcalendar { order:1; }
 .calendar-content .calendar-type-filters { order:2; }
