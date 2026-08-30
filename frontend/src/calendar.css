@@ -11,40 +11,24 @@
   margin-bottom: 1.8rem;
 }
 .calendar-footer-nav {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: .75rem;
-  padding: 1rem;
   border-top: 1px solid var(--line);
   background: #fbfcfa;
 }
-.calendar-footer-nav button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: .35rem;
-  min-height: 42px;
-  padding: .65rem .8rem;
-  border-radius: 9px;
-  background: var(--sage);
-  color: var(--green);
-  font-weight: 750;
-}
-.calendar-footer-nav button:first-child { justify-self: start; }
-.calendar-footer-nav button:last-child { justify-self: end; }
-.calendar-footer-nav .calendar-footer-create { background: var(--green); color: white; }
 .readonly-details { white-space: pre-line; line-height: 1.55; }
-@media (max-width: 620px) {
-  .calendar-footer-nav { grid-template-columns: 1fr 1fr; }
-  .calendar-footer-nav .calendar-footer-create { grid-column: 1 / -1; grid-row: 1; }
-  .calendar-footer-nav button { font-size: .78rem; }
-}
 .calendar-content { display:flex; flex-direction:column; }
 .calendar-content .monthcalendar { order:1; }
 .calendar-content .calendar-type-filters { order:2; }
 .calendar-content .series-list { order:3; }
-.calendar-collapsible > summary { cursor:pointer; color:var(--ink); font-family:Georgia,serif; font-size:1.25rem; font-weight:700; }
+.calendar-collapsible { overflow:hidden; transition:border-color .2s,box-shadow .2s,background .2s; }
+.calendar-collapsible:hover { border-color:color-mix(in srgb,var(--green) 38%,var(--line)); }
+.calendar-collapsible[open] { box-shadow:0 8px 24px #18332a0b; }
+.calendar-collapsible > summary { position:relative; display:flex; align-items:center; gap:.75rem; min-height:48px; padding:.65rem 3.2rem .65rem .85rem; cursor:pointer; list-style:none; border-radius:10px; background:linear-gradient(90deg,color-mix(in srgb,var(--green) 8%,white),white); color:var(--ink); font-family:Georgia,serif; font-size:1.25rem; font-weight:700; transition:background .2s,color .2s; }
+.calendar-collapsible > summary::-webkit-details-marker { display:none; }
+.calendar-collapsible > summary::after { content:"+"; position:absolute; right:.8rem; width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:var(--sage); color:var(--green); font:800 1.2rem/1 Inter,sans-serif; transition:transform .25s,background .2s,color .2s; }
+.calendar-collapsible[open] > summary { background:color-mix(in srgb,var(--green) 13%,white); color:var(--green); }
+.calendar-collapsible[open] > summary::after { content:"−"; transform:rotate(180deg); background:var(--green); color:white; }
+.calendar-collapsible[open] > :not(summary) { animation:accordion-reveal .22s ease-out; }
+@keyframes accordion-reveal { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 .calendar-filter-options { display:flex; align-items:center; flex-wrap:wrap; gap:.55rem .9rem; padding-top:.8rem; }
 .calendar-type-filters {
   display: block;
@@ -54,8 +38,10 @@
   border-radius: 12px;
   background: white;
 }
-.calendar-type-filters label { display: flex; align-items: center; gap: .35rem; font-size: .84rem; }
-.calendar-type-filters input { accent-color: var(--green); }
+.calendar-type-filters .event-type-chip { position:relative; display:flex; align-items:center; gap:.45rem; padding:.48rem .7rem; overflow:hidden; border:1px solid color-mix(in srgb,var(--chip-color) 42%,white); border-left:4px solid var(--chip-color); border-radius:8px; background:color-mix(in srgb,var(--chip-color) 18%,white); color:color-mix(in srgb,var(--chip-color) 72%,#172d27); font-size:.82rem; font-weight:750; cursor:pointer; transition:opacity .18s,transform .18s,background .18s; }
+.calendar-type-filters .event-type-chip:hover { transform:translateY(-1px); background:color-mix(in srgb,var(--chip-color) 25%,white); }
+.calendar-type-filters .event-type-chip input { width:1rem; height:1rem; margin:0; accent-color:var(--chip-color); }
+.calendar-type-filters .event-type-chip.muted-chip { opacity:.5; background:white; filter:grayscale(.45); }
 .change-requests {
   background: white;
   border: 1px solid var(--line);
@@ -210,21 +196,21 @@
   border-radius: 7px;
   font-weight: 700;
 }
-.monthcalendar > header {
-  display: flex;
-  justify-content: center;
+.monthcalendar > .calendar-navigation {
+  display: grid;
+  grid-template-columns: 1fr auto minmax(180px,230px) auto 1fr;
   align-items: center;
   gap: 1.2rem;
   padding: 1rem;
 }
-.monthcalendar > header h2 {
+.monthcalendar > .calendar-navigation h2 {
+  grid-column: 3;
   font-family: Georgia, serif;
   text-transform: capitalize;
   margin: 0;
-  min-width: 230px;
   text-align: center;
 }
-.monthcalendar > header button {
+.monthcalendar > .calendar-navigation button {
   background: var(--sage);
   color: var(--green);
   border-radius: 50%;
@@ -233,7 +219,22 @@
   display: grid;
   place-items: center;
 }
-.monthcalendar > header svg {
+.monthcalendar > .calendar-navigation button:first-child { grid-column: 2; }
+.monthcalendar > .calendar-navigation button:nth-of-type(2) { grid-column: 4; }
+.monthcalendar > .calendar-navigation .calendar-create {
+  grid-column: 5;
+  justify-self: end;
+  width: auto;
+  min-width: 145px;
+  padding: 0 .9rem;
+  display:flex;
+  gap:.4rem;
+  border-radius:9px;
+  background:var(--green);
+  color:white;
+  font-weight:750;
+}
+.monthcalendar > .calendar-navigation svg {
   width: 19px;
 }
 .weekdays,
@@ -462,15 +463,19 @@
   .monthcalendar {
     overflow-x: hidden;
   }
-  .monthcalendar > header {
+  .monthcalendar > .calendar-navigation {
+    grid-template-columns:auto minmax(0,1fr) auto;
     gap: .55rem;
     padding: .75rem .45rem;
   }
-  .monthcalendar > header h2 {
-    min-width: 0;
-    flex: 1;
+  .monthcalendar > .calendar-navigation h2 {
+    grid-column:2;
+    grid-row:1;
     font-size: 1.3rem;
   }
+  .monthcalendar > .calendar-navigation button:first-child { grid-column:1; grid-row:1; }
+  .monthcalendar > .calendar-navigation button:nth-of-type(2) { grid-column:3; grid-row:1; }
+  .monthcalendar > .calendar-navigation .calendar-create { grid-column:1 / -1; grid-row:2; justify-self:end; min-width:0; }
   .weekdays,
   .monthgrid {
     min-width: 0;

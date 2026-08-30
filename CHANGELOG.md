@@ -2,6 +2,20 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.29 – 30. August 2026
+
+### Navigation, Kalender und Logbuch
+
+- Die Einstellungen zeigen als echte Registeransicht nur noch den jeweils ausgewählten Bereich.
+- Aktualisierungen, Integrationen, globale Darstellung und das neue Logbuch besitzen eigene Einstellungsbereiche.
+- Die globale Suche bleibt beim Scrollen sichtbar, ohne mobile Seiteninhalte zu überdecken.
+- Die Monatsnavigation ist oberhalb und unterhalb des Kalenders einheitlich aufgebaut; „Termin anlegen“ liegt rechts im Navigationsbereich.
+- Aufklappbare Kalenderbereiche verwenden eine gestaltete Plus-/Minus-Schaltfläche, aktive Flächen und eine dezente Öffnungsanimation.
+- Terminarten erscheinen als farbige Auswahlchips passend zu ihrer Darstellung im Kalender.
+- Das neue Admin-Logbuch zeigt Anmeldungen, Änderungen, Einladungen, Planungen, Kalenderaktionen, Synchronisationen und Systemupdates.
+- Logbucheinträge lassen sich nach Person und Aktivität filtern und enthalten Zeitpunkt, Zielobjekt, IP-Adresse sowie aufklappbare Änderungsdetails.
+- Neue Audit-Einträge bewahren den damaligen Anzeigenamen; Passwörter, Sitzungswerte und geheime Schlüssel werden nicht protokolliert.
+
 ## 0.1.28 – 30. August 2026
 
 ### Personenverwaltung

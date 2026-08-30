@@ -136,6 +136,7 @@ const eventDisplayColor = (event: CalendarEvent) =>
       : event.event_type === "WASTE"
         ? event.color || "var(--waste, #5C8B58)"
       : event.color || "#8B6CC1";
+const eventTypeDisplayColor = (type: EventType) => type === "SCHOOL" ? "var(--school)" : type === "BIRTHDAY" ? "var(--birthday)" : type === "WASTE" ? "var(--waste, #5C8B58)" : type === "STAY" ? "var(--green)" : type === "CLEANING" ? "#35A853" : type === "GENERAL" ? "#8B6CC1" : "#6F63B6";
 
 function clientId() {
   return globalThis.crypto?.randomUUID?.() ||
@@ -1615,20 +1616,6 @@ function CalendarScreen({
           <h1>Kalender</h1>
           <p>Alle Einträge als Termine mit passender Terminart planen.</p>
         </div>
-        <div className="headbuttons">
-          <button
-            onClick={() => {
-              setEditingEvent(null);
-              setStayToConvert(null);
-              setEventType("GENERAL");
-              setEventRepeatKind("once");
-              setSelectedDay(null);
-              setOpen("event");
-            }}
-          >
-            <Plus size={18} /> Termin anlegen
-          </button>
-        </div>
       </header>
       {requests.length > 0 && (
         <section className="change-requests">
@@ -1836,7 +1823,7 @@ function CalendarScreen({
         <summary>Terminarten ein- und ausblenden</summary>
         <div className="calendar-filter-options">
         {availableEventTypes.map((type) => (
-          <label key={type}>
+          <label key={type} className={`event-type-chip${hiddenEventTypes.includes(type)?" muted-chip":""}`} style={{"--chip-color":eventTypeDisplayColor(type)} as React.CSSProperties}>
             <input type="checkbox" checked={!hiddenEventTypes.includes(type)} onChange={() => setHiddenEventTypes((current) => {
               const changed = current.includes(type) ? current.filter((item) => item !== type) : [...current, type];
               localStorage.setItem("familienplan-calendar-hidden-types", JSON.stringify(changed));
@@ -1848,7 +1835,7 @@ function CalendarScreen({
         </div>
       </details>
       <section className="monthcalendar">
-        <header>
+        <header className="calendar-navigation">
           <button
             onClick={() =>
               setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
@@ -1871,6 +1858,7 @@ function CalendarScreen({
           >
             <ChevronRight />
           </button>
+          <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>
         </header>
         <div className="weekdays">
           {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
@@ -2156,10 +2144,11 @@ function CalendarScreen({
             );
           })}
         </div>
-        <footer className="calendar-footer-nav">
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={18}/> Vorheriger Monat</button>
-          <button className="calendar-footer-create" onClick={() => { setSelectedDay(new Date()); setEditingEvent(null); setEventType("GENERAL"); setEventRepeatKind("once"); setOpen("event"); }}>+ Termin anlegen</button>
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>Nächster Monat <ChevronRight size={18}/></button>
+        <footer className="calendar-navigation calendar-footer-nav">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Vorheriger Monat"><ChevronLeft /></button>
+          <h2>{month.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</h2>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Nächster Monat"><ChevronRight /></button>
+          <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>
         </footer>
       </section>
       </div>
@@ -4849,6 +4838,46 @@ function CalendarSourceOverview() {
   return <section id="settings-sources" className="sync-overview settings-card settings-wide"><h2>Externe Kalender</h2><p className="muted">Synchronisationsstatus aller angebundenen Kalenderquellen.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}{!error && !sources.length && <p className="hint">Noch keine externe Kalenderquelle eingerichtet.</p>}{sources.map((source) => <article key={source.id}><div><strong>{source.name}</strong><small>{source.kind === "WASTE" ? "Abfallkalender" : source.kind === "SCHOOL" ? "Schulkalender" : source.kind}</small></div><div className="sync-source-actions"><span>{source.last_sync_at ? `Zuletzt: ${new Date(source.last_sync_at).toLocaleString("de-DE")}` : "Noch nicht synchronisiert"}</span>{source.last_error && <small className="error">{source.last_error}</small>}<button type="button" onClick={() => sync(source)} disabled={syncing !== null}>{syncing === source.id ? "Synchronisiere …" : "Jetzt synchronisieren"}</button></div></article>)}</section>;
 }
 
+type AuditEntry = { id:number; user_id:number|null; user_name:string; action:string; target_type:string|null; target_id:string|null; details:Record<string,unknown>; ip_address:string|null; created_at:string };
+const auditActionLabels: Record<string,string> = {
+  LOGIN:"hat sich angemeldet", LOGOUT:"hat sich abgemeldet", LOGIN_FAILED:"Anmeldung fehlgeschlagen",
+  INITIAL_ADMIN_CREATED:"hat FamilienPlan eingerichtet", PERSON_ACCESS_CHANGED:"hat die Rechte einer Person geändert", PERSON_DELETED:"hat eine Person gelöscht",
+  INVITATION_CREATED:"hat eine Einladung erstellt", INVITATION_RENEWED:"hat einen Einladungslink erneuert", INVITATION_SENT:"hat eine Einladung versendet", INVITATION_ACCEPTED:"hat eine Einladung angenommen",
+  CHILD_CREATED:"hat ein Kind angelegt", CHILD_CHANGED:"hat ein Kind geändert", CHILD_PERMISSION_CHANGED:"hat Kinderrechte geändert",
+  STAY_CREATED:"hat einen Aufenthalt angelegt", STAY_CHANGED:"hat einen Aufenthalt geändert", STAY_DELETED:"hat einen Aufenthalt gelöscht", STAY_SERIES_CREATED:"hat eine Aufenthaltsserie angelegt", STAY_SERIES_CHANGED:"hat eine Aufenthaltsserie geändert",
+  STAY_SERIES_EXTENDED:"hat eine Aufenthaltsserie verlängert", NEW_STAY_PROPOSED:"hat einen neuen Aufenthalt vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Aufenthaltsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen eines Aufenthalts vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",
+  CALENDAR_EVENT_CREATED:"hat einen Termin angelegt", CALENDAR_EVENT_CHANGED:"hat einen Termin geändert", CALENDAR_EVENT_DELETED:"hat einen Termin gelöscht", CALENDAR_EVENT_SERIES_CREATED:"hat eine Terminserie angelegt", CALENDAR_EVENT_SERIES_CHANGED:"hat eine Terminserie geändert", CALENDAR_EVENT_SERIES_DELETED:"hat eine Terminserie gelöscht",
+  BIRTHDAY_CREATED:"hat einen Geburtstag angelegt", BIRTHDAY_CHANGED:"hat einen Geburtstag geändert", BIRTHDAY_DELETED:"hat einen Geburtstag gelöscht",
+  SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
+  SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender eingerichtet",
+  SYSTEM_UPDATE_REQUESTED:"hat ein Systemupdate gestartet", IMPERSONATION_STARTED:"hat die Ansicht einer Person übernommen", IMPERSONATION_STOPPED:"hat die übernommene Ansicht beendet",
+};
+const auditTargetLabels:Record<string,string>={user:"Person",child:"Kind",stay:"Aufenthalt",recurrence_rule:"Aufenthaltsserie",calendar_event:"Termin",calendar_event_series:"Terminserie",birthday:"Geburtstag",invitation:"Einladung",change_request:"Anfrage",calendar_source:"Kalenderquelle",setting:"Einstellung",system:"System",username:"Benutzername"};
+const auditDetailLabels:Record<string,string>={title:"Titel",name:"Name",display_name:"Anzeigename",event_type:"Terminart",starts_at:"Beginn",ends_at:"Ende",birth_date:"Geburtsdatum",description:"Beschreibung",note:"Notiz",scope:"Umfang",affected:"Betroffene Einträge",occurrences:"Einträge",children:"Freigegebene Kinder",role:"Rolle",email:"E-Mail-Adresse",user_id:"Person",responsible_user_id:"Zuständige Person",child_id:"Kind",from_version:"Ausgangsversion",removed:"Entfernt",events:"Termine",visibility:"Sichtbar für",changed_values:"Geänderte Werte"};
+
+function AuditLogSettings({ people }: { people: User[] }) {
+  const [items,setItems] = useState<AuditEntry[]>([]), [userFilter,setUserFilter] = useState(""), [actionFilter,setActionFilter] = useState(""), [offset,setOffset] = useState(0), [hasMore,setHasMore] = useState(false), [busy,setBusy] = useState(false), [error,setError] = useState("");
+  async function load(nextOffset=0, append=false) {
+    setBusy(true); setError("");
+    const query = new URLSearchParams({ limit:"100", offset:String(nextOffset) });
+    if (userFilter) query.set("user_id",userFilter);
+    if (actionFilter) query.set("action",actionFilter);
+    try { const result = await api<{items:AuditEntry[];has_more:boolean;next_offset:number}>(`/audit-log?${query}`); setItems((current)=>append?[...current,...result.items]:result.items); setOffset(result.next_offset); setHasMore(result.has_more); }
+    catch (x) { setError((x as Error).message); }
+    finally { setBusy(false); }
+  }
+  useEffect(()=>{ void load(); },[userFilter,actionFilter]);
+  const actions = [...new Set(items.map((item)=>item.action))].sort();
+  return <section id="settings-audit" className="themebox settings-card settings-wide audit-log">
+    <div className="audit-heading"><div><h2>Logbuch</h2><p className="muted">Sicherheits- und Änderungsverlauf aller Personen. Geheimnisse und Passwörter werden nicht protokolliert.</p></div><button type="button" className="secondary" onClick={()=>load()} disabled={busy}>{busy?"Lädt …":"Neu laden"}</button></div>
+    <div className="audit-filters"><label>Person<select value={userFilter} onChange={(e)=>setUserFilter(e.target.value)}><option value="">Alle Personen</option>{people.map((person)=><option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label><label>Aktivität<select value={actionFilter} onChange={(e)=>setActionFilter(e.target.value)}><option value="">Alle Aktivitäten</option>{actions.map((action)=><option key={action} value={action}>{auditActionLabels[action]||action}</option>)}</select></label></div>
+    {error&&<p className="error">{error}</p>}
+    <div className="audit-list">{items.map((item)=><article key={item.id}><div className="audit-time"><strong>{new Date(item.created_at).toLocaleDateString("de-DE")}</strong><span>{new Date(item.created_at).toLocaleTimeString("de-DE")}</span></div><div className="audit-event"><p><strong>{item.user_name}</strong> {auditActionLabels[item.action]||item.action.toLocaleLowerCase("de-DE").replaceAll("_"," ")}.</p><small>{item.target_type ? `${auditTargetLabels[item.target_type]||item.target_type} ${item.target_id||""}` : "System"}{item.ip_address?` · IP ${item.ip_address}`:""}</small>{Object.keys(item.details||{}).length>0&&<details><summary>Details anzeigen</summary><dl>{Object.entries(item.details).map(([key,value])=><div key={key}><dt>{auditDetailLabels[key]||key.replaceAll("_"," ")}</dt><dd>{typeof value==="object"?JSON.stringify(value):String(value)}</dd></div>)}</dl></details>}</div></article>)}</div>
+    {!busy&&!items.length&&<p className="hint">Für diese Auswahl sind noch keine Aktivitäten protokolliert.</p>}
+    {hasMore&&<button type="button" onClick={()=>load(offset,true)} disabled={busy}>{busy?"Lädt …":"Weitere Aktivitäten laden"}</button>}
+  </section>;
+}
+
 function SettingsScreen({
   user,
   people,
@@ -4880,6 +4909,7 @@ function SettingsScreen({
     [saved, setSaved] = useState(false),
     [checkingUpdates, setCheckingUpdates] = useState(false),
     [updateCheckMessage, setUpdateCheckMessage] = useState(""),
+    [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
     [error, setError] = useState("");
   useEffect(() => {
     api<{ primary_color: string; holiday_color: string; birthday_color: string; school_color: string }>(
@@ -4964,11 +4994,19 @@ function SettingsScreen({
         </div>
       </header>
       <nav className="settings-jumps" aria-label="Einstellungsbereiche">
-        <a href="#settings-profile">Profil</a><a href="#settings-calendar">Kalender</a>
-        {user.role === "ADMIN" && <><a href="#settings-access">Freigaben</a><a href="#settings-sources">Externe Kalender</a><a href="#settings-integrations">Integrationen</a></>}
+        <button type="button" className={settingsSection === "profile" ? "active" : ""} onClick={() => setSettingsSection("profile")}>Profil</button>
+        <button type="button" className={settingsSection === "calendar" ? "active" : ""} onClick={() => setSettingsSection("calendar")}>Kalender</button>
+        {user.role === "ADMIN" && <>
+          <button type="button" className={settingsSection === "access" ? "active" : ""} onClick={() => setSettingsSection("access")}>Freigaben</button>
+          <button type="button" className={settingsSection === "sources" ? "active" : ""} onClick={() => setSettingsSection("sources")}>Externe Kalender</button>
+          <button type="button" className={settingsSection === "updates" ? "active" : ""} onClick={() => setSettingsSection("updates")}>Aktualisierungen</button>
+          <button type="button" className={settingsSection === "integrations" ? "active" : ""} onClick={() => setSettingsSection("integrations")}>Integrationen</button>
+          <button type="button" className={settingsSection === "audit" ? "active" : ""} onClick={() => setSettingsSection("audit")}>Logbuch</button>
+          <button type="button" className={settingsSection === "appearance" ? "active" : ""} onClick={() => setSettingsSection("appearance")}>Darstellung</button>
+        </>}
       </nav>
-      <div className="settings-layout">
-      <section id="settings-profile" className="themebox settings-card">
+      <div className="settings-layout settings-tab-content">
+      {settingsSection === "profile" && <section id="settings-profile" className="themebox settings-card">
         <h2>Meine Kalenderfarbe</h2>
         <p className="muted">
           Diese Farbe kennzeichnet im Kalender die Tage, an denen ein Kind bei
@@ -5010,8 +5048,8 @@ function SettingsScreen({
           {user.display_name}
         </div>
         <button onClick={savePersonColor}>Profil speichern</button>
-      </section>
-      <section id="settings-calendar" className="themebox settings-card">
+      </section>}
+      {settingsSection === "calendar" && <section id="settings-calendar" className="themebox settings-card">
         <h2>Meine Kalenderfarben</h2>
         <p className="muted">Diese Farben gelten nur für deine persönliche Kalenderansicht.</p>
         <h3>Schule</h3><div className="themepicker"><input type="color" value={calendarColors.school_color} onChange={(event) => setCalendarColors({...calendarColors, school_color: event.target.value})}/><code>{calendarColors.school_color.toUpperCase()}</code></div>
@@ -5019,16 +5057,17 @@ function SettingsScreen({
         {(user.role === "ADMIN" || sectionAccess.birthdays.includes(user.id)) && <><h3>Geburtstage</h3><div className="themepicker"><input type="color" value={calendarColors.birthday_color} onChange={(event) => setCalendarColors({...calendarColors, birthday_color: event.target.value})}/><code>{calendarColors.birthday_color.toUpperCase()}</code></div></>}
         {(user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id)) && <><h3>Abfallkalender</h3><div className="themepicker"><input type="color" value={calendarColors.waste_color} onChange={(event) => setCalendarColors({...calendarColors, waste_color: event.target.value})}/><code>{calendarColors.waste_color.toUpperCase()}</code></div></>}
         <button onClick={saveCalendarColors}>Kalenderfarben speichern</button>
-      </section>
-      {user.role === "ADMIN" && (
+      </section>}
+      {user.role === "ADMIN" && settingsSection === "access" && (
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />
       )}
-      {user.role === "ADMIN" && <CalendarSourceOverview />}
-      {user.role === "ADMIN" && <section id="settings-updates" className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
-      {user.role === "ADMIN" && (
+      {user.role === "ADMIN" && settingsSection === "sources" && <CalendarSourceOverview />}
+      {user.role === "ADMIN" && settingsSection === "updates" && <section id="settings-updates" className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
+      {user.role === "ADMIN" && settingsSection === "integrations" && (
         <IntegrationSettings />
       )}
-      {user.role === "ADMIN" && (
+      {user.role === "ADMIN" && settingsSection === "audit" && <AuditLogSettings people={people} />}
+      {user.role === "ADMIN" && settingsSection === "appearance" && (
         <section id="settings-global-theme" className="themebox globaltheme settings-card">
           <h2>Akzentfarbe</h2>
           <p className="muted">

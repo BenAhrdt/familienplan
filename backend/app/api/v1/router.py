@@ -169,7 +169,12 @@ def recurrence_dates(data: StayCreate) -> list[tuple[datetime, datetime]]:
 
 
 def audit(db: Session, request: Request, action: str, user_id: int | None = None, target: tuple[str, str] | None = None, metadata: dict | None = None):
-    db.add(AuditLog(user_id=user_id, action=action, target_type=target[0] if target else None, target_id=target[1] if target else None, metadata_json=metadata, ip_address=request.client.host if request.client else None))
+    details = dict(metadata or {})
+    if user_id:
+        actor = db.get(User, user_id)
+        if actor:
+            details.setdefault("_actor_name", actor.display_name)
+    db.add(AuditLog(user_id=user_id, action=action, target_type=target[0] if target else None, target_id=target[1] if target else None, metadata_json=details or None, ip_address=request.client.host if request.client else None))
 
 
 def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None):
@@ -321,7 +326,7 @@ def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depend
     birthday = Birthday(**values, visible_to_user_ids=audience, created_by_id=user.id)
     db.add(birthday)
     db.flush()
-    audit(db, request, "BIRTHDAY_CREATED", user.id, ("birthday", str(birthday.id)))
+    audit(db, request, "BIRTHDAY_CREATED", user.id, ("birthday", str(birthday.id)), {"name": birthday.display_name, "birth_date": birthday.birth_date.isoformat()})
     db.commit()
     db.refresh(birthday)
     return birthday
@@ -340,7 +345,7 @@ def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db
     values["is_private"] = audience is not None
     for key, value in values.items():
         setattr(birthday, key, value)
-    audit(db, request, "BIRTHDAY_CHANGED", user.id, ("birthday", str(birthday.id)))
+    audit(db, request, "BIRTHDAY_CHANGED", user.id, ("birthday", str(birthday.id)), {"name": birthday.display_name, "birth_date": birthday.birth_date.isoformat(), "visibility": birthday.visible_to_user_ids})
     db.commit()
     db.refresh(birthday)
     return birthday
@@ -353,7 +358,7 @@ def delete_birthday(birthday_id: int, request: Request, db: Session = Depends(ge
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
-    audit(db, request, "BIRTHDAY_DELETED", user.id, ("birthday", str(birthday.id)))
+    audit(db, request, "BIRTHDAY_DELETED", user.id, ("birthday", str(birthday.id)), {"name": birthday.display_name, "birth_date": birthday.birth_date.isoformat()})
     db.delete(birthday)
     db.commit()
     return Response(status_code=204)
@@ -417,6 +422,34 @@ def update_calendar_colors(data: CalendarColorPreferences, request: Request, db:
 @router.get("/settings/sections", response_model=SectionAccessSetting)
 def get_section_access(db: Session = Depends(get_db), _: User = Depends(current_user)):
     return SectionAccessSetting(**section_access(db))
+
+
+@router.get("/audit-log")
+def get_audit_log(user_id: int | None = None, action: str | None = None, limit: int = 100, offset: int = 0,
+                  db: Session = Depends(get_db), _: User = Depends(admin)):
+    limit = min(max(limit, 1), 250)
+    offset = max(offset, 0)
+    query = select(AuditLog, User.display_name).outerjoin(User, User.id == AuditLog.user_id)
+    if user_id is not None:
+        query = query.where(AuditLog.user_id == user_id)
+    if action:
+        query = query.where(AuditLog.action == action)
+    rows = db.execute(query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit + 1)).all()
+    return {
+        "items": [{
+            "id": entry.id,
+            "user_id": entry.user_id,
+            "user_name": display_name or (entry.metadata_json or {}).get("_actor_name") or "System / unbekannt",
+            "action": entry.action,
+            "target_type": entry.target_type,
+            "target_id": entry.target_id,
+            "details": {key: value for key, value in (entry.metadata_json or {}).items() if not key.startswith("_")},
+            "ip_address": entry.ip_address,
+            "created_at": entry.created_at,
+        } for entry, display_name in rows[:limit]],
+        "has_more": len(rows) > limit,
+        "next_offset": offset + min(len(rows), limit),
+    }
 
 
 @router.put("/settings/sections", response_model=SectionAccessSetting, dependencies=[Depends(require_csrf)])
@@ -797,7 +830,7 @@ def children(db: Session = Depends(get_db), user: User = Depends(current_user)):
 def create_child(data: ChildCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
     child = Child(**data.model_dump())
     db.add(child); db.flush()
-    audit(db, request, "CHILD_CREATED", user.id, ("child", str(child.id)))
+    audit(db, request, "CHILD_CREATED", user.id, ("child", str(child.id)), {"name": child.display_name})
     db.commit()
     return child
 
@@ -809,7 +842,7 @@ def update_child(child_id: int, data: ChildUpdate, request: Request, db: Session
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kind nicht gefunden")
     for key, value in data.model_dump().items():
         setattr(child, key, value)
-    audit(db, request, "CHILD_CHANGED", user.id, ("child", str(child.id)))
+    audit(db, request, "CHILD_CHANGED", user.id, ("child", str(child.id)), {"name": child.display_name, "changed_values": data.model_dump(mode="json", exclude_unset=True)})
     db.commit()
     db.refresh(child)
     return child
@@ -1364,7 +1397,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
         stay.recurrence_exception_rule_id = rule.id if rule else None
         stay.recurrence_original_start = original_start if rule else None
         stay.recurrence_rule_id = None
-    audit(db, request, "STAY_SERIES_CHANGED" if len(targets) > 1 else "STAY_CHANGED", user.id, ("stay", str(stay.id)), {"scope": data.scope, "affected": len(targets)})
+    audit(db, request, "STAY_SERIES_CHANGED" if len(targets) > 1 else "STAY_CHANGED", user.id, ("stay", str(stay.id)), {"scope": data.scope, "affected": len(targets), "child_id": stay.child_id, "responsible_user_id": data.responsible_user_id, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "note": data.note})
     db.commit()
     return [stay_payload(db, item) for item in targets]
 
@@ -2053,7 +2086,7 @@ def create_calendar_event(data: CalendarEventCreate, request: Request, db: Sessi
         if cursor > limit:
             break
     db.flush()
-    audit(db, request, "CALENDAR_EVENT_SERIES_CREATED" if group else "CALENDAR_EVENT_CREATED", user.id, ("calendar_event", str(created[0].id)), {"occurrences": len(created)})
+    audit(db, request, "CALENDAR_EVENT_SERIES_CREATED" if group else "CALENDAR_EVENT_CREATED", user.id, ("calendar_event", str(created[0].id)), {"title": data.title, "event_type": data.event_type, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "occurrences": len(created)})
     db.commit()
     return created[0]
 
@@ -2113,7 +2146,7 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
             else:
                 cursor += timedelta(weeks=data.recurrence_interval)
         db.flush()
-        audit(db, request, "CALENDAR_EVENT_SERIES_CHANGED", user.id, ("calendar_event_series", group), {"scope": scope, "occurrences": len(replacements)})
+        audit(db, request, "CALENDAR_EVENT_SERIES_CHANGED", user.id, ("calendar_event_series", group), {"title": data.title, "event_type": data.event_type, "scope": scope, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "occurrences": len(replacements)})
         db.commit()
         return replacements[0]
     event.title = data.title
@@ -2133,8 +2166,7 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         event.recurrence_frequency = None
         event.recurrence_interval = None
         event.recurrence_until = None
-    audit(db, request, "CALENDAR_EVENT_CHANGED", user.id, ("calendar_event", str(event.id)))
-    db.commit()
+    audit(db, request, "CALENDAR_EVENT_CHANGED", user.id, ("calendar_event", str(event.id)), {"title": event.title, "event_type": event.event_type, "starts_at": event.starts_at.isoformat(), "ends_at": event.ends_at.isoformat(), "description": event.description})
     db.refresh(event)
     return event
 
@@ -2155,7 +2187,7 @@ def delete_calendar_event(event_id: int, request: Request, scope: str = "occurre
         targets = list(db.scalars(select(CalendarEvent).where(CalendarEvent.recurrence_group == event.recurrence_group, CalendarEvent.starts_at >= event.starts_at)))
     for target in targets:
         db.delete(target)
-    audit(db, request, "CALENDAR_EVENT_SERIES_DELETED" if len(targets) > 1 else "CALENDAR_EVENT_DELETED", user.id, ("calendar_event", str(event_id)), {"scope": scope, "affected": len(targets)})
+    audit(db, request, "CALENDAR_EVENT_SERIES_DELETED" if len(targets) > 1 else "CALENDAR_EVENT_DELETED", user.id, ("calendar_event", str(event_id)), {"title": event.title, "event_type": event.event_type, "starts_at": event.starts_at.isoformat(), "scope": scope, "affected": len(targets)})
     db.commit()
     return Response(status_code=204)
 
