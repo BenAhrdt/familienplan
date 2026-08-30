@@ -10,7 +10,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
@@ -219,9 +219,9 @@ def login(data: Login, request: Request, response: Response, db: Session = Depen
 
 
 @router.get("/auth/me", response_model=SessionOut)
-def me(request: Request, user: User = Depends(current_user)):
+def me(request: Request, user: User = Depends(current_user), admin_session_token: str | None = Cookie(default=None)):
     session = getattr(request.state, "auth_session", None)
-    return SessionOut(user=user, csrf_token=session.csrf_token if session else "")
+    return SessionOut(user=user, csrf_token=session.csrf_token if session else "", impersonating=bool(admin_session_token))
 
 
 @router.post("/auth/logout", status_code=204, dependencies=[Depends(require_csrf)])
@@ -232,6 +232,43 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db), 
     audit(db, request, "LOGOUT", user.id)
     db.commit()
     response.delete_cookie("session_token", path="/")
+    response.delete_cookie("admin_session_token", path="/")
+
+
+@router.post("/people/{user_id}/impersonate", response_model=SessionOut, dependencies=[Depends(require_csrf)])
+def impersonate(user_id: int, request: Request, response: Response, db: Session = Depends(get_db), actor: User = Depends(admin), session_token: str | None = Cookie(default=None)):
+    target = db.get(User, user_id)
+    if not target or not target.is_active or target.is_pending:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person ist noch nicht für die Anmeldung freigeschaltet")
+    if target.role == Role.ADMIN:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Administratorkonten können nicht simuliert werden")
+    if not session_token:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Die Admin-Sitzung konnte nicht übernommen werden")
+    result = issue_session(db, response, target, False)
+    response.set_cookie("admin_session_token", session_token, max_age=settings.session_hours * 3600,
+        httponly=True, secure=settings.session_cookie_secure, samesite="strict", path="/")
+    audit(db, request, "IMPERSONATION_STARTED", actor.id, ("user", str(target.id)))
+    db.commit()
+    result.impersonating = True
+    return result
+
+
+@router.post("/auth/impersonation/stop", response_model=SessionOut, dependencies=[Depends(require_csrf)])
+def stop_impersonation(request: Request, response: Response, db: Session = Depends(get_db), current: User = Depends(current_user), admin_session_token: str | None = Cookie(default=None)):
+    original = db.scalar(select(UserSession).where(UserSession.token_hash == token_hash(admin_session_token or "")))
+    original_admin = original.user if original and original.expires_at > utcnow() else None
+    if not original_admin or original_admin.role != Role.ADMIN or not original_admin.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die ursprüngliche Admin-Sitzung ist nicht mehr gültig")
+    simulated_session = getattr(request.state, "auth_session", None)
+    if simulated_session:
+        db.delete(simulated_session)
+    remaining = max(1, int((original.expires_at - utcnow()).total_seconds()))
+    response.set_cookie("session_token", admin_session_token, max_age=remaining, httponly=True,
+        secure=settings.session_cookie_secure, samesite="lax", path="/")
+    response.delete_cookie("admin_session_token", path="/")
+    audit(db, request, "IMPERSONATION_STOPPED", original_admin.id, ("user", str(current.id)))
+    db.commit()
+    return SessionOut(user=original_admin, csrf_token=original.csrf_token, impersonating=False)
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -421,9 +458,23 @@ def update_own_profile(data: ProfileUpdate, request: Request, db: Session = Depe
 @router.post("/invitations", response_model=InvitationOut, status_code=201, dependencies=[Depends(require_csrf)])
 def invite(data: InvitationCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
     raw = new_token()
-    invitation = Invitation(email=str(data.email).lower() if data.email else None, role=data.role, display_name=data.display_name, child_permissions={str(key): value.value for key, value in data.child_permissions.items()}, token_hash=token_hash(raw), created_by_id=user.id, expires_at=utcnow() + timedelta(hours=settings.invitation_hours))
+    pending_key = uuid.uuid4().hex
+    pending_email = str(data.email).lower() if data.email else f"pending-{pending_key}@familienplan.invalid"
+    if data.email and db.scalar(select(User.id).where(func.lower(User.email) == pending_email)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Diese E-Mail-Adresse ist bereits vergeben")
+    person = User(username=f"pending-{pending_key}", display_name=data.display_name.strip(), email=pending_email,
+        password_hash=hash_password(new_token()), role=data.role, is_pending=True)
+    db.add(person)
+    db.flush()
+    invitation = Invitation(email=str(data.email).lower() if data.email else None, role=data.role, display_name=data.display_name,
+        child_permissions={str(key): value.value for key, value in data.child_permissions.items()}, token_hash=token_hash(raw),
+        token_value=raw, user_id=person.id, created_by_id=user.id, expires_at=utcnow() + timedelta(hours=settings.invitation_hours))
     db.add(invitation)
     db.flush()
+    for child_id, permission in data.child_permissions.items():
+        if not db.get(Child, child_id):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Kind {child_id} wurde nicht gefunden")
+        db.add(ChildUserPermission(child_id=child_id, user_id=person.id, permission=permission))
     invite_url = f"{settings.app_origin}/invite/{raw}"
     if invitation.email:
         recipient = db.scalar(select(User).where(func.lower(User.email) == invitation.email.lower()))
@@ -437,7 +488,32 @@ def invite(data: InvitationCreate, request: Request, db: Session = Depends(get_d
     audit(db, request, "INVITATION_CREATED", user.id, ("invitation", str(invitation.id)), {"email": invitation.email, "role": invitation.role.value, "children": list(data.child_permissions)})
     db.commit()
     # Returned once so an admin can deliver it when SMTP is not configured.
-    return InvitationOut(id=invitation.id, email=invitation.email, expires_at=invitation.expires_at, invite_url=invite_url)
+    return InvitationOut(id=invitation.id, email=invitation.email, expires_at=invitation.expires_at, invite_url=invite_url, user_id=person.id)
+
+
+@router.get("/people/{user_id}/invitation", response_model=InvitationOut)
+def person_invitation(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+    invitation = db.scalar(select(Invitation).where(Invitation.user_id == user_id, Invitation.used_at.is_(None)))
+    if not invitation or not invitation.token_value:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Keine offene Einladung vorhanden")
+    return InvitationOut(id=invitation.id, email=invitation.email, expires_at=invitation.expires_at,
+        invite_url=f"{settings.app_origin}/invite/{invitation.token_value}", user_id=user_id, used_at=invitation.used_at)
+
+
+@router.post("/people/{user_id}/invitation/renew", response_model=InvitationOut, dependencies=[Depends(require_csrf)])
+def renew_person_invitation(user_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(admin)):
+    person = db.get(User, user_id)
+    invitation = db.scalar(select(Invitation).where(Invitation.user_id == user_id, Invitation.used_at.is_(None)))
+    if not person or not person.is_pending or not invitation:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Keine offene Einladung vorhanden")
+    raw = new_token()
+    invitation.token_hash = token_hash(raw)
+    invitation.token_value = raw
+    invitation.expires_at = utcnow() + timedelta(hours=settings.invitation_hours)
+    audit(db, request, "INVITATION_RENEWED", actor.id, ("invitation", str(invitation.id)), {"user_id": user_id})
+    db.commit()
+    return InvitationOut(id=invitation.id, email=invitation.email, expires_at=invitation.expires_at,
+        invite_url=f"{settings.app_origin}/invite/{raw}", user_id=user_id)
 
 
 @router.post("/invitations/accept", response_model=SessionOut)
@@ -447,12 +523,23 @@ def accept_invite(data: InvitationAccept, request: Request, response: Response, 
         raise HTTPException(status.HTTP_410_GONE, "Diese Einladung ist ungültig oder abgelaufen")
     if invitation.email and str(data.email).lower() != invitation.email:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Die E-Mail-Adresse stimmt nicht mit der Einladung überein")
-    if db.scalar(select(User.id).where(func.lower(User.username) == data.username.lower())):
+    if db.scalar(select(User.id).where(func.lower(User.username) == data.username.lower(), User.id != invitation.user_id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Dieser Benutzername ist bereits vergeben")
-    if db.scalar(select(User.id).where(func.lower(User.email) == str(data.email).lower())):
+    if db.scalar(select(User.id).where(func.lower(User.email) == str(data.email).lower(), User.id != invitation.user_id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Diese E-Mail-Adresse ist bereits vergeben")
-    user = User(username=data.username, display_name=data.display_name, email=str(data.email).lower(), first_name=data.first_name, last_name=data.last_name, password_hash=hash_password(data.password), role=invitation.role)
-    db.add(user)
+    user = db.get(User, invitation.user_id) if invitation.user_id else None
+    if user:
+        user.username = data.username
+        user.display_name = data.display_name
+        user.email = str(data.email).lower()
+        user.first_name = data.first_name
+        user.last_name = data.last_name
+        user.password_hash = hash_password(data.password)
+        user.role = invitation.role
+        user.is_pending = False
+    else:
+        user = User(username=data.username, display_name=data.display_name, email=str(data.email).lower(), first_name=data.first_name, last_name=data.last_name, password_hash=hash_password(data.password), role=invitation.role)
+        db.add(user)
     try:
         db.flush()
     except IntegrityError as exc:
@@ -464,8 +551,10 @@ def accept_invite(data: InvitationAccept, request: Request, response: Response, 
             raise HTTPException(status.HTTP_409_CONFLICT, "Diese E-Mail-Adresse ist bereits vergeben")
         raise HTTPException(status.HTTP_409_CONFLICT, "Das Konto konnte wegen eines Datenkonflikts nicht erstellt werden")
     invitation.used_at = utcnow()
-    for child_id, permission in (invitation.child_permissions or {}).items():
-        db.add(ChildUserPermission(child_id=int(child_id), user_id=user.id, permission=Permission(permission)))
+    invitation.token_value = None
+    if not invitation.user_id:
+        for child_id, permission in (invitation.child_permissions or {}).items():
+            db.add(ChildUserPermission(child_id=int(child_id), user_id=user.id, permission=Permission(permission)))
     audit(db, request, "INVITATION_ACCEPTED", user.id, ("invitation", str(invitation.id)))
     result = issue_session(db, response, user, False)
     db.commit()

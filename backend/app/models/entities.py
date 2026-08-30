@@ -45,6 +45,7 @@ class User(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Berlin")
     color: Mapped[str] = mapped_column(String(7), default="#3BA4E5")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_pending: Mapped[bool] = mapped_column(Boolean, default=False)
     allowed_event_types: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"])
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -67,6 +68,8 @@ class Invitation(Base):
     role: Mapped[Role] = mapped_column(Enum(Role, name="role"))
     display_name: Mapped[str | None] = mapped_column(String(160))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_value: Mapped[str | None] = mapped_column(String(512))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

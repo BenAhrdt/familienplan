@@ -43,17 +43,19 @@ class UserOut(BaseModel):
     color: str
     birth_date: date | None = None
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
+    is_pending: bool = False
 
 
 class SessionOut(BaseModel):
     user: UserOut
     csrf_token: str
+    impersonating: bool = False
 
 
 class InvitationCreate(BaseModel):
     email: EmailStr | None = None
     role: Role = Role.VIEWER
-    display_name: str | None = None
+    display_name: str = Field(min_length=2, max_length=160)
     child_permissions: dict[int, Permission] = {}
 
 
@@ -62,6 +64,8 @@ class InvitationOut(BaseModel):
     email: EmailStr | None
     expires_at: datetime
     invite_url: str
+    user_id: int | None = None
+    used_at: datetime | None = None
 
 
 class InvitationAccept(SetupAdmin):

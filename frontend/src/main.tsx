@@ -2964,12 +2964,15 @@ function PeopleScreen({
         const r = await api<{ invite_url: string }>("/invitations", {
           method: "POST",
           body: JSON.stringify({
-            display_name: f.get("display_name") || null,
+            display_name: f.get("display_name"),
+            email: f.get("email") || null,
             role,
             child_permissions: permissions(f, role),
           }),
         });
         setInvite(r.invite_url);
+        load();
+        reload();
       }
     } catch (x) {
       setError((x as Error).message);
@@ -2987,6 +2990,11 @@ function PeopleScreen({
       },
     );
     setError("");
+    setInvite("");
+    setCopied(false);
+    if (p.is_pending) {
+      api<{ invite_url: string }>(`/people/${p.id}/invitation`).then((result) => setInvite(result.invite_url)).catch(() => {});
+    }
     setOpen("edit");
   }
   return (
@@ -3033,9 +3041,11 @@ function PeopleScreen({
               {p.display_name[0]}
             </div>
             <h2>{p.display_name}</h2>
-            <p>{p.email}</p>
+            <p>{p.is_pending ? "Noch nicht registriert" : p.email}</p>
             <span className="tag">
-              {p.role === "ADMIN"
+              {p.is_pending
+                ? "Einladung ausstehend"
+                : p.role === "ADMIN"
                 ? "Administrator"
                 : p.role === "EDITOR"
                   ? "Darf planen"
@@ -3061,7 +3071,7 @@ function PeopleScreen({
             </button>
             <h2>{open === "edit" ? "Person bearbeiten" : "Person einladen"}</h2>
             {error && <p className="error">{error}</p>}
-            {invite ? (
+            {invite && open === "invite" ? (
               <>
                 <p>Einladungslink – bitte sicher an die Person senden:</p>
                 <div className="copyrow">
@@ -3084,11 +3094,10 @@ function PeopleScreen({
               <>
                 <>
                   {open === "invite" && (
-                    <Field
-                      label="Anzeigename (optional)"
-                      name="display_name"
-                      required={false}
-                    />
+                    <>
+                      <Field label="Anzeigename" name="display_name" />
+                      <Field label="E-Mail-Adresse (optional)" name="email" type="email" required={false} />
+                    </>
                   )}
                 </>
                 <label>
@@ -3108,6 +3117,16 @@ function PeopleScreen({
                 </label>
                 {open === "edit" && (
                   <>
+                    {selected?.user.is_pending && invite && (
+                      <div className="pending-invitation">
+                        <strong>Einladung noch nicht angenommen</strong>
+                        <div className="copyrow"><input readOnly value={invite} onFocus={(e) => e.currentTarget.select()} /><button type="button" onClick={copy}><Copy />{copied ? "Kopiert" : "Link kopieren"}</button></div>
+                        <button type="button" className="secondary" onClick={async () => {
+                          const renewed = await api<{ invite_url: string }>(`/people/${selected.user.id}/invitation/renew`, { method: "POST" });
+                          setInvite(renewed.invite_url); setCopied(false);
+                        }}>Neuen Einladungslink erzeugen</button>
+                      </div>
+                    )}
                     <Field
                       label="Anzeigename"
                       name="display_name"
@@ -3127,17 +3146,18 @@ function PeopleScreen({
                         defaultValue={selected?.user.last_name || ""}
                       />
                     </div>
-                    <Field
-                      label="Benutzername"
-                      name="username"
-                      defaultValue={selected?.user.username || ""}
-                    />
-                    <Field
-                      label="E-Mail-Adresse"
-                      name="email"
-                      type="email"
-                      defaultValue={selected?.user.email || ""}
-                    />
+                    {selected?.user.is_pending ? (
+                      <>
+                        <input type="hidden" name="username" value={selected.user.username} />
+                        <input type="hidden" name="email" value={selected.user.email} />
+                        <p className="hint">Benutzername und weitere Anmeldedaten legt die Person beim Annehmen der Einladung fest.</p>
+                      </>
+                    ) : (
+                      <>
+                        <Field label="Benutzername" name="username" defaultValue={selected?.user.username || ""} />
+                        <Field label="E-Mail-Adresse" name="email" type="email" defaultValue={selected?.user.email || ""} />
+                      </>
+                    )}
                     <Field
                       label="Geburtsdatum (optional)"
                       name="birth_date"
@@ -3199,6 +3219,13 @@ function PeopleScreen({
                     ? "Änderungen speichern"
                     : "Einladung erstellen"}
                 </button>
+                {open === "edit" && selected && !selected.user.is_pending && selected.user.role !== "ADMIN" && (
+                  <button type="button" className="secondary" onClick={async () => {
+                    if (!window.confirm(`FamilienPlan als ${selected.user.display_name} öffnen?`)) return;
+                    await api(`/people/${selected.user.id}/impersonate`, { method: "POST" });
+                    location.reload();
+                  }}>Als diese Person anmelden</button>
+                )}
               </>
             )}
           </form>
@@ -4079,6 +4106,7 @@ function App() {
   const [loading, setLoading] = useState(true),
     [setup, setSetup] = useState(false),
     [user, setUser] = useState<User | null>(null),
+    [impersonating, setImpersonating] = useState(false),
     [screen, setScreen] = useState<Screen>(() => {
       if (new URLSearchParams(location.search).has("request")) return "calendar";
       const stored = localStorage.getItem("familienplan.lastScreen");
@@ -4123,13 +4151,14 @@ function App() {
   useEffect(() => {
     Promise.all([
       api<{ setup_required: boolean }>("/setup/status"),
-      api<{ user: User; csrf_token: string }>("/auth/me").catch(() => null),
+      api<{ user: User; csrf_token: string; impersonating?: boolean }>("/auth/me").catch(() => null),
     ])
       .then(([s, m]) => {
         setSetup(s.setup_required);
         if (m) {
           setUser(m.user);
           setCsrf(m.csrf_token);
+          setImpersonating(Boolean(m.impersonating));
         }
       })
       .finally(() => setLoading(false));
@@ -4291,6 +4320,18 @@ function App() {
   );
   return (
     <div className="shell">
+      {impersonating && (
+        <div className="impersonation-banner">
+          <span>Ansicht als <strong>{user.display_name}</strong></span>
+          <button onClick={async () => {
+            const original = await api<{ user: User; csrf_token: string }>("/auth/impersonation/stop", { method: "POST" });
+            setUser(original.user);
+            setCsrf(original.csrf_token);
+            setImpersonating(false);
+            location.reload();
+          }}>Zurück zum Admin</button>
+        </div>
+      )}
       <aside className="sidebar">
         <div className="brand">
           <div className="mark">FP</div>

@@ -33,7 +33,7 @@ def mail_config(db):
 def queue_mail(db, user_id: int, event_key: str, event_type: str, subject: str, body: str, action_url: str | None = None):
     user = db.get(User, user_id)
     config = mail_config(db)
-    if not user or not user.email or not config["enabled"]:
+    if not user or user.is_pending or not user.email or not config["enabled"]:
         return
     db.add(OutboxMessage(channel="email", recipient_key=user.email, event_key=event_key,
                          event_type=event_type, payload={"subject": subject, "body": body, "action_url": action_url}))

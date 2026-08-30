@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.8 – 30. August 2026
+
+### Personen und Einladungen
+
+- Eingeladene Personen erscheinen sofort mit dem Status „Einladung ausstehend“ und können bereits in Planungen und Berechtigungen ausgewählt werden.
+- Administratoren können den offenen Einladungslink in den Personeneigenschaften erneut kopieren oder sicher erneuern.
+- Administratoren können die Ansicht bestätigter Nicht-Admin-Personen übernehmen und über einen auffälligen Hinweis zur eigenen Sitzung zurückkehren; beide Vorgänge werden protokolliert.
+
 ## 0.1.7 – 30. August 2026
 
 ### Oberfläche und Updates

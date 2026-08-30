@@ -183,6 +183,9 @@ html.api-pending::after {
 .integration-row small { color:var(--muted); overflow-wrap:anywhere; }
 .secret-once { margin:1rem 0; padding:1rem; border:1px solid var(--green); border-radius:10px; background:color-mix(in srgb,var(--green) 8%,white); display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; }
 .secret-once code { overflow-wrap:anywhere; flex:1; }
+.impersonation-banner { position:fixed; z-index:80; left:50%; top:.7rem; transform:translateX(-50%); display:flex; align-items:center; gap:1rem; padding:.55rem .8rem; border:1px solid #9a7411; border-radius:10px; background:#fff2c7; color:#5f4808; box-shadow:0 6px 24px #1d2f2830; }
+.impersonation-banner button { padding:.45rem .65rem; border-radius:7px; background:#795d00; color:white; font-weight:750; }
+.pending-invitation { display:grid; gap:.65rem; padding:1rem; border:1px solid #d7b75c; border-radius:10px; background:#fff9e8; }
 .sidebar .brand { align-items:flex-start; }
 .brand-copy { min-width:0; display:flex; flex-direction:column; align-items:flex-start; padding-top:.08rem; }
 .brand-version { margin:.16rem 0 0; padding:0; background:transparent; color:var(--muted); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:.68rem; text-align:left; }
