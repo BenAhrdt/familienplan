@@ -10,11 +10,14 @@
   overflow: hidden;
   margin-bottom: 1.8rem;
 }
+.calendar-content { display:flex; flex-direction:column; }
+.calendar-content .monthcalendar { order:1; }
+.calendar-content .calendar-type-filters { order:2; }
+.calendar-content .series-list { order:3; }
+.calendar-collapsible > summary { cursor:pointer; color:var(--ink); font-family:Georgia,serif; font-size:1.25rem; font-weight:700; }
+.calendar-filter-options { display:flex; align-items:center; flex-wrap:wrap; gap:.55rem .9rem; padding-top:.8rem; }
 .calendar-type-filters {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: .55rem .9rem;
+  display: block;
   padding: .85rem 1rem;
   margin-bottom: 1rem;
   border: 1px solid var(--line);
@@ -425,7 +428,7 @@
     min-width: 760px;
   }
 }
-@media (max-width: 650px) {
+@media (max-width: 900px) {
   .monthcalendar {
     overflow-x: hidden;
   }

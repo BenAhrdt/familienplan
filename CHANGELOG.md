@@ -2,6 +2,19 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.26 – 30. August 2026
+
+### Mobile App-Ansicht
+
+- Die doppelte Benachrichtigungsglocke wurde entfernt und die mobile Kopfzeile neu ausgerichtet.
+- Der Abmeldeknopf besitzt eine kompakte, klar erkennbare Darstellung.
+- Die untere Navigation zeigt Übersicht, Kalender und ein aufklappendes Menü für alle weiteren Bereiche.
+- Das mobile Menü nutzt den verfügbaren Bildschirm übersichtlich in zwei beziehungsweise drei Spalten.
+- Im Kalender steht die Monatsansicht vor Terminfiltern und periodischen Einträgen.
+- Terminfilter und periodische Einträge sind platzsparend einklappbar.
+- Hoch- und Querformat bis 900 Pixel verhindern horizontales Seitenverschieben.
+- Die mobile Browseransicht ist auf App-Größe fixiert und lässt kein versehentliches Zoomen zu.
+
 ## 0.1.25 – 30. August 2026
 
 ### Terminfreigaben und offene Einladungen

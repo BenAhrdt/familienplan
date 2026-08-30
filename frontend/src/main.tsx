@@ -11,6 +11,7 @@ import {
   Copy,
   Home,
   LogOut,
+  Menu,
   Palette,
   Palmtree,
   Plus,
@@ -1768,9 +1769,10 @@ function CalendarScreen({
           })}
         </section>
       )}
+      <div className="calendar-content">
       {(series.length > 0 || eventSeries.length > 0) && (
-        <section className="series-list">
-          <h2>Periodische Einträge</h2>
+        <details className="series-list calendar-collapsible">
+          <summary>Periodische Einträge</summary>
           <p>Aufenthalts- und Terminserien unabhängig vom angezeigten Monat verwalten.</p>
           {series.map((stay) => (
             <article key={stay.recurrence_rule_id}>
@@ -1828,10 +1830,11 @@ function CalendarScreen({
               </button>
             </article>
           ))}
-        </section>
+        </details>
       )}
-      <section className="calendar-type-filters" aria-label="Angezeigte Terminarten">
-        <strong>Termine anzeigen:</strong>
+      <details className="calendar-type-filters calendar-collapsible" aria-label="Angezeigte Terminarten">
+        <summary>Terminarten ein- und ausblenden</summary>
+        <div className="calendar-filter-options">
         {availableEventTypes.map((type) => (
           <label key={type}>
             <input type="checkbox" checked={!hiddenEventTypes.includes(type)} onChange={() => setHiddenEventTypes((current) => {
@@ -1842,7 +1845,8 @@ function CalendarScreen({
             <span>{eventTypeLabels[type]}</span>
           </label>
         ))}
-      </section>
+        </div>
+      </details>
       <section className="monthcalendar">
         <header>
           <button
@@ -2147,6 +2151,7 @@ function CalendarScreen({
           })}
         </div>
       </section>
+      </div>
       {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p>{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
       {open && (
         <div className="modal">
@@ -4259,6 +4264,7 @@ function App() {
     [sectionAccess, setSectionAccess] = useState<SectionAccess>({ birthdays: [], waste_collection: [] }),
     [notifications, setNotifications] = useState<AppNotification[]>([]),
     [notificationsOpen, setNotificationsOpen] = useState(false),
+    [mobileMenuOpen, setMobileMenuOpen] = useState(false),
     [meta, setMeta] = useState<ApplicationMeta | null>(null),
     [updateStarting, setUpdateStarting] = useState(false),
     [updateDialog, setUpdateDialog] = useState<"confirm" | "progress" | "timeout" | "error" | null>(null),
@@ -4676,8 +4682,8 @@ function App() {
         <button onClick={openNotifications} aria-label="Benachrichtigungen">
           <Bell />
         </button>
-        <button onClick={logout} aria-label="Abmelden" title="Abmelden">
-          <LogOut />
+        <button className="mobile-logout" onClick={logout} aria-label="Abmelden" title="Abmelden">
+          <LogOut /><span>Abmelden</span>
         </button>
       </header>
       <main className="content">
@@ -4710,7 +4716,7 @@ function App() {
         {content}
       </main>
       <nav className="bottom">
-        {nav.map(([id, Icon]) => (
+        {nav.filter(([id]) => id === "home" || id === "calendar").map(([id, Icon]) => (
           <button
             className={screen === id ? "active" : ""}
             onClick={() => {
@@ -4723,7 +4729,9 @@ function App() {
             <small>{labels[id]}</small>
           </button>
         ))}
+        <button className={!['home', 'calendar'].includes(screen) ? "active" : ""} onClick={() => setMobileMenuOpen(true)}><Menu /><small>Menü</small></button>
       </nav>
+      {mobileMenuOpen && <div className="mobile-menu" role="dialog" aria-modal="true" aria-label="Navigation"><button className="mobile-menu-backdrop" onClick={() => setMobileMenuOpen(false)} aria-label="Menü schließen"/><section><header><div><strong>Menü</strong><small>Bereich auswählen</small></div><button onClick={() => setMobileMenuOpen(false)} aria-label="Menü schließen">×</button></header><nav>{nav.map(([id, Icon]) => <button className={screen === id ? "active" : ""} key={id} onClick={() => { setCalendarTarget(null); setScreen(id); setMobileMenuOpen(false); }}><Icon/><span>{labels[id]}</span></button>)}</nav></section></div>}
     </div>
   );
 }
