@@ -1897,7 +1897,7 @@ function CalendarScreen({
                 new Date(`${holiday.starts_on}T00:00:00`) < dayEnd &&
                 new Date(`${holiday.ends_on}T23:59:59`) >= day,
             );
-            const birthdays = [
+            const birthdays = hiddenEventTypes.includes("BIRTHDAY") ? [] : [
               ...children
                 .filter((child) => child.birth_date)
                 .map((child) => ({
@@ -1957,7 +1957,7 @@ function CalendarScreen({
               >
                 <time>{day.getDate()}</time>
                 <div className="dayentries">
-                  {children.map((child) => {
+                  {!hiddenEventTypes.includes("STAY") && children.map((child) => {
                     const childStays = dayStays
                       .filter((item) => item.child_id === child.id)
                       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));

@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.21 – 30. August 2026
+
+### Kalenderfilter
+
+- Das Ausblenden von „Aufenthalt“ entfernt nun sowohl geplante als auch täglich vorbelegte Aufenthaltsanzeigen.
+- Das Ausblenden von „Geburtstag“ entfernt auch automatisch erzeugte Kinder-, Personen- und private Geburtstage.
+
 ## 0.1.20 – 30. August 2026
 
 ### Synchronisationsübersicht
