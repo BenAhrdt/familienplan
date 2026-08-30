@@ -1067,6 +1067,7 @@ function CalendarScreen({
       holidays: Array<Holiday & { state: string }>;
     } | null>(null),
     [selectedDay, setSelectedDay] = useState<Date | null>(null),
+    [readOnlyInfo, setReadOnlyInfo] = useState<{ title: string; message: string } | null>(null),
     [error, setError] = useState(""),
     [hiddenEventTypes, setHiddenEventTypes] = useState<EventType[]>(() => {
       try { return JSON.parse(localStorage.getItem("familienplan-calendar-hidden-types") || "[]"); }
@@ -2075,7 +2076,16 @@ function CalendarScreen({
                       title={event.is_private ? "Nur für mich und Administratoren sichtbar" : undefined}
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
-                        openCalendarEvent(event);
+                        if (event.source_id) {
+                          setReadOnlyInfo({
+                            title: event.title,
+                            message: event.event_type === "WASTE"
+                              ? "Dieser Termin wurde aus dem externen Abfallkalender übernommen. Änderungen erfolgen an der Onlinequelle oder über die Einrichtung des Abfallkalenders."
+                              : event.event_type === "SCHOOL"
+                                ? "Dieser Termin wurde aus dem Schulkalender übernommen. Änderungen erfolgen an der Onlinequelle der Schule."
+                                : "Dieser Termin wurde aus einer externen Kalenderquelle übernommen und kann hier nicht bearbeitet werden.",
+                          });
+                        } else openCalendarEvent(event);
                       }}
                       onPointerDown={(pointerEvent) =>
                         pointerEvent.stopPropagation()
@@ -2096,7 +2106,10 @@ function CalendarScreen({
                         color: "color-mix(in srgb, var(--birthday) 70%, #332b18)",
                       }}
                       title="Automatisch erzeugter Termin · Geburtstag"
-                      onClick={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setReadOnlyInfo({ title: `Geburtstag von ${birthday.name}`, message: "Dieser Geburtstag wird automatisch aus den Personendaten erzeugt und kann deshalb nicht direkt im Kalender bearbeitet werden. Ändere ihn in der jeweiligen Person, beim Kind oder in der Rubrik Geburtstage." });
+                      }}
                     >
                       🎂 {birthday.name} wird {birthday.age}
                     </span>
@@ -2106,6 +2119,10 @@ function CalendarScreen({
                       className="dayholiday"
                       key={`${holiday.state}-${holiday.name}`}
                       title={holiday.name}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setReadOnlyInfo({ title: holiday.name, message: "Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt und kann nicht direkt im Kalender bearbeitet werden." });
+                      }}
                     >
                       Ferien ·{" "}
                       {children
@@ -2122,6 +2139,7 @@ function CalendarScreen({
           })}
         </div>
       </section>
+      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p>{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
       {open && (
         <div className="modal">
           <form

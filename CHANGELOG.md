@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.22 – 30. August 2026
+
+### Schreibgeschützte Kalendereinträge
+
+- Ferien öffnen nicht länger versehentlich den Dialog zum Anlegen eines Termins.
+- Automatische Geburtstage, Ferien sowie importierte Schul- und Abfalltermine zeigen beim Anklicken einen eigenen Hinweisdialog.
+- Der Hinweis erklärt die Herkunft und wo der jeweilige Eintrag geändert werden kann.
+
 ## 0.1.21 – 30. August 2026
 
 ### Kalenderfilter
