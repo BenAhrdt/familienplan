@@ -3543,7 +3543,7 @@ function HolidaysScreen({
     const start = new Date(item.starts_at),
       end = new Date(item.ends_at),
       inclusiveEnd = item.all_day
-        ? new Date(end.getTime() - 24 * 60 * 60 * 1000)
+        ? new Date(end.getTime() - 1)
         : end,
       startsOn = localDateTime(start).slice(0, 10),
       endsOn = localDateTime(inclusiveEnd).slice(0, 10),

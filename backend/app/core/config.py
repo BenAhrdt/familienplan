@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     app_name: str = "FamilienPlan"
     app_env: str = "development"
     app_origin: str = "http://localhost:5173"
+    app_timezone: str = "Europe/Berlin"
     database_url: str
     secret_key: str = Field(min_length=32)
     session_cookie_secure: bool = False

@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.12 – 30. August 2026
+
+### Schulkalender
+
+- Ganztägige ICS-Termine werden in der Anwendungszeitzone statt als UTC-Mitternacht importiert.
+- Exklusive Enddaten laufen dadurch nicht mehr fälschlich in den Folgetag hinein.
+- Die inklusive Datumsanzeige bleibt auch an Sommerzeitwechseln korrekt.
+
 ## 0.1.11 – 30. August 2026
 
 ### Einladungsversand

@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
@@ -780,10 +781,10 @@ async def search_institutions(kind: str, name: str, city: str, context_url: str 
 def _ics_datetime(value: str) -> tuple[datetime, bool]:
     value = value.strip()
     if len(value) == 8:
-        return datetime.strptime(value, "%Y%m%d").replace(tzinfo=utcnow().tzinfo), True
+        return datetime.strptime(value, "%Y%m%d").replace(tzinfo=ZoneInfo(settings.app_timezone)), True
     if value.endswith("Z"):
         return datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=utcnow().tzinfo), False
-    return datetime.strptime(value[:15], "%Y%m%dT%H%M%S").replace(tzinfo=utcnow().tzinfo), False
+    return datetime.strptime(value[:15], "%Y%m%dT%H%M%S").replace(tzinfo=ZoneInfo(settings.app_timezone)), False
 
 
 @router.post("/children/{child_id}/calendar/sync", dependencies=[Depends(require_csrf)])
