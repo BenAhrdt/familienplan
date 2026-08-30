@@ -5,6 +5,7 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
 DB_NAME="familienplan"
 DB_USER="familienplan"
+INSTALL_DIR="/opt/familienplan"
 
 fail() { echo "Fehler: $*" >&2; exit 1; }
 
@@ -65,7 +66,7 @@ esac
 echo "Installiere benötigte Systempakete …"
 run_as_root apt-get update
 run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  ca-certificates curl gnupg openssl postgresql postgresql-client python3 python3-venv python3-pip
+  ca-certificates curl gnupg nginx openssl postgresql postgresql-client python3 python3-venv python3-pip
 
 node_major=0
 if command -v node >/dev/null 2>&1; then
@@ -149,7 +150,83 @@ npm --prefix "$PROJECT_DIR/frontend" run build
 echo "Führe Datenbankmigrationen aus …"
 (cd "$PROJECT_DIR/backend" && ../.venv/bin/alembic upgrade head)
 
+echo "Richte Produktionsdienst und nginx ein …"
+if ! id -u familienplan >/dev/null 2>&1; then
+  run_as_root useradd --system --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin familienplan
+fi
+if [[ "$PROJECT_DIR" != "$INSTALL_DIR" ]]; then
+  run_as_root mkdir -p "$INSTALL_DIR"
+  run_as_root cp -a "$PROJECT_DIR/." "$INSTALL_DIR/"
+fi
+run_as_root chown -R root:root "$INSTALL_DIR"
+run_as_root chown -R familienplan:familienplan "$INSTALL_DIR/uploads"
+run_as_root chown root:familienplan "$INSTALL_DIR/.env"
+run_as_root chmod 640 "$INSTALL_DIR/.env"
+
+service_file="$(mktemp)"
+cat > "$service_file" <<EOF
+[Unit]
+Description=FamilienPlan Webanwendung
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=familienplan
+Group=familienplan
+WorkingDirectory=$INSTALL_DIR/backend
+EnvironmentFile=$INSTALL_DIR/.env
+Environment=UPLOAD_DIR=$INSTALL_DIR/uploads
+ExecStart=$INSTALL_DIR/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$INSTALL_DIR/uploads
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+run_as_root install -m 644 "$service_file" /etc/systemd/system/familienplan.service
+rm -f "$service_file"
+
+app_origin="$(env_value APP_ORIGIN)"
+app_host="${app_origin#*://}"
+app_host="${app_host%%/*}"
+app_host="${app_host%%:*}"
+nginx_file="$(mktemp)"
+cat > "$nginx_file" <<EOF
+server {
+    listen 80;
+    server_name $app_host;
+    root $INSTALL_DIR/frontend/dist;
+    index index.html;
+    client_max_body_size 20m;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto;
+    }
+    location / { try_files \$uri \$uri/ /index.html; }
+}
+EOF
+run_as_root install -m 644 "$nginx_file" /etc/nginx/sites-available/familienplan
+rm -f "$nginx_file"
+run_as_root ln -sfn /etc/nginx/sites-available/familienplan /etc/nginx/sites-enabled/familienplan
+run_as_root rm -f /etc/nginx/sites-enabled/default
+run_as_root nginx -t
+run_as_root systemctl daemon-reload
+run_as_root systemctl enable --now familienplan nginx
+run_as_root systemctl restart familienplan nginx
+
 echo
 echo "FamilienPlan wurde erfolgreich installiert."
-echo "Starten: $PROJECT_DIR/start.sh"
+echo "Dienststatus: systemctl status familienplan"
 echo "Aufrufen: $(env_value APP_ORIGIN)"
+echo "DNS: $app_host muss auf die öffentliche IP des Reverse Proxys/Routers zeigen."
+echo "Proxy-Ziel: IP dieses LXC auf Port 80; HTTPS/TLS am Reverse Proxy aktivieren."

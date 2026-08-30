@@ -2,11 +2,11 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.2** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.3** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 
-Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die öffentliche Basisadresse ab, installiert alle Abhängigkeiten, baut das Frontend und führt die Datenbankmigrationen aus. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
+Der Installer unterstützt Debian und Ubuntu. Er installiert die benötigten Systempakete einschließlich PostgreSQL und nginx, richtet Datenbank und Datenbankbenutzer ein, erzeugt sichere Zufallswerte für Datenbankpasswort und `SECRET_KEY`, fragt die öffentliche Basisadresse ab, baut die Anwendung und richtet einen automatisch startenden `familienplan.service` ein. Benötigt werden lediglich `root`-Rechte oder ein Benutzer mit funktionierendem `sudo`.
 
 ```bash
 git clone https://github.com/BenAhrdt/familienplan.git
@@ -15,6 +15,17 @@ cd familienplan
 ```
 
 Bei einer HTTPS-Adresse setzt der Installer automatisch den Produktivmodus und sichere Sitzungscookies. Einstellungen wie SMTP werden später in der Weboberfläche vorgenommen. Eine vorhandene vollständige `.env` kann bei einem erneuten Aufruf beibehalten werden. Liefert das Betriebssystem eine zu alte Node.js-Version, richtet der Installer das signierte NodeSource-Repository für Node.js 22 LTS ein.
+
+### DNS, Reverse Proxy und HTTPS
+
+Lege für die eingegebene Subdomain einen DNS-Record an: `A` zeigt auf die öffentliche IPv4-Adresse, `AAAA` nur bei tatsächlich erreichbarer IPv6-Adresse. Steht vor dem LXC ein Reverse Proxy, zeigen die DNS-Einträge auf dessen öffentliche Adresse; als Weiterleitungsziel wird die interne IP des LXC mit Port 80 verwendet. Am vorgeschalteten Reverse Proxy muss HTTPS/TLS aktiviert und die ursprüngliche HTTPS-Information per `X-Forwarded-Proto` weitergegeben werden. Bei direkter Veröffentlichung müssen Portweiterleitung und TLS separat eingerichtet werden.
+
+Der Anwendungsdienst und nginx starten nach einem Neustart automatisch. Status und Protokoll lassen sich so prüfen:
+
+```bash
+systemctl status familienplan nginx
+journalctl -u familienplan -n 100 --no-pager
+```
 
 ## Aktualisieren
 

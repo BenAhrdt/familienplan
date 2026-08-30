@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.3 – 30. August 2026
+
+### Produktionsbetrieb
+
+- Der Installer richtet die Anwendung unter `/opt/familienplan` ein und erstellt einen gehärteten, automatisch startenden systemd-Dienst.
+- nginx wird installiert, für die gewählte Subdomain konfiguriert und beim Systemstart aktiviert.
+- Abschlussmeldung und Dokumentation erklären DNS-Ziel, Reverse-Proxy-Port und HTTPS-Verantwortung.
+
 ## 0.1.2 – 30. August 2026
 
 ### Installation
