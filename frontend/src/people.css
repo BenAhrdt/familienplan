@@ -55,6 +55,29 @@
 .personform {
   width: min(38rem, calc(100% - 3rem));
 }
+.personform > h2 { margin-bottom: .4rem; }
+.personform > label,
+.personform > .grid2,
+.personform > .pending-invitation,
+.personform > .childaccess,
+.personform > .hint,
+.personform > .personform-actions { margin-top: 1.15rem; }
+.personform > label + .pending-invitation { margin-top: .75rem; }
+.personform .grid2 > label { margin-top: 0; }
+.personform .pending-invitation { gap: .9rem; padding: 1rem; }
+.personform .pending-invitation .copyrow { margin-top: .15rem; }
+.personform-actions { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; padding-top:.35rem; border-top:1px solid var(--line); }
+.personform-actions button { min-height:44px; padding:.75rem 1rem; border-radius:9px; background:var(--green); color:white; font-weight:750; }
+.personform-actions button.secondary { background:var(--sage); color:var(--green); }
+.personform-actions button.danger { margin-left:auto; background:#fff0ed; color:#9a3727; }
+@media (max-width:600px) {
+  .personform { width:100%; }
+  .personform-actions { align-items:stretch; flex-direction:column; }
+  .personform-actions button,
+  .personform-actions button.danger { width:100%; margin-left:0; }
+  .copyrow { flex-direction:column; }
+  .copyrow button { min-height:44px; justify-content:center; padding:.7rem .9rem; }
+}
 .childcard:disabled {
   cursor: default;
   opacity: 1;

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from sqlalchemy import and_, cast, func, or_, select, text
+from sqlalchemy import and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
-from app.models.entities import ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, Invitation, Notification, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
 from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, get_waste_config, save_waste_config, sync_waste_calendar
 
@@ -593,6 +593,60 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
     audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions)})
     db.commit()
     return PersonAccessOut(user=person, child_permissions=data.child_permissions)
+
+
+@router.delete("/people/{user_id}", status_code=204, dependencies=[Depends(require_csrf)])
+def delete_person(user_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(admin)):
+    person = db.get(User, user_id)
+    if not person or not person.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
+    if person.id == actor.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Das eigene Administratorkonto kann nicht gelöscht werden")
+
+    linked_records = any((
+        db.scalar(select(Child.id).where(Child.default_responsible_user_id == person.id).limit(1)),
+        db.scalar(select(CalendarEvent.id).where(CalendarEvent.created_by_id == person.id).limit(1)),
+        db.scalar(select(Stay.id).where(or_(Stay.responsible_user_id == person.id, Stay.created_by_id == person.id)).limit(1)),
+        db.scalar(select(RecurrenceRule.id).where(RecurrenceRule.responsible_user_id == person.id).limit(1)),
+        db.scalar(select(HolidayPlan.id).where(HolidayPlan.created_by_id == person.id).limit(1)),
+        db.scalar(select(HolidayPlanSegment.id).where(HolidayPlanSegment.responsible_user_id == person.id).limit(1)),
+        db.scalar(select(ChangeRequest.id).where(or_(ChangeRequest.requested_by_id == person.id, ChangeRequest.affected_user_id == person.id)).limit(1)),
+        db.scalar(select(Approval.id).where(Approval.user_id == person.id).limit(1)),
+        db.scalar(select(Birthday.id).where(Birthday.created_by_id == person.id).limit(1)),
+        db.scalar(select(Invitation.id).where(Invitation.created_by_id == person.id).limit(1)),
+        db.scalar(select(WebhookEndpoint.id).where(WebhookEndpoint.created_by_id == person.id).limit(1)),
+    ))
+    if linked_records:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Diese Person wird bereits in Planungs- oder Kalenderdaten verwendet und kann deshalb nicht gelöscht werden. Ändere zuerst die zugeordneten Daten.",
+        )
+
+    display_name = person.display_name
+    db.execute(delete(UserSession).where(UserSession.user_id == person.id))
+    db.execute(delete(ChildUserPermission).where(ChildUserPermission.user_id == person.id))
+    db.execute(delete(Notification).where(Notification.user_id == person.id))
+    db.execute(delete(ApiToken).where(ApiToken.user_id == person.id))
+    db.execute(delete(Invitation).where(Invitation.user_id == person.id))
+    db.execute(update(AuditLog).where(AuditLog.user_id == person.id).values(user_id=None))
+
+    sections = section_access(db)
+    sections = {key: [entry for entry in entries if entry != person.id] for key, entries in sections.items()}
+    section_row = db.get(ApplicationSetting, "section_access")
+    if section_row:
+        section_row.value = sections
+    waste = dict(get_waste_config(db))
+    waste["visible_to_user_ids"] = sections["waste_collection"]
+    save_waste_config(db, waste)
+    for event in db.scalars(select(CalendarEvent).where(cast(CalendarEvent.visible_to_user_ids, JSONB).contains([person.id]))):
+        event.visible_to_user_ids = [entry for entry in (event.visible_to_user_ids or []) if entry != person.id]
+    for birthday in db.scalars(select(Birthday).where(cast(Birthday.visible_to_user_ids, JSONB).contains([person.id]))):
+        birthday.visible_to_user_ids = [entry for entry in (birthday.visible_to_user_ids or []) if entry != person.id]
+
+    db.delete(person)
+    audit(db, request, "PERSON_DELETED", actor.id, ("user", str(user_id)), {"display_name": display_name})
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.put("/profile", response_model=UserOut, dependencies=[Depends(require_csrf)])

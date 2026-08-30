@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.28 – 30. August 2026
+
+### Personenverwaltung
+
+- Abstände, Gruppen und Aktionsflächen im Dialog zum Bearbeiten einer Person wurden auf Desktop und Mobilgeräten vereinheitlicht.
+- Einladungslink und Kopieraktion ordnen sich auf kleinen Bildschirmen untereinander an.
+- Administratoren können Personen über einen eigenen Bestätigungsdialog dauerhaft löschen.
+- Das eigene Administratorkonto ist vor dem Löschen geschützt.
+- Personen mit verknüpften Planungs- oder Kalenderdaten werden nicht unkontrolliert entfernt; FamilienPlan weist stattdessen auf die bestehenden Zuordnungen hin.
+- Beim Löschen werden Sitzungen, Einladungen, Berechtigungen und Rubrikenfreigaben der Person sicher bereinigt.
+
 ## 0.1.27 – 30. August 2026
 
 ### Einstellungen, Kalender und API

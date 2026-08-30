@@ -3006,6 +3006,8 @@ function PeopleScreen({
     [copied, setCopied] = useState(false),
     [notice, setNotice] = useState<{ title: string; message: string } | null>(null),
     [impersonateChoice, setImpersonateChoice] = useState<User | null>(null),
+    [deleteChoice, setDeleteChoice] = useState<User | null>(null),
+    [deletingPerson, setDeletingPerson] = useState(false),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
     [access, setAccess] = useState<PersonAccess[]>([]);
@@ -3312,14 +3314,19 @@ function PeopleScreen({
                     ))}
                   </fieldset>
                 )}
-                <button>
-                  {open === "edit"
-                    ? "Änderungen speichern"
-                    : "Einladung erstellen"}
-                </button>
-                {open === "edit" && selected && !selected.user.is_pending && selected.user.role !== "ADMIN" && (
-                  <button type="button" className="secondary" onClick={() => setImpersonateChoice(selected.user)}>Als diese Person anmelden</button>
-                )}
+                <div className="personform-actions">
+                  <button>
+                    {open === "edit"
+                      ? "Änderungen speichern"
+                      : "Einladung erstellen"}
+                  </button>
+                  {open === "edit" && selected && !selected.user.is_pending && selected.user.role !== "ADMIN" && (
+                    <button type="button" className="secondary" onClick={() => setImpersonateChoice(selected.user)}>Als diese Person anmelden</button>
+                  )}
+                  {open === "edit" && selected && selected.user.id !== getSessionUser()?.id && (
+                    <button type="button" className="danger" onClick={() => { setDeleteChoice(selected.user); setOpen(null); setError(""); }}>Person löschen</button>
+                  )}
+                </div>
               </>
             )}
           </form>
@@ -3327,6 +3334,7 @@ function PeopleScreen({
       )}
       {notice && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setNotice(null)} aria-label="Schließen">×</button><h2>{notice.title}</h2><p>{notice.message}</p><div className="modalactions"><button type="button" onClick={() => setNotice(null)}>Verstanden</button></div></section></div>}
       {impersonateChoice && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setImpersonateChoice(null)} aria-label="Schließen">×</button><h2>Ansicht übernehmen?</h2><p>FamilienPlan wird als {impersonateChoice.display_name} geöffnet. Du kannst anschließend wieder zu deinem Administratorkonto zurückkehren.</p><div className="modalactions"><button type="button" onClick={async () => { await api(`/people/${impersonateChoice.id}/impersonate`, { method: "POST" }); location.reload(); }}>Als {impersonateChoice.display_name} öffnen</button><button type="button" className="secondary" onClick={() => setImpersonateChoice(null)}>Abbrechen</button></div></section></div>}
+      {deleteChoice && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => { setDeleteChoice(null); setError(""); }} aria-label="Schließen">×</button><h2>Person löschen?</h2><p><strong>{deleteChoice.display_name}</strong> wird dauerhaft aus FamilienPlan entfernt. Bestehen bereits Planungs- oder Kalenderdaten dieser Person, verhindert FamilienPlan das Löschen.</p>{error && <p className="error">{error}</p>}<div className="modalactions"><button type="button" className="danger" disabled={deletingPerson} onClick={async () => { setDeletingPerson(true); setError(""); try { await api(`/people/${deleteChoice.id}`, { method: "DELETE" }); setDeleteChoice(null); reload(); } catch (x) { setError((x as Error).message); } finally { setDeletingPerson(false); } }}>{deletingPerson ? "Wird gelöscht …" : "Person endgültig löschen"}</button><button type="button" className="secondary" disabled={deletingPerson} onClick={() => { setDeleteChoice(null); setError(""); }}>Abbrechen</button></div></section></div>}
     </>
   );
 }
