@@ -322,6 +322,31 @@
   outline: 2px solid #c74632;
   outline-offset: -1px;
 }
+.care-markers {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  margin-right: 0.3rem;
+  vertical-align: middle;
+}
+.care-markers i {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: #fff;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 1px 1px #0005;
+}
+.care-person-marker { border-radius: 50%; }
+.care-child-star {
+  clip-path: polygon(50% 0%,61% 34%,98% 35%,68% 56%,79% 93%,50% 71%,21% 93%,32% 56%,2% 35%,39% 34%);
+  padding-bottom: 0.03rem;
+}
 .conflict-badge {
   display: inline-block;
   margin-left: 0.35rem;

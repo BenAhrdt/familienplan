@@ -288,6 +288,9 @@ body { min-height:100%; overscroll-behavior-x:none; }
 .audience-list { display:grid; gap:.35rem; }
 .panel .audience-list label { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:.75rem; margin:0; padding:.7rem .45rem; border-bottom:1px solid var(--line); color:var(--ink); cursor:pointer; }
 .panel .audience-list label:last-child { border-bottom:0; }
+.panel .audience-list .audience-person-tag { margin:.25rem 0; padding:.65rem .7rem; border:1px solid color-mix(in srgb,var(--person-color) 35%,white); border-left:4px solid var(--person-color); border-radius:9px; background:color-mix(in srgb,var(--person-color) 13%,white); }
+.audience-person-tag span { display:flex; align-items:center; gap:.55rem; color:color-mix(in srgb,var(--person-color) 72%,#172d27); font-weight:750; }
+.audience-person-tag span i { width:1.65rem; height:1.65rem; display:grid; place-items:center; border-radius:50%; background:var(--person-color); color:white; font-style:normal; font-size:.72rem; }
 .panel .audience-list input { width:1.15rem; height:1.15rem; margin:0; padding:0; accent-color:var(--green); }
 .audience-list small,.audience-popover p { color:var(--muted); }
 .audience-popover p { margin:1rem 0; font-size:.8rem; }

@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.31 – 31. August 2026
+
+### Private Termine, Betreuung und Kalenderpflege
+
+- Die neue Terminart „Privat“ ist für jede Person verfügbar und kann nur vom Ersteller bearbeitet oder gelöscht werden; ausgewählte Personen können gezielt Leserechte erhalten.
+- Private Termine werden in Kalender, Suche, Terminserien und Integrationszugriffen konsequent nach ihrer Sichtbarkeit gefiltert.
+- Betreuungslabels zeigen die betreuende Person als runden Farbchip und das Kind als Stern in seiner Kinderfarbe; weiße Initialen sorgen für eine schnelle Zuordnung.
+- Abfallkalender, Geburtstage und Putzfrau benötigen keine Kinderauswahl und speichern auch über die API keine Kind-Zuordnung.
+- Die Schulkalender-Synchronisierung entfernt eindeutig erkennbare Altimporte aus früheren Importpfaden, ohne manuell angelegte Schultermine anzutasten.
+- Das Formular zum Ändern des eigenen Passworts ist in den Profileinstellungen wieder vollständig gestaltet und übersichtlich angeordnet.
+
 ## 0.1.30 – 30. August 2026
 
 ### Kalender, Rechte und Kontosicherheit

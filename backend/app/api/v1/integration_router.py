@@ -3,7 +3,8 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import cast, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import admin, current_user, require_csrf
@@ -125,7 +126,10 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
                            "starts_at":x.starts_at,"ends_at":x.ends_at,"title":x.note})
     if "read:appointments" in token.scopes or "read:holidays" in token.scopes:
         query = select(CalendarEvent).where(or_(CalendarEvent.child_id.is_(None), CalendarEvent.child_id.in_(ids)),
-            CalendarEvent.starts_at < to_at, CalendarEvent.ends_at > from_at)
+            CalendarEvent.starts_at < to_at, CalendarEvent.ends_at > from_at,
+            (CalendarEvent.event_type != "PRIVATE")
+            | (CalendarEvent.created_by_id == user.id)
+            | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
         if "read:private" not in token.scopes: query = query.where(CalendarEvent.is_private.is_(False))
         for x in db.scalars(query.order_by(CalendarEvent.starts_at)):
             kind = "school_holiday" if x.category == "HOLIDAY" else "school_event" if x.category == "SCHOOL" else "appointment"

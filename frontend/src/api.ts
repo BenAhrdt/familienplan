@@ -11,7 +11,7 @@ export type User = {
   allowed_event_types: EventType[];
   is_pending: boolean;
 };
-export type EventType = "STAY" | "BIRTHDAY" | "GENERAL" | "SCHOOL" | "CLEANING" | "WASTE" | "OTHER";
+export type EventType = "STAY" | "BIRTHDAY" | "GENERAL" | "SCHOOL" | "CLEANING" | "WASTE" | "PRIVATE" | "OTHER";
 export type Child = {
   id: number;
   first_name: string;
@@ -31,6 +31,7 @@ export type Child = {
   care_calendar_url: string | null;
   default_responsible_user_id: number | null;
   notes: string | null;
+  color: string;
   is_active: boolean;
 };
 export type Institution = {

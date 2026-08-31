@@ -29,7 +29,8 @@ from app.waste_calendar import awido_options, get_waste_config, save_waste_confi
 
 router = APIRouter()
 settings = get_settings()
-EVENT_TYPES = {"STAY", "BIRTHDAY", "GENERAL", "SCHOOL", "CLEANING", "WASTE", "OTHER"}
+EVENT_TYPES = {"STAY", "BIRTHDAY", "GENERAL", "SCHOOL", "CLEANING", "WASTE", "PRIVATE", "OTHER"}
+CHILDLESS_EVENT_TYPES = {"BIRTHDAY", "CLEANING", "WASTE"}
 _release_cache: tuple[float, dict] | None = None
 
 
@@ -1065,6 +1066,29 @@ def _ics_datetime(value: str) -> tuple[datetime, bool]:
     return datetime.strptime(value[:15], "%Y%m%dT%H%M%S").replace(tzinfo=ZoneInfo(settings.app_timezone)), False
 
 
+def remove_legacy_school_imports(db: Session, child_id: int, current_source_id: int) -> int:
+    """Remove school rows from superseded import paths, never user-created events."""
+    old_school_source_ids = select(CalendarSource.id).where(
+        CalendarSource.kind == "SCHOOL",
+        CalendarSource.id != current_source_id,
+    )
+    legacy_events = db.scalars(select(CalendarEvent).where(
+        CalendarEvent.child_id == child_id,
+        CalendarEvent.created_by_id.is_(None),
+        CalendarEvent.external_id.is_not(None),
+        or_(CalendarEvent.category == "SCHOOL", CalendarEvent.event_type == "SCHOOL"),
+        or_(
+            CalendarEvent.source_id.is_(None),
+            CalendarEvent.source_id.in_(old_school_source_ids),
+        ),
+    ))
+    removed = 0
+    for event in legacy_events:
+        db.delete(event)
+        removed += 1
+    return removed
+
+
 async def synchronize_child_calendar(db: Session, child: Child) -> dict:
     if not child.school_calendar_url:
         return {"imported": 0, "removed": 0, "message": "Für diese Schule wurde keine öffentliche Kalenderquelle erkannt"}
@@ -1111,7 +1135,7 @@ async def synchronize_child_calendar(db: Session, child: Child) -> dict:
             "all_day_end_exclusive": ends_at.date().isoformat() if all_day else None,
         }
         imported += 1
-    removed = 0
+    removed = remove_legacy_school_imports(db, child.id, source.id)
     for stale in db.scalars(select(CalendarEvent).where(CalendarEvent.source_id == source.id)):
         if stale.external_id not in seen_external_ids:
             db.delete(stale)
@@ -1636,12 +1660,18 @@ def stay_series(db: Session = Depends(get_db), user: User = Depends(current_user
 
 @router.get("/calendar-series", response_model=list[CalendarEventOut])
 def calendar_series(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    query = select(CalendarEvent).where(CalendarEvent.recurrence_group.is_not(None)).order_by(CalendarEvent.starts_at)
+    query = select(CalendarEvent).where(
+        CalendarEvent.recurrence_group.is_not(None),
+        (CalendarEvent.event_type != "PRIVATE")
+        | (CalendarEvent.created_by_id == user.id)
+        | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
+    ).order_by(CalendarEvent.starts_at)
     if user.role != Role.ADMIN:
         allowed_child_ids = list(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
         query = query.where(
             ((CalendarEvent.child_id.is_(None)) | (CalendarEvent.child_id.in_(allowed_child_ids))),
-            ((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id)),
+            ((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id])),
+            or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE"),
         )
     representatives: dict[str, CalendarEvent] = {}
     for event in db.scalars(query):
@@ -1861,9 +1891,15 @@ def calendar(from_at: datetime, to_at: datetime, db: Session = Depends(get_db), 
     allowed_child_ids = None
     if user.role != Role.ADMIN:
         allowed_child_ids = list(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
-    query = select(CalendarEvent).where(CalendarEvent.starts_at < to_at, CalendarEvent.ends_at > from_at)
+    query = select(CalendarEvent).where(
+        CalendarEvent.starts_at < to_at,
+        CalendarEvent.ends_at > from_at,
+        (CalendarEvent.event_type != "PRIVATE")
+        | (CalendarEvent.created_by_id == user.id)
+        | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
+    )
     if user.role != Role.ADMIN:
-        query = query.where(CalendarEvent.event_type.in_(user.allowed_event_types or []))
+        query = query.where(or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE"))
         query = query.where((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
     if allowed_child_ids is not None:
         query = query.where((CalendarEvent.child_id.is_(None)) | (CalendarEvent.child_id.in_(allowed_child_ids)))
@@ -1930,10 +1966,13 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
 
     event_query = select(CalendarEvent).where(
         matches(CalendarEvent.title, CalendarEvent.description),
+        (CalendarEvent.event_type != "PRIVATE")
+        | (CalendarEvent.created_by_id == user.id)
+        | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
     )
     if user.role != Role.ADMIN:
         event_query = event_query.where(
-            CalendarEvent.event_type.in_(user.allowed_event_types or []),
+            or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE"),
             (CalendarEvent.is_private.is_(False))
             | (CalendarEvent.created_by_id == user.id)
             | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
@@ -2104,13 +2143,15 @@ def create_calendar_event(data: CalendarEventCreate, request: Request, db: Sessi
     waste_section_allowed = data.event_type == "WASTE" and user.id in section_access(db)["waste_collection"]
     if user.role == Role.VIEWER and not waste_section_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Bearbeitungsberechtigung")
+    if data.event_type in CHILDLESS_EVENT_TYPES:
+        data.child_id = None
     if data.child_id is not None:
         assert_child_access(db, user, data.child_id, edit=not waste_section_allowed)
-    if data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
+    if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Terminart ist für dich nicht freigeschaltet")
     values = data.model_dump(exclude={"starts_at", "ends_at", "recurrence_day_of_month"})
-    values["visible_to_user_ids"] = normalized_audience(db, user.id, values.get("visible_to_user_ids"))
-    values["is_private"] = values["visible_to_user_ids"] is not None
+    values["visible_to_user_ids"] = normalized_audience(db, user.id, values.get("visible_to_user_ids") or []) if data.event_type == "PRIVATE" else None
+    values["is_private"] = data.event_type == "PRIVATE"
     frequency = values.pop("recurrence_frequency")
     interval = values.pop("recurrence_interval")
     until = values.pop("recurrence_until")
@@ -2157,15 +2198,19 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
     event = db.get(CalendarEvent, event_id)
     if not event:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+    if event.event_type == "PRIVATE" and event.created_by_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
     if event.is_private and event.created_by_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
     if user.role != Role.ADMIN and event.created_by_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst diesen Termin nicht bearbeiten")
     waste_section_allowed = data.event_type == "WASTE" and user.id in section_access(db)["waste_collection"]
-    if data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
+    if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Terminart ist für dich nicht freigeschaltet")
-    data.visible_to_user_ids = normalized_audience(db, event.created_by_id or user.id, data.visible_to_user_ids)
-    data.is_private = data.visible_to_user_ids is not None
+    data.visible_to_user_ids = normalized_audience(db, event.created_by_id or user.id, data.visible_to_user_ids or []) if data.event_type == "PRIVATE" else None
+    data.is_private = data.event_type == "PRIVATE"
+    if data.event_type in CHILDLESS_EVENT_TYPES:
+        data.child_id = None
     if data.child_id is not None:
         assert_child_access(db, user, data.child_id, edit=not waste_section_allowed)
     if event.recurrence_group and data.recurrence_frequency and data.recurrence_interval and scope in {"future", "series"}:
@@ -2236,6 +2281,8 @@ def delete_calendar_event(event_id: int, request: Request, scope: str = "occurre
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ungültiger Löschumfang")
     event = db.get(CalendarEvent, event_id)
     if not event:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+    if event.event_type == "PRIVATE" and event.created_by_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
     if user.role != Role.ADMIN and event.created_by_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst diesen Termin nicht löschen")

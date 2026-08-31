@@ -310,7 +310,7 @@ class CalendarEventCreate(BaseModel):
     child_id: int | None = None
     color: str = Field(default="#8B6CC1", pattern=r"^#[0-9A-Fa-f]{6}$")
     is_private: bool = False
-    event_type: str = Field(default="GENERAL", pattern="^(STAY|BIRTHDAY|GENERAL|SCHOOL|CLEANING|WASTE|OTHER)$")
+    event_type: str = Field(default="GENERAL", pattern="^(STAY|BIRTHDAY|GENERAL|SCHOOL|CLEANING|WASTE|PRIVATE|OTHER)$")
     custom_type_label: str | None = Field(default=None, max_length=120)
     visible_to_user_ids: list[int] | None = None
     recurrence_frequency: str | None = Field(default=None, pattern="^(WEEKLY|MONTHLY)$")

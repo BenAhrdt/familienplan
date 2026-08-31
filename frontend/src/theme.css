@@ -91,8 +91,13 @@
 }
 .settings-layout .globaltheme { margin-top: 0; }
 .settings-tab-content { grid-template-columns: minmax(0, 1fr); max-width: 1000px; }
-.password-settings { margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+.password-settings { margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--line); display:grid; gap:1rem; }
 .password-settings h2 { margin-top:0; }
+.password-settings h2, .password-settings p { margin-bottom:0; }
+.password-settings label { display:grid; gap:.45rem; color:var(--muted); font-size:.86rem; font-weight:650; }
+.password-settings input { width:100%; border:1px solid var(--line); border-radius:9px; padding:.8rem .9rem; color:var(--ink); background:#fbfcfa; }
+.password-settings input:focus { outline:3px solid #9fc4b14a; border-color:#5c8b78; }
+.password-settings button { justify-self:start; }
 .settings-tab-content .settings-card { grid-column: 1; }
 .audit-log { max-width:none; }
 .audit-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }

@@ -116,8 +116,10 @@ const eventTypeLabels: Record<EventType, string> = {
   SCHOOL: "Schule",
   CLEANING: "Putzfrau",
   WASTE: "Abfallkalender",
+  PRIVATE: "Privat",
   OTHER: "Sonstiges",
 };
+const childlessEventTypes = new Set<EventType>(["BIRTHDAY", "CLEANING", "WASTE"]);
 const wasteTypeLabels: Record<string, string> = {
   bio: "Bioabfall", yellow: "Gelbe Tonne", residual: "Restabfall",
   paper: "Altpapier", hazardous: "Schadstoff / Sondermüll", other: "Sonstige Abfälle",
@@ -136,7 +138,7 @@ const eventDisplayColor = (event: CalendarEvent) =>
       : event.event_type === "WASTE"
         ? event.color || "var(--waste, #5C8B58)"
       : event.color || "#8B6CC1";
-const eventTypeDisplayColor = (type: EventType) => type === "SCHOOL" ? "var(--school)" : type === "BIRTHDAY" ? "var(--birthday)" : type === "WASTE" ? "var(--waste, #5C8B58)" : type === "STAY" ? "var(--green)" : type === "CLEANING" ? "#35A853" : type === "GENERAL" ? "#8B6CC1" : "#6F63B6";
+const eventTypeDisplayColor = (type: EventType) => type === "SCHOOL" ? "var(--school)" : type === "BIRTHDAY" ? "var(--birthday)" : type === "WASTE" ? "var(--waste, #5C8B58)" : type === "STAY" ? "var(--green)" : type === "CLEANING" ? "#35A853" : type === "PRIVATE" ? "#9A477E" : type === "GENERAL" ? "#8B6CC1" : "#6F63B6";
 
 const localDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -187,11 +189,16 @@ function Field({
 function AudiencePicker({
   people,
   initialValues,
+  privateDefault = false,
 }: {
   people: User[];
   initialValues: number[] | null | undefined;
+  privateDefault?: boolean;
 }) {
-  const initial = initialValues || people.map((person) => person.id);
+  const currentUserId = getSessionUser()?.id;
+  const selectablePeople = people.filter((person) => person.id !== currentUserId);
+  const initial = (initialValues ?? (privateDefault ? [] : selectablePeople.map((person) => person.id)))
+    .filter((id) => id !== currentUserId);
   const [selected, setSelected] = useState<number[]>(initial),
     [open, setOpen] = useState(false);
   useEffect(() => {
@@ -202,11 +209,11 @@ function AudiencePicker({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [open]);
-  const names = people
+  const names = selectablePeople
     .filter((person) => selected.includes(person.id))
     .map((person) => person.display_name);
   const summary =
-    selected.length === people.length
+    selected.length === selectablePeople.length && selectablePeople.length > 0
       ? "Alle Personen"
       : names.length
         ? names.join(", ")
@@ -241,8 +248,8 @@ function AudiencePicker({
               <button type="button" onClick={() => setOpen(false)}>×</button>
             </header>
             <div className="audience-list">
-              {people.map((person) => (
-                <label key={person.id}>
+              {selectablePeople.map((person) => (
+                <label key={person.id} className="audience-person-tag" style={{"--person-color":person.color} as React.CSSProperties}>
                   <input
                     type="checkbox"
                     checked={selected.includes(person.id)}
@@ -254,8 +261,7 @@ function AudiencePicker({
                       )
                     }
                   />
-                  <span>{person.display_name}</span>
-                  {person.id === getSessionUser()?.id && <small>Du</small>}
+                  <span><i>{person.display_name.slice(0,1).toUpperCase()}</i>{person.display_name}</span>
                 </label>
               ))}
             </div>
@@ -266,6 +272,17 @@ function AudiencePicker({
       )}
     </div>
   );
+}
+
+function CareMarkers({ child, responsible }: { child: Child; responsible: User }) {
+  return <span className="care-markers" aria-label={`${responsible.display_name} betreut ${child.display_name}`}>
+    <i className="care-person-marker" style={{ backgroundColor: responsible.color }} title={responsible.display_name}>
+      {responsible.display_name.slice(0, 1).toUpperCase()}
+    </i>
+    <i className="care-child-star" style={{ backgroundColor: child.color }} title={child.display_name}>
+      {child.display_name.slice(0, 1).toUpperCase()}
+    </i>
+  </span>;
 }
 
 function Setup({ done }: { done: (u: User) => void }) {
@@ -1106,7 +1123,7 @@ function CalendarScreen({
     canWriteCalendar = getSessionUser()?.role !== "VIEWER",
     availableEventTypes = getSessionUser()?.role === "ADMIN"
       ? sortedEventTypes(Object.keys(eventTypeLabels) as EventType[])
-      : sortedEventTypes(getSessionUser()?.allowed_event_types || []),
+      : sortedEventTypes(Array.from(new Set([...(getSessionUser()?.allowed_event_types || []), "PRIVATE" as EventType]))),
     monthStart = new Date(month.getFullYear(), month.getMonth(), 1),
     firstWeekday = (monthStart.getDay() + 6) % 7,
     from = new Date(month.getFullYear(), month.getMonth(), 1 - firstWeekday),
@@ -1234,11 +1251,11 @@ function CalendarScreen({
           category: "FAMILY",
           event_type: String(f.get("event_type")),
           custom_type_label: f.get("custom_type_label") || null,
-          child_id: Number(f.get("child_id")) || null,
+          child_id: childlessEventTypes.has(eventType) ? null : Number(f.get("child_id")) || null,
           color: f.get("color"),
           is_private: false,
           // Sichtbarkeit ergibt sich aus Rubrik- und Kinderfreigaben.
-          visible_to_user_ids: null,
+          visible_to_user_ids: eventType === "PRIVATE" ? f.getAll("visible_to_user_ids").map(Number) : null,
           recurrence_frequency: eventInterval
             ? eventMonthly
               ? "MONTHLY"
@@ -1384,7 +1401,7 @@ function CalendarScreen({
     event: CalendarEvent,
     scope: "occurrence" | "future" | "series" = "occurrence",
   ) {
-    if (!canWriteCalendar) {
+    if (!canWriteCalendar || (event.event_type === "PRIVATE" && event.created_by_id !== getSessionUser()?.id)) {
       const start = new Date(event.starts_at), end = new Date(event.ends_at);
       setReadOnlyInfo({ title:event.title, message:`${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}${event.description ? `\n\n${event.description}` : ""}\n\nDu besitzt Leserechte und kannst diesen Termin deshalb nicht bearbeiten.` });
       return;
@@ -1847,7 +1864,7 @@ function CalendarScreen({
                   {new Date(event.starts_at).toLocaleString("de-DE")}
                 </small>
               </div>
-              {canWriteCalendar && <button onClick={() => openCalendarEvent(event, "series")}>
+              {canWriteCalendar && (event.created_by_id === getSessionUser()?.id || (event.event_type !== "PRIVATE" && getSessionUser()?.role === "ADMIN")) && <button onClick={() => openCalendarEvent(event, "series")}>
                 Terminserie bearbeiten
               </button>}
             </article>
@@ -2052,6 +2069,7 @@ function CalendarScreen({
                               openDay(day, dayStays, stay);
                             }}
                           >
+                            <CareMarkers child={child} responsible={responsible} />
                             <b>{child.display_name}</b> bei{" "}
                             {responsible.display_name}
                             {stay.note ? ` · ${stay.note}` : ""}
@@ -2097,6 +2115,7 @@ function CalendarScreen({
                           setOpen("stay");
                         }}
                       >
+                        <CareMarkers child={child} responsible={responsible} />
                         <b>{child.display_name}</b> bei{" "}
                         {responsible.display_name}
                       </span>
@@ -2112,7 +2131,7 @@ function CalendarScreen({
                         color: `color-mix(in srgb, ${eventDisplayColor(event)} 70%, #172d27)`,
                         borderLeft: `3px solid ${eventDisplayColor(event)}`,
                       }}
-                      title={event.is_private ? "Nur für mich und Administratoren sichtbar" : undefined}
+                      title={event.event_type === "PRIVATE" ? ((event.visible_to_user_ids?.length || 0) > 1 ? "Privater Termin · für ausgewählte Personen sichtbar" : "Privater Termin · nur für mich sichtbar") : undefined}
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
                         if (event.source_id) {
@@ -2253,18 +2272,26 @@ function CalendarScreen({
                     defaultValue={editingEvent?.custom_type_label || ""}
                   />
                 )}
-                <label>
-                  Kind (optional)
-                  <select
-                    name="child_id"
-                    defaultValue={editingEvent?.child_id || stayToConvert?.child_id || ""}
-                  >
-                    <option value="">Kein Kind</option>
-                    {children.map((c) => (
-                      <option value={c.id}>{c.display_name}</option>
-                    ))}
-                  </select>
-                </label>
+                {eventType === "PRIVATE" && (
+                  <AudiencePicker
+                    key={`private-event-audience-${editingEvent?.id || "new"}`}
+                    people={people}
+                    initialValues={editingEvent?.event_type === "PRIVATE" ? editingEvent.visible_to_user_ids : []}
+                    privateDefault
+                  />
+                )}
+                {!childlessEventTypes.has(eventType) && <label>
+                    Kind (optional)
+                    <select
+                      name="child_id"
+                      defaultValue={editingEvent?.child_id || stayToConvert?.child_id || ""}
+                    >
+                      <option value="">Kein Kind</option>
+                      {children.map((c) => (
+                        <option value={c.id}>{c.display_name}</option>
+                      ))}
+                    </select>
+                  </label>}
                 <div className="grid2">
                   <Field
                     label="Beginn"
@@ -3324,7 +3351,7 @@ function PeopleScreen({
                 {open === "edit" && (
                   <fieldset className="childaccess">
                     <legend>Freigeschaltete Terminarten</legend>
-                    {sortedEventTypes(Object.keys(eventTypeLabels) as EventType[]).map((type) => (
+                    {sortedEventTypes((Object.keys(eventTypeLabels) as EventType[]).filter((type) => type !== "PRIVATE")).map((type) => (
                       <label className="check" key={type}>
                         <input
                           type="checkbox"

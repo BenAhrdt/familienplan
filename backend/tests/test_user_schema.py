@@ -1,5 +1,7 @@
 from app.models.entities import Role
-from app.schemas.core import UserOut
+from datetime import datetime, timedelta, timezone
+
+from app.schemas.core import CalendarEventCreate, UserOut
 
 
 def test_pending_user_internal_email_is_not_exposed_or_rejected():
@@ -14,3 +16,17 @@ def test_pending_user_internal_email_is_not_exposed_or_rejected():
     )
 
     assert user.email is None
+
+
+def test_private_calendar_event_type_is_valid():
+    start = datetime(2026, 9, 1, 10, tzinfo=timezone.utc)
+    event = CalendarEventCreate(
+        title="Persönlicher Termin",
+        starts_at=start,
+        ends_at=start + timedelta(hours=1),
+        event_type="PRIVATE",
+        visible_to_user_ids=[],
+    )
+
+    assert event.event_type == "PRIVATE"
+    assert event.visible_to_user_ids == []
