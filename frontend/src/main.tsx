@@ -216,6 +216,40 @@ function Field({
   );
 }
 
+function EventColorPicker({ initialColor }: { initialColor: string }) {
+  const [value, setValue] = useState(initialColor);
+  const styles = getComputedStyle(document.documentElement);
+  const candidates: Array<[string, string]> = [
+    ["Meine Farbe", getSessionUser()?.color || ""],
+    ["Schule", styles.getPropertyValue("--school").trim()],
+    ["Ferien", styles.getPropertyValue("--holiday").trim()],
+    ["Geburtstage", styles.getPropertyValue("--birthday").trim()],
+    ["Abfallkalender", styles.getPropertyValue("--waste").trim()],
+  ];
+  const presets = candidates.filter(
+    ([, color], index) =>
+      /^#[0-9a-f]{6}$/i.test(color) &&
+      candidates.findIndex(([, candidate]) => candidate.toLowerCase() === color.toLowerCase()) === index,
+  );
+  return (
+    <fieldset className="event-color-picker">
+      <legend>Farbe</legend>
+      <div className="event-color-main">
+        <input aria-label="Freie Farbe auswählen" name="color" type="color" value={value} onChange={(event) => setValue(event.target.value)} />
+        <code>{value.toUpperCase()}</code>
+      </div>
+      <div className="event-color-presets" aria-label="Vordefinierte Farben">
+        {presets.map(([label, color]) => (
+          <button key={`${label}-${color}`} type="button" className={value.toLowerCase() === color.toLowerCase() ? "active" : ""} title={`${label}: ${color}`} onClick={() => setValue(color)}>
+            <i style={{ backgroundColor: color }} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function AudiencePicker({
   people,
   initialValues,
@@ -1138,6 +1172,7 @@ function CalendarScreen({
     [repeatKind, setRepeatKind] = useState("once"),
     [eventRepeatKind, setEventRepeatKind] = useState("once"),
     [eventType, setEventType] = useState<EventType>("GENERAL"),
+    [eventAllDay, setEventAllDay] = useState(true),
     [adminDeleteChoice, setAdminDeleteChoice] = useState<{
       stayId: number;
       scope: "occurrence" | "future" | "series";
@@ -1290,7 +1325,7 @@ function CalendarScreen({
           description: f.get("description") || null,
           starts_at: new Date(String(f.get("starts_at"))).toISOString(),
           ends_at: new Date(String(f.get("ends_at"))).toISOString(),
-          all_day: false,
+          all_day: eventAllDay,
           category: "FAMILY",
           event_type: String(f.get("event_type")),
           custom_type_label: f.get("custom_type_label") || null,
@@ -1464,6 +1499,7 @@ function CalendarScreen({
     );
     setEditingEvent(event);
     setEventType(event.event_type || "GENERAL");
+    setEventAllDay(event.all_day);
     setEventEditScope(scope);
     setOpen("event");
     setError("");
@@ -1954,7 +1990,7 @@ function CalendarScreen({
           >
             <ChevronRight />
           </button>
-          {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
+          {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setEventAllDay(true); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
         </header>
         <div className="weekdays">
           {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
@@ -2044,6 +2080,7 @@ function CalendarScreen({
                   setEditingEvent(null);
                   setEventType("GENERAL");
                   setEventRepeatKind("once");
+                  setEventAllDay(true);
                   setError("");
                   setOpen("event");
                 }}
@@ -2254,7 +2291,7 @@ function CalendarScreen({
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Vorheriger Monat"><ChevronLeft /></button>
           <h2>{month.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</h2>
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Nächster Monat"><ChevronRight /></button>
-          {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
+          {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setEventAllDay(true); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
         </footer>
       </section>
       </div>
@@ -2340,8 +2377,13 @@ function CalendarScreen({
                       ))}
                     </select>
                   </label>}
+                <label className="check event-all-day">
+                  <input type="checkbox" checked={eventAllDay} onChange={(event) => setEventAllDay(event.target.checked)} />
+                  Ganztägig
+                </label>
                 <div className="grid2">
                   <Field
+                    key={`event-start-${editingEvent?.id || stayToConvert?.id || "new"}-${eventAllDay}`}
                     label="Beginn"
                     name="starts_at"
                     type="datetime-local"
@@ -2350,10 +2392,15 @@ function CalendarScreen({
                         ? new Date(editingEvent.starts_at)
                         : stayToConvert
                           ? new Date(stayToConvert.starts_at)
-                        : selectedDay || now,
+                        : new Date(
+                            (selectedDay || now).getFullYear(),
+                            (selectedDay || now).getMonth(),
+                            (selectedDay || now).getDate(),
+                          ),
                     )}
                   />
                   <Field
+                    key={`event-end-${editingEvent?.id || stayToConvert?.id || "new"}-${eventAllDay}`}
                     label="Ende"
                     name="ends_at"
                     type="datetime-local"
@@ -2362,7 +2409,12 @@ function CalendarScreen({
                         ? new Date(editingEvent.ends_at)
                         : stayToConvert
                           ? new Date(stayToConvert.ends_at)
-                        : new Date((selectedDay || now).getTime() + 3600000),
+                        : new Date(
+                            (selectedDay || now).getFullYear(),
+                            (selectedDay || now).getMonth(),
+                            (selectedDay || now).getDate() + (eventAllDay ? 1 : 0),
+                            eventAllDay ? 0 : 1,
+                          ),
                     )}
                   />
                 </div>
@@ -2372,14 +2424,10 @@ function CalendarScreen({
                   required={false}
                   defaultValue={editingEvent?.description || stayToConvert?.note || ""}
                 />
-                <label>
-                  Farbe
-                  <input
-                    name="color"
-                    type="color"
-                    defaultValue={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
-                  />
-                </label>
+                <EventColorPicker
+                  key={`event-color-${editingEvent?.id || stayToConvert?.id || "new"}`}
+                  initialColor={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
+                />
                 {(!editingEvent || editingEvent.recurrence_group) && <label>
                   Wiederholung
                   <select
@@ -2462,6 +2510,7 @@ function CalendarScreen({
                       if (type !== "STAY") {
                         setStayToConvert(editingStay);
                         setEventType(type);
+                        setEventAllDay(false);
                         if (editingStay?.recurrence_rule_id) {
                           setEventRepeatKind(
                             editingStay.recurrence_frequency === "MONTHLY"
@@ -2739,6 +2788,7 @@ function CalendarScreen({
                   setEditingEvent(null);
                   setEventType("GENERAL");
                   setEventRepeatKind("once");
+                  setEventAllDay(true);
                   setError("");
                   setOpen("event");
                 }}

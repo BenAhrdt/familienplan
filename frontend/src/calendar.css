@@ -573,3 +573,14 @@
   cursor: default;
   opacity: 1;
 }
+
+.event-all-day { color: var(--ink) !important; }
+.event-color-picker { border: 1px solid var(--line); border-radius: 10px; padding: .8rem; margin-top: 1rem; }
+.event-color-picker legend { padding: 0 .25rem; color: var(--muted); font-size: .86rem; font-weight: 650; }
+.event-color-main { display: flex; align-items: center; gap: .7rem; }
+.event-color-main input[type="color"] { width: 58px; height: 42px; padding: .25rem; }
+.event-color-main code { padding: .35rem .5rem; border-radius: 6px; background: var(--cream); color: var(--ink); }
+.event-color-presets { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.event-color-presets button { display: flex; align-items: center; gap: .38rem; padding: .42rem .55rem; border: 1px solid var(--line); border-radius: 99px; background: white; color: var(--ink); font-size: .76rem; }
+.event-color-presets button i { width: 16px; height: 16px; border: 1px solid #0002; border-radius: 50%; }
+.event-color-presets button.active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }

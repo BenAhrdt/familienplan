@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.40 – 31. August 2026
+
+### Ganztägige Termine und Farbschnellwahl
+
+- Neue Termine sind standardmäßig ganztägig und laufen sauber von 00:00 Uhr bis 00:00 Uhr des Folgetags.
+- Die Option „Ganztägig“ kann im Terminformular sichtbar ein- oder ausgeschaltet werden.
+- Zusätzlich zur freien Farbpalette stehen die eigene Personenfarbe und die persönlichen Kalenderfarben als beschriftete Schnellwahl bereit.
+- Farben anderer Personen werden in der Schnellwahl nicht offengelegt.
+
 ## 0.1.39 – 31. August 2026
 
 ### Verständliche Zeiten mehrtägiger Termine
