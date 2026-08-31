@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import and_, cast, delete, func, or_, select, text, update
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -140,6 +140,14 @@ def section_access(db: Session) -> dict[str, list[int]]:
         "birthdays": list(value.get("birthdays", [])),
         "waste_collection": list(value.get("waste_collection", [])),
     }
+
+
+def upsert_application_setting(db: Session, key: str, value: dict) -> None:
+    db.execute(
+        pg_insert(ApplicationSetting)
+        .values(key=key, value=value)
+        .on_conflict_do_update(index_elements=[ApplicationSetting.key], set_={"value": value})
+    )
 
 
 def require_section_access(db: Session, user: User, section: str) -> None:
@@ -411,14 +419,12 @@ def get_theme(db: Session = Depends(get_db), _: User = Depends(current_user)):
 
 @router.put("/settings/theme", response_model=ThemeSetting, dependencies=[Depends(require_csrf)])
 def update_theme(data: ThemeSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
-    setting = db.get(ApplicationSetting, "theme")
-    if setting:
-        setting.value = data.model_dump()
-    else:
-        db.add(ApplicationSetting(key="theme", value=data.model_dump()))
-    audit(db, request, "THEME_CHANGED", user.id, ("setting", "theme"), data.model_dump())
+    values = data.model_dump()
+    upsert_application_setting(db, "theme", values)
+    audit(db, request, "THEME_CHANGED", user.id, ("setting", "theme"), values)
     db.commit()
-    return data
+    stored = db.scalar(select(ApplicationSetting).where(ApplicationSetting.key == "theme").execution_options(populate_existing=True))
+    return ThemeSetting(**stored.value)
 
 
 def resolved_calendar_colors(db: Session, user_id: int) -> dict:
@@ -447,14 +453,12 @@ def get_calendar_colors(db: Session = Depends(get_db), user: User = Depends(curr
 @router.put("/settings/calendar-colors", response_model=CalendarColorPreferences, dependencies=[Depends(require_csrf)])
 def update_calendar_colors(data: CalendarColorPreferences, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     key = f"calendar_colors_{user.id}"
-    row = db.get(ApplicationSetting, key)
-    if row:
-        row.value = data.model_dump()
-    else:
-        db.add(ApplicationSetting(key=key, value=data.model_dump()))
-    audit(db, request, "PERSONAL_CALENDAR_COLORS_CHANGED", user.id, ("setting", key))
+    values = data.model_dump()
+    upsert_application_setting(db, key, values)
+    audit(db, request, "PERSONAL_CALENDAR_COLORS_CHANGED", user.id, ("setting", key), values)
     db.commit()
-    return data
+    stored = db.scalar(select(ApplicationSetting).where(ApplicationSetting.key == key).execution_options(populate_existing=True))
+    return CalendarColorPreferences(**stored.value)
 
 
 @router.get("/settings/sections", response_model=SectionAccessSetting)
@@ -495,12 +499,8 @@ def update_section_access(data: SectionAccessSetting, request: Request, db: Sess
     valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
     if (set(data.birthdays) | set(data.waste_collection)) - valid_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
-    row = db.get(ApplicationSetting, "section_access")
     value = data.model_dump()
-    if row:
-        row.value = value
-    else:
-        db.add(ApplicationSetting(key="section_access", value=value))
+    upsert_application_setting(db, "section_access", value)
     # Keep the automatic waste importer on the same canonical audience. Older
     # versions stored this value in two places, allowing a later importer save
     # to accidentally restore an outdated selection.
@@ -509,7 +509,8 @@ def update_section_access(data: SectionAccessSetting, request: Request, db: Sess
     save_waste_config(db, waste)
     audit(db, request, "SECTION_ACCESS_CHANGED", user.id, ("setting", "section_access"), value)
     db.commit()
-    return data
+    stored = db.scalar(select(ApplicationSetting).where(ApplicationSetting.key == "section_access").execution_options(populate_existing=True))
+    return SectionAccessSetting(**stored.value)
 
 
 @router.get("/waste-appointments", response_model=list[CalendarEventOut])
@@ -1089,6 +1090,22 @@ def remove_legacy_school_imports(db: Session, child_id: int, current_source_id: 
     return removed
 
 
+def deduplicate_school_candidates(candidates: list[dict]) -> list[dict]:
+    """Prefer the shortest copy when a feed publishes overlapping duplicates."""
+    accepted: list[dict] = []
+    intervals_by_title: dict[str, list[tuple[datetime, datetime]]] = {}
+    for candidate in sorted(candidates, key=lambda item: (item["ends_at"] - item["starts_at"], item["order"])):
+        title_key = re.sub(r"\s+", " ", candidate["title"].strip()).casefold()
+        if any(
+            candidate["starts_at"] < other_end and candidate["ends_at"] > other_start
+            for other_start, other_end in intervals_by_title.get(title_key, [])
+        ):
+            continue
+        intervals_by_title.setdefault(title_key, []).append((candidate["starts_at"], candidate["ends_at"]))
+        accepted.append(candidate)
+    return sorted(accepted, key=lambda item: item["order"])
+
+
 async def synchronize_child_calendar(db: Session, child: Child) -> dict:
     if not child.school_calendar_url:
         return {"imported": 0, "removed": 0, "message": "Für diese Schule wurde keine öffentliche Kalenderquelle erkannt"}
@@ -1106,9 +1123,8 @@ async def synchronize_child_calendar(db: Session, child: Child) -> dict:
     if not source:
         source = CalendarSource(key=f"child-{child.id}-school", name=child.school or "Schulkalender", kind="SCHOOL", url=url)
         db.add(source); db.flush()
-    imported = 0
-    seen_external_ids: set[str] = set()
-    for block in re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text_data, re.S):
+    candidates: list[dict] = []
+    for order, block in enumerate(re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text_data, re.S)):
         fields = {}
         for line in block.splitlines():
             if ":" in line:
@@ -1123,16 +1139,25 @@ async def synchronize_child_calendar(db: Session, child: Child) -> dict:
         if not school_event_matches_class(fields["SUMMARY"], fields.get("DESCRIPTION"), child.school_class):
             continue
         external_id = fields.get("UID") or hashlib.sha256(f"{fields['SUMMARY']}|{fields['DTSTART']}".encode()).hexdigest()
+        candidates.append({
+            "order": order, "external_id": external_id, "title": fields["SUMMARY"],
+            "description": fields.get("DESCRIPTION"), "starts_at": starts_at,
+            "ends_at": ends_at, "all_day": all_day, "url": fields.get("URL"),
+        })
+    imported = 0
+    seen_external_ids: set[str] = set()
+    for candidate in deduplicate_school_candidates(candidates):
+        external_id = candidate["external_id"]
         seen_external_ids.add(external_id)
         event = db.scalar(select(CalendarEvent).where(CalendarEvent.source_id == source.id, CalendarEvent.external_id == external_id))
         if not event:
             event = CalendarEvent(source_id=source.id, external_id=external_id); db.add(event)
-        event.child_id, event.title, event.description = child.id, fields["SUMMARY"], fields.get("DESCRIPTION")
-        event.starts_at, event.ends_at, event.all_day, event.category, event.event_type, event.url = starts_at, ends_at, all_day, "SCHOOL", "SCHOOL", fields.get("URL")
+        event.child_id, event.title, event.description = child.id, candidate["title"], candidate["description"]
+        event.starts_at, event.ends_at, event.all_day, event.category, event.event_type, event.url = candidate["starts_at"], candidate["ends_at"], candidate["all_day"], "SCHOOL", "SCHOOL", candidate["url"]
         event.raw_data = {
             "calendar_kind": "school",
-            "all_day_start": starts_at.date().isoformat() if all_day else None,
-            "all_day_end_exclusive": ends_at.date().isoformat() if all_day else None,
+            "all_day_start": candidate["starts_at"].date().isoformat() if candidate["all_day"] else None,
+            "all_day_end_exclusive": candidate["ends_at"].date().isoformat() if candidate["all_day"] else None,
         }
         imported += 1
     removed = remove_legacy_school_imports(db, child.id, source.id)

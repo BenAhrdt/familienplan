@@ -279,9 +279,11 @@ function CareMarkers({ child, responsible }: { child: Child; responsible: User }
     <i className="care-person-marker" style={{ backgroundColor: responsible.color }} title={responsible.display_name}>
       {responsible.display_name.slice(0, 1).toUpperCase()}
     </i>
-    <i className="care-child-star" style={{ backgroundColor: child.color }} title={child.display_name}>
-      {child.display_name.slice(0, 1).toUpperCase()}
-    </i>
+    <svg className="care-child-star" viewBox="0 0 100 100" role="img" aria-label={child.display_name}>
+      <title>{child.display_name}</title>
+      <path fill={child.color} d="M50 2 61.5 35.2 96.7 35.9 68.6 57.2 78.8 91 50 71.4 21.2 91 31.4 57.2 3.3 35.9 38.5 35.2Z" />
+      <text x="50" y="60" textAnchor="middle">{child.display_name.slice(0, 1).toUpperCase()}</text>
+    </svg>
   </span>;
 }
 
@@ -929,7 +931,7 @@ function Children({
               setEditing(c);
             }}
           >
-            <div className="avatar a0">{c.display_name[0]}</div>
+            <div className="avatar" style={{backgroundColor:c.color,color:"white"}}>{c.display_name[0]}</div>
             <h2>{c.display_name}</h2>
             <p>
               {c.school || "Keine Schule hinterlegt"}
@@ -986,6 +988,13 @@ function Children({
                 type="date"
                 defaultValue={editing?.birth_date || ""}
               />
+            </label>
+            <label>
+              Kinderfarbe
+              <div className="themepicker">
+                <input name="color" type="color" defaultValue={editing?.color || "#426B5E"} />
+                <span>Farbe für Stern und Kinderprofil</span>
+              </div>
             </label>
             <label>
               Wohnt bei

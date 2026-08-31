@@ -311,6 +311,8 @@
   opacity: 0.82;
 }
 .daystay {
+  position: relative;
+  padding-right: 1.9rem !important;
   background: var(--sage);
   color: color-mix(in srgb, var(--green) 60%, #142d25);
 }
@@ -325,11 +327,12 @@
 .care-markers {
   display: inline-flex;
   align-items: center;
-  gap: 0.16rem;
   margin-right: 0.3rem;
+  padding: 0 !important;
+  overflow: visible !important;
   vertical-align: middle;
 }
-.care-markers i {
+.care-person-marker {
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
@@ -341,11 +344,25 @@
   font-weight: 900;
   line-height: 1;
   text-shadow: 0 1px 1px #0005;
+  border-radius: 50%;
 }
-.care-person-marker { border-radius: 50%; }
 .care-child-star {
-  clip-path: polygon(50% 0%,61% 34%,98% 35%,68% 56%,79% 93%,50% 71%,21% 93%,32% 56%,2% 35%,39% 34%);
-  padding-bottom: 0.03rem;
+  position: absolute;
+  z-index: 1;
+  top: 0.18rem;
+  right: 0.2rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px #0004);
+}
+.care-child-star text {
+  fill: #fff;
+  font-size: 31px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: #0002;
+  stroke-width: 2px;
 }
 .conflict-badge {
   display: inline-block;

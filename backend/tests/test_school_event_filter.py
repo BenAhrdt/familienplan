@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.v1.router import _ics_datetime, remove_legacy_school_imports, school_event_matches_class
+from app.api.v1.router import _ics_datetime, deduplicate_school_candidates, remove_legacy_school_imports, school_event_matches_class
 from app.core.database import Base
 from app.models.entities import CalendarEvent, CalendarSource, Child, User
 
@@ -64,3 +64,16 @@ def test_legacy_school_cleanup_preserves_manual_events():
         assert remove_legacy_school_imports(db, child.id, current.id) == 2
         db.flush()
         assert db.get(CalendarEvent, manual_id) is not None
+
+
+def test_school_feed_deduplication_prefers_shorter_overlapping_entry():
+    start = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    candidates = [
+        {"order": 0, "external_id": "old", "title": "Klassenfahrt", "starts_at": start, "ends_at": start.replace(day=5)},
+        {"order": 1, "external_id": "current", "title": " Klassenfahrt ", "starts_at": start, "ends_at": start.replace(day=2)},
+        {"order": 2, "external_id": "later", "title": "Klassenfahrt", "starts_at": start.replace(day=10), "ends_at": start.replace(day=11)},
+    ]
+
+    result = deduplicate_school_candidates(candidates)
+
+    assert [item["external_id"] for item in result] == ["current", "later"]

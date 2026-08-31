@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.32 – 31. August 2026
+
+### Kinderfarben, zuverlässige Einstellungen und Schulkalender
+
+- Kinder erhalten im Bearbeitungsdialog eine eigene Farbe, die auch im Kinderprofil verwendet wird.
+- Betreuungszeiten zeigen rechts oben einen echten farbigen Stern mit weißer Kinderinitiale; die betreuende Person bleibt links als runder Farbchip sichtbar.
+- Persönliche Kalenderfarben, globale Darstellungswerte und Rubrikenfreigaben werden atomar gespeichert und anschließend aus der Datenbank verifiziert.
+- Das Logbuch enthält bei persönlichen Kalenderfarben die tatsächlich gespeicherten Werte.
+- Die Schulkalender-Synchronisierung erkennt auch überlappende Dubletten aus derselben Quelle mit unterschiedlichen externen Kennungen und bevorzugt den präziseren kürzeren Eintrag.
+- Manuelle Schultermine sowie gleichnamige Termine an getrennten Tagen bleiben bei der Bereinigung erhalten.
+
 ## 0.1.31 – 31. August 2026
 
 ### Private Termine, Betreuung und Kalenderpflege

@@ -127,6 +127,7 @@ class ChildCreate(BaseModel):
     care_calendar_url: str | None = None
     default_responsible_user_id: int | None = None
     notes: str | None = None
+    color: str = Field(default="#426B5E", pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
 class ChildUpdate(ChildCreate):
