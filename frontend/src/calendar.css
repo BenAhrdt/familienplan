@@ -310,6 +310,12 @@
   font-size: 0.62rem;
   opacity: 0.82;
 }
+.dayentries span small.event-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.95;
+}
 .daystay {
   position: relative;
   padding-right: 1.9rem !important;

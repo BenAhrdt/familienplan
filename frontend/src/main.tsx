@@ -172,6 +172,14 @@ function calendarEventTiming(event: CalendarEvent) {
   return `${new Date(event.starts_at).toLocaleString("de-DE")} – ${new Date(event.ends_at).toLocaleString("de-DE")}`;
 }
 
+function calendarEventTimeOnDay(event: CalendarEvent, day: Date, dayEnd: Date) {
+  if (event.all_day) return "";
+  const visibleStart = new Date(Math.max(new Date(event.starts_at).getTime(), day.getTime()));
+  const visibleEnd = new Date(Math.min(new Date(event.ends_at).getTime(), dayEnd.getTime()));
+  const time = (date: Date) => date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return `${time(visibleStart)}–${visibleEnd.getTime() === dayEnd.getTime() ? "24:00" : time(visibleEnd)}`;
+}
+
 function clientId() {
   return globalThis.crypto?.randomUUID?.() ||
     `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -2185,6 +2193,8 @@ function CalendarScreen({
                       {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
                       {event.title}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
+                      {!event.source_id && event.description?.trim() && <small className="event-note">{event.description.trim()}</small>}
+                      {calendarEventTimeOnDay(event, day, dayEnd) && <small>{calendarEventTimeOnDay(event, day, dayEnd)}</small>}
                     </span>
                   ))}
                   {birthdays.map((birthday) => (
@@ -2357,7 +2367,7 @@ function CalendarScreen({
                   <input
                     name="color"
                     type="color"
-                    defaultValue={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || "#8B6CC1"}
+                    defaultValue={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
                   />
                 </label>
                 {(!editingEvent || editingEvent.recurrence_group) && <label>

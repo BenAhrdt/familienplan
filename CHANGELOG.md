@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.37 – 31. August 2026
+
+### Aussagekräftige Termineinträge
+
+- Manuelle Termine zeigen im Monatskalender neben dem Titel auch ihre Notiz und die sichtbare Uhrzeit.
+- Mehrtägige Termine begrenzen die angezeigte Uhrzeit passend auf den jeweiligen Kalendertag; ganztägige Termine bleiben ohne unnötige Zeitangabe.
+- Lange Notizen werden in kleinen Tageszellen platzsparend gekürzt.
+- Umfangreiche Beschreibungen importierter Termine werden nicht ungefiltert in der Monatsansicht ausgegeben.
+- Neue manuelle Termine übernehmen standardmäßig die persönliche Farbe ihres Erstellers, bleiben aber individuell anpassbar.
+
 ## 0.1.36 – 31. August 2026
 
 ### Persistente Terminänderungen und mobile Suche
