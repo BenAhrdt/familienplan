@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.39 – 31. August 2026
+
+### Verständliche Zeiten mehrtägiger Termine
+
+- Der erste Tag eines mehrtägigen Termins zeigt beispielsweise „ab 06:00“ statt „06:00–24:00“.
+- Vollständig vom Termin abgedeckte Zwischentage werden verständlich als „ganztägig“ bezeichnet.
+- Der letzte Tag zeigt beispielsweise „bis 04:00“ statt „00:00–04:00“.
+- Eintägige Termine behalten ihre präzise Zeitspanne wie „10:00–11:00“.
+
 ## 0.1.38 – 31. August 2026
 
 ### Orientierung am Kalenderende

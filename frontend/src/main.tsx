@@ -174,10 +174,15 @@ function calendarEventTiming(event: CalendarEvent) {
 
 function calendarEventTimeOnDay(event: CalendarEvent, day: Date, dayEnd: Date) {
   if (event.all_day) return "";
-  const visibleStart = new Date(Math.max(new Date(event.starts_at).getTime(), day.getTime()));
-  const visibleEnd = new Date(Math.min(new Date(event.ends_at).getTime(), dayEnd.getTime()));
+  const startsAt = new Date(event.starts_at);
+  const endsAt = new Date(event.ends_at);
   const time = (date: Date) => date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  return `${time(visibleStart)}–${visibleEnd.getTime() === dayEnd.getTime() ? "24:00" : time(visibleEnd)}`;
+  const startsBeforeOrAtDay = startsAt.getTime() <= day.getTime();
+  const endsAfterOrAtDay = endsAt.getTime() >= dayEnd.getTime();
+  if (startsBeforeOrAtDay && endsAfterOrAtDay) return "ganztägig";
+  if (!startsBeforeOrAtDay && endsAfterOrAtDay) return `ab ${time(startsAt)}`;
+  if (startsBeforeOrAtDay && !endsAfterOrAtDay) return `bis ${time(endsAt)}`;
+  return `${time(startsAt)}–${time(endsAt)}`;
 }
 
 function clientId() {
