@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.33 – 31. August 2026
+
+### Mobile Suche, Dialoge und Terminmarkierungen
+
+- Die mobile Suche füllt im Hoch- und Querformat die verfügbare Breite mittig aus und verwendet eine kompaktere Höhe.
+- Der Inhaltsabstand berücksichtigt die kompakte Suchleiste, sodass sie nicht mehr vom festen App-Header verdeckt wird.
+- Dialoge und ihre Schließen-Schaltflächen liegen auf Mobilgeräten zuverlässig oberhalb von Header, Suche und unterer Navigation.
+- Eine widersprüchliche Dashboard-Regel, durch die die Suche verschoben wurde oder im Querformat verschwand, wurde entfernt.
+- Der Kinderstern erscheint nun bei jeder Terminart mit Kind-Zuordnung; der Personen-Kreis bleibt eindeutig Betreuungszeiten vorbehalten.
+- Reines Schwarz (`#000000`) ist wieder eine gültige globale und persönliche Kalenderfarbe und wird nicht mehr durch eine Standardfarbe ersetzt.
+
 ## 0.1.32 – 31. August 2026
 
 ### Kinderfarben, zuverlässige Einstellungen und Schulkalender

@@ -331,12 +331,6 @@
     margin-left: auto;
   }
 
-  .globalheader {
-    top: 64px;
-    margin: -1.4rem 0 1.25rem;
-    padding: 0.7rem 0;
-  }
-
   .globalsearch > input {
     font-size: 0.88rem;
   }

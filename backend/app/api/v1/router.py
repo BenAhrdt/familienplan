@@ -409,12 +409,7 @@ def delete_birthday(birthday_id: int, request: Request, db: Session = Depends(ge
 def get_theme(db: Session = Depends(get_db), _: User = Depends(current_user)):
     setting = db.get(ApplicationSetting, "theme")
     value = setting.value or {} if setting else {}
-    holiday_color = value.get("holiday_color", "#78B98B")
-    # Older installations briefly initialized the new color field as black.
-    # Treat that legacy value as unset so holidays remain visibly distinct.
-    if holiday_color.upper() == "#000000":
-        holiday_color = "#78B98B"
-    return ThemeSetting(primary_color=value.get("primary_color", "#3BA4E5"), holiday_color=holiday_color, birthday_color=value.get("birthday_color", "#E0A526"), school_color=value.get("school_color", "#3979B8"))
+    return ThemeSetting(primary_color=value.get("primary_color", "#3BA4E5"), holiday_color=value.get("holiday_color", "#78B98B"), birthday_color=value.get("birthday_color", "#E0A526"), school_color=value.get("school_color", "#3979B8"))
 
 
 @router.put("/settings/theme", response_model=ThemeSetting, dependencies=[Depends(require_csrf)])
@@ -438,10 +433,6 @@ def resolved_calendar_colors(db: Session, user_id: int) -> dict:
     }
     row = db.get(ApplicationSetting, f"calendar_colors_{user_id}")
     personal = dict(row.value or {}) if row else {}
-    # A short-lived older version initialized the personal holiday color as
-    # black. Treat only that legacy value as unset, like the global fallback.
-    if str(personal.get("holiday_color", "")).upper() == "#000000":
-        personal.pop("holiday_color", None)
     return {**defaults, **personal}
 
 

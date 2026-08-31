@@ -381,6 +381,10 @@
   background: #f0e8ff;
   color: #674b87;
 }
+.dayevent.has-child-marker {
+  position: relative;
+  padding-right: 1.9rem;
+}
 .daybirthday {
   background: #fff0c7;
   color: #76540b;

@@ -274,16 +274,20 @@ function AudiencePicker({
   );
 }
 
+function ChildStar({ child }: { child: Child }) {
+  return <svg className="care-child-star" viewBox="0 0 100 100" role="img" aria-label={child.display_name}>
+    <title>{child.display_name}</title>
+    <path fill={child.color} d="M50 2 61.5 35.2 96.7 35.9 68.6 57.2 78.8 91 50 71.4 21.2 91 31.4 57.2 3.3 35.9 38.5 35.2Z" />
+    <text x="50" y="60" textAnchor="middle">{child.display_name.slice(0, 1).toUpperCase()}</text>
+  </svg>;
+}
+
 function CareMarkers({ child, responsible }: { child: Child; responsible: User }) {
   return <span className="care-markers" aria-label={`${responsible.display_name} betreut ${child.display_name}`}>
     <i className="care-person-marker" style={{ backgroundColor: responsible.color }} title={responsible.display_name}>
       {responsible.display_name.slice(0, 1).toUpperCase()}
     </i>
-    <svg className="care-child-star" viewBox="0 0 100 100" role="img" aria-label={child.display_name}>
-      <title>{child.display_name}</title>
-      <path fill={child.color} d="M50 2 61.5 35.2 96.7 35.9 68.6 57.2 78.8 91 50 71.4 21.2 91 31.4 57.2 3.3 35.9 38.5 35.2Z" />
-      <text x="50" y="60" textAnchor="middle">{child.display_name.slice(0, 1).toUpperCase()}</text>
-    </svg>
+    <ChildStar child={child} />
   </span>;
 }
 
@@ -2132,7 +2136,7 @@ function CalendarScreen({
                   })}
                   {dayEvents.map((event) => (
                     <span
-                      className={`dayevent${target?.kind === "event" && target.id === event.id ? " calendar-highlight" : ""}`}
+                      className={`dayevent${event.child_id ? " has-child-marker" : ""}${target?.kind === "event" && target.id === event.id ? " calendar-highlight" : ""}`}
                       key={`event-${event.id}`}
                       data-calendar-target={`event-${event.id}`}
                       style={{
@@ -2164,6 +2168,7 @@ function CalendarScreen({
                         pointerEvent.stopPropagation()
                       }
                     >
+                      {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
                       {event.title}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
                     </span>
