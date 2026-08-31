@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.36 – 31. August 2026
+
+### Persistente Terminänderungen und mobile Suche
+
+- Änderungen an einzelnen manuellen Terminen werden vor dem erneuten Laden zuverlässig committed.
+- Neu ausgewählte Kinder, Datum, Uhrzeit, Terminart, Notiz und Farbe bleiben nach dem Speichern und erneuten Öffnen erhalten.
+- Ein Datenbank-Regressionstest prüft ausdrücklich die nachträgliche Kinderzuordnung eines zuvor allgemeinen Termins.
+- Die mobile Suchleiste wird nicht länger von einer später geladenen Desktop-Regel überschrieben.
+- Suche, Breite und Position unterhalb des mobilen Headers funktionieren nun im Hoch- und Querformat bis 900 Pixel.
+
 ## 0.1.35 – 31. August 2026
 
 ### Terminbearbeitung und einzelne Betreuungsausnahmen

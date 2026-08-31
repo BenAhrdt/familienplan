@@ -2297,6 +2297,7 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         event.recurrence_interval = None
         event.recurrence_until = None
     audit(db, request, "CALENDAR_EVENT_CHANGED", user.id, ("calendar_event", str(event.id)), {"title": event.title, "event_type": event.event_type, "starts_at": event.starts_at.isoformat(), "ends_at": event.ends_at.isoformat(), "description": event.description})
+    db.commit()
     db.refresh(event)
     return event
 
