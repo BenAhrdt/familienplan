@@ -235,6 +235,7 @@ class StayUpdate(BaseModel):
     recurrence_day_of_month: int | None = Field(default=None, ge=1, le=31)
     recurrence_until: datetime | None = None
     scope: str = Field(pattern="^(occurrence|future|series)$")
+    preserve_remainder: bool = False
 
     @model_validator(mode="after")
     def valid_range(self):

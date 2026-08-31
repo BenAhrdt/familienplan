@@ -1205,6 +1205,23 @@ def inferred_recurrence_rule(db: Session, stay: Stay) -> RecurrenceRule | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def untouched_stay_ranges(
+    original_start: datetime,
+    original_end: datetime,
+    new_start: datetime,
+    new_end: datetime,
+    preserve_remainder: bool,
+) -> list[tuple[datetime, datetime]]:
+    if not preserve_remainder:
+        return []
+    ranges = []
+    if original_start < new_start < original_end:
+        ranges.append((original_start, new_start))
+    if original_start < new_end < original_end:
+        ranges.append((new_end, original_end))
+    return ranges
+
+
 def stay_payload(db: Session, stay: Stay) -> dict:
     responsible = db.get(User, stay.responsible_user_id)
     rule = inferred_recurrence_rule(db, stay)
@@ -1469,23 +1486,14 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
         # Editing only part of a multi-day occurrence must not discard the
         # untouched remainder. Detach those pieces from the recurrence as
         # explicit exceptions with the original responsible person.
-        if data.starts_at > original_start and data.starts_at < original_end:
+        for remainder_start, remainder_end in untouched_stay_ranges(
+            original_start, original_end, data.starts_at, data.ends_at, data.preserve_remainder
+        ):
             db.add(Stay(
                 child_id=stay.child_id,
                 responsible_user_id=original_responsible_user_id,
-                starts_at=original_start,
-                ends_at=data.starts_at,
-                status=original_status,
-                note=original_note,
-                created_by_id=original_created_by_id,
-                recurrence_rule_id=None,
-            ))
-        if data.ends_at < original_end and data.ends_at > original_start:
-            db.add(Stay(
-                child_id=stay.child_id,
-                responsible_user_id=original_responsible_user_id,
-                starts_at=data.ends_at,
-                ends_at=original_end,
+                starts_at=remainder_start,
+                ends_at=remainder_end,
                 status=original_status,
                 note=original_note,
                 created_by_id=original_created_by_id,
@@ -2218,8 +2226,10 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
     if event.is_private and event.created_by_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
-    if user.role != Role.ADMIN and event.created_by_id != user.id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst diesen Termin nicht bearbeiten")
+    if user.role == Role.VIEWER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Bearbeitungsberechtigung")
+    if user.role != Role.ADMIN and event.child_id is not None:
+        assert_child_access(db, user, event.child_id, edit=True)
     waste_section_allowed = data.event_type == "WASTE" and user.id in section_access(db)["waste_collection"]
     if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Terminart ist für dich nicht freigeschaltet")

@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.35 – 31. August 2026
+
+### Terminbearbeitung und einzelne Betreuungsausnahmen
+
+- Das Verschieben eines einzelnen Vorkommnisses einer Betreuungsserie ersetzt nun den vollständigen Termin, ohne einen fälschlichen Minuten-Rest anzulegen.
+- Die Serienregel und alle übrigen Vorkommnisse bleiben bei „Nur diesen Termin“ unverändert erhalten.
+- Unberührte Teile eines mehrtägigen Betreuungszeitraums werden nur noch bei der ausdrücklichen Auswahl „Nur diesen Kalendertag (Rest des Zeitraums erhalten)“ gespeichert.
+- Berechtigte Editoren können gemeinsame manuell angelegte Termine vollständig bearbeiten, auch wenn sie nicht deren ursprüngliche Ersteller sind.
+- Private Termine bleiben ausschließlich durch ihren Ersteller bearbeitbar; importierte Schul- und Abfalltermine sowie reine Leser bleiben schreibgeschützt.
+
 ## 0.1.34 – 31. August 2026
 
 ### Mehrtägige externe Termine

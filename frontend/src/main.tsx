@@ -1377,6 +1377,7 @@ function CalendarScreen({
           responsible_user_id: payload.responsible_user_id,
           note: payload.note,
           scope: editScope,
+          preserve_remainder: stayRangeMode === "day",
           ...(editScope === "series" && editingStay?.recurrence_rule_id
             ? {
                 recurrence_interval_weeks: payload.recurrence_interval_weeks,
@@ -2516,7 +2517,7 @@ function CalendarScreen({
                           ).toLocaleString("de-DE")})
                         </option>
                         <option value="day">
-                          Nur {selectedDay.toLocaleDateString("de-DE")}
+                          Nur {selectedDay.toLocaleDateString("de-DE")} (Rest des Zeitraums erhalten)
                         </option>
                       </select>
                     </label>
