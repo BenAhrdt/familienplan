@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.34 – 31. August 2026
+
+### Mehrtägige externe Termine
+
+- Mehrtägige Schultermine bleiben an jedem tatsächlich betroffenen Kalendertag sichtbar.
+- Der Detaildialog zeigt bei ganztägigen Terminen den vollständigen Zeitraum einschließlich des letzten Tages, beispielsweise „19.09.2026 – 21.09.2026 · ganztägig“.
+- Eintägige ganztägige Termine behalten ihre kompakte Datumsanzeige.
+- Importierte Schul- und Abfalltermine bleiben als Daten der externen Quelle schreibgeschützt; manuell angelegte Termine lassen sich weiterhin vollständig bearbeiten.
+- Drag-and-drop wurde bewusst nicht ergänzt, damit die bestehenden Bearbeitungs- und Synchronisationswege zunächst zuverlässig bleiben.
+
 ## 0.1.33 – 31. August 2026
 
 ### Mobile Suche, Dialoge und Terminmarkierungen

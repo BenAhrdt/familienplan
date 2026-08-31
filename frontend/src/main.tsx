@@ -155,6 +155,23 @@ function calendarEventOccursOnDay(event: CalendarEvent, day: Date, dayEnd: Date)
   return new Date(event.starts_at) < dayEnd && new Date(event.ends_at) > day;
 }
 
+function calendarEventTiming(event: CalendarEvent) {
+  if (event.all_day) {
+    const startKey = event.raw_data?.all_day_start;
+    const endKey = event.raw_data?.all_day_end_exclusive;
+    if (typeof startKey === "string" && typeof endKey === "string") {
+      const start = new Date(`${startKey}T12:00:00`);
+      const endExclusive = new Date(`${endKey}T12:00:00`);
+      const lastDay = new Date(endExclusive);
+      lastDay.setDate(lastDay.getDate() - 1);
+      const format = (date: Date) => date.toLocaleDateString("de-DE");
+      return `${format(start)}${localDateKey(start) === localDateKey(lastDay) ? "" : ` – ${format(lastDay)}`} · ganztägig`;
+    }
+    return `${new Date(event.starts_at).toLocaleDateString("de-DE")} · ganztägig`;
+  }
+  return `${new Date(event.starts_at).toLocaleString("de-DE")} – ${new Date(event.ends_at).toLocaleString("de-DE")}`;
+}
+
 function clientId() {
   return globalThis.crypto?.randomUUID?.() ||
     `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -2148,11 +2165,7 @@ function CalendarScreen({
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
                         if (event.source_id) {
-                          const start = new Date(event.starts_at);
-                          const end = new Date(event.ends_at);
-                          const timing = event.all_day
-                            ? `${start.toLocaleDateString("de-DE")} · ganztägig`
-                            : `${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}`;
+                          const timing = calendarEventTiming(event);
                           const details = event.description?.trim() ? `\n\n${event.description.trim()}` : "";
                           setReadOnlyInfo({
                             title: event.title,
