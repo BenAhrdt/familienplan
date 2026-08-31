@@ -9,6 +9,7 @@ export type User = {
   color: string;
   birth_date: string | null;
   allowed_event_types: EventType[];
+  allowed_person_color_ids: number[];
   is_pending: boolean;
 };
 export type EventType = "STAY" | "BIRTHDAY" | "GENERAL" | "SCHOOL" | "CLEANING" | "WASTE" | "PRIVATE" | "OTHER";

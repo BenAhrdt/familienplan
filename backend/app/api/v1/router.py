@@ -641,6 +641,11 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
     if unknown_types:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Terminart")
     person.allowed_event_types = list(dict.fromkeys(data.allowed_event_types))
+    active_person_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
+    unknown_person_ids = set(data.allowed_person_color_ids) - active_person_ids
+    if unknown_person_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Person in der Farbenfreigabe")
+    person.allowed_person_color_ids = list(dict.fromkeys(data.allowed_person_color_ids))
     existing = list(db.scalars(select(ChildUserPermission).where(ChildUserPermission.user_id == person.id)))
     existing_by_child = {row.child_id: row for row in existing}
     for row in existing:
@@ -653,7 +658,7 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
             existing_by_child[child_id].permission = permission
         else:
             db.add(ChildUserPermission(child_id=child_id, user_id=person.id, permission=permission))
-    audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions)})
+    audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions), "person_colors": person.allowed_person_color_ids})
     db.commit()
     return PersonAccessOut(user=person, child_permissions=data.child_permissions)
 

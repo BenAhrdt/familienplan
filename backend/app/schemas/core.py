@@ -72,6 +72,7 @@ class UserOut(BaseModel):
     color: str
     birth_date: date | None = None
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
+    allowed_person_color_ids: list[int] = []
     is_pending: bool = False
 
     @field_validator("email", mode="before")
@@ -165,6 +166,7 @@ class PersonAccessUpdate(BaseModel):
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     birth_date: date | None = None
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
+    allowed_person_color_ids: list[int] = []
 
 
 class ProfileUpdate(BaseModel):

@@ -47,6 +47,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_pending: Mapped[bool] = mapped_column(Boolean, default=False)
     allowed_event_types: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"])
+    allowed_person_color_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

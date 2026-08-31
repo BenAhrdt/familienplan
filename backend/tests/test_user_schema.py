@@ -16,6 +16,7 @@ def test_pending_user_internal_email_is_not_exposed_or_rejected():
     )
 
     assert user.email is None
+    assert user.allowed_person_color_ids == []
 
 
 def test_private_calendar_event_type_is_valid():

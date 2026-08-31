@@ -216,11 +216,18 @@ function Field({
   );
 }
 
-function EventColorPicker({ initialColor }: { initialColor: string }) {
+function EventColorPicker({ initialColor, people }: { initialColor: string; people: User[] }) {
   const [value, setValue] = useState(initialColor);
   const styles = getComputedStyle(document.documentElement);
+  const sessionUser = getSessionUser();
+  const allowedPeople = people.filter(
+    (person) =>
+      person.id !== sessionUser?.id &&
+      (sessionUser?.role === "ADMIN" || sessionUser?.allowed_person_color_ids?.includes(person.id)),
+  );
   const candidates: Array<[string, string]> = [
-    ["Meine Farbe", getSessionUser()?.color || ""],
+    ["Meine Farbe", sessionUser?.color || ""],
+    ...allowedPeople.map((person): [string, string] => [person.display_name, person.color]),
     ["Schule", styles.getPropertyValue("--school").trim()],
     ["Ferien", styles.getPropertyValue("--holiday").trim()],
     ["Geburtstage", styles.getPropertyValue("--birthday").trim()],
@@ -2427,6 +2434,7 @@ function CalendarScreen({
                 <EventColorPicker
                   key={`event-color-${editingEvent?.id || stayToConvert?.id || "new"}`}
                   initialColor={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
+                  people={people}
                 />
                 {(!editingEvent || editingEvent.recurrence_group) && <label>
                   Wiederholung
@@ -3156,6 +3164,7 @@ function PeopleScreen({
     [impersonateChoice, setImpersonateChoice] = useState<User | null>(null),
     [deleteChoice, setDeleteChoice] = useState<User | null>(null),
     [deletingPerson, setDeletingPerson] = useState(false),
+    [draftRole, setDraftRole] = useState<User["role"]>("EDITOR"),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
     [access, setAccess] = useState<PersonAccess[]>([]);
@@ -3193,6 +3202,7 @@ function PeopleScreen({
             color: String(f.get("color")),
             birth_date: f.get("birth_date") || null,
             allowed_event_types: f.getAll("allowed_event_types"),
+            allowed_person_color_ids: f.getAll("allowed_person_color_ids").map(Number),
             child_permissions: permissions(f, role),
           }),
         });
@@ -3224,6 +3234,7 @@ function PeopleScreen({
     setCopied(true);
   }
   function edit(p: User) {
+    setDraftRole(p.role);
     setSelected(
       access.find((a) => a.user.id === p.id) || {
         user: p,
@@ -3259,6 +3270,7 @@ function PeopleScreen({
               setSelected(null);
               setCopied(false);
               setError("");
+              setDraftRole("EDITOR");
               setOpen("invite");
             }}
           >
@@ -3348,7 +3360,8 @@ function PeopleScreen({
                   Zugriff
                   <select
                     name="role"
-                    defaultValue={selected?.user.role || "EDITOR"}
+                    value={draftRole}
+                    onChange={(event) => setDraftRole(event.target.value as User["role"])}
                   >
                     <option value="EDITOR">
                       Darf planen und Vorschläge machen
@@ -3460,6 +3473,25 @@ function PeopleScreen({
                         <span>{eventTypeLabels[type]}</span>
                       </label>
                     ))}
+                  </fieldset>
+                )}
+                {open === "edit" && (
+                  <fieldset className="childaccess" key={`person-colors-${selected?.user.id}-${draftRole}`}>
+                    <legend>Freigegebene Personenfarben</legend>
+                    {people.filter((person) => person.id !== selected?.user.id).map((person) => (
+                      <label className="check" key={person.id}>
+                        <input
+                          type="checkbox"
+                          name="allowed_person_color_ids"
+                          value={person.id}
+                          defaultChecked={draftRole === "ADMIN" || selected?.user.allowed_person_color_ids?.includes(person.id)}
+                          disabled={draftRole === "ADMIN"}
+                        />
+                        <i className="person-color-swatch" style={{ backgroundColor: person.color }} aria-hidden="true" />
+                        <span>{person.display_name}</span>
+                      </label>
+                    ))}
+                    {draftRole === "ADMIN" && <p className="hint">Administratoren sehen automatisch alle Personenfarben – auch von später hinzugefügten Personen.</p>}
                   </fieldset>
                 )}
                 <div className="personform-actions">

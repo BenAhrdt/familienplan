@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.41 – 31. August 2026
+
+### Freigaben für Personenfarben
+
+- Administratoren können pro Person festlegen, welche Personenfarben ihr im Terminformular angeboten werden.
+- Freigegebene Personen erscheinen als beschriftete Farbschnellwahl neben den persönlichen Kalenderfarben.
+- Administratoren sehen automatisch alle bestehenden und künftig hinzugefügten Personenfarben.
+- Die Freigabeauswahl ist ausschließlich in der Administration veränderbar und wird serverseitig geprüft.
+
 ## 0.1.40 – 31. August 2026
 
 ### Ganztägige Termine und Farbschnellwahl

@@ -52,6 +52,7 @@
 .childaccess .check {
   margin: 0.55rem 0;
 }
+.person-color-swatch { width: 18px; height: 18px; flex: 0 0 18px; border: 1px solid #0002; border-radius: 50%; }
 .personform {
   width: min(38rem, calc(100% - 3rem));
 }
