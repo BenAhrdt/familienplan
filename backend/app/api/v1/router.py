@@ -155,6 +155,20 @@ def require_section_access(db: Session, user: User, section: str) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Rubrik ist für dich nicht freigeschaltet")
 
 
+def visible_person_ids(user: User) -> set[int]:
+    """People a user may select or whose person data may be listed."""
+    return {user.id, *(user.allowed_person_color_ids or [])}
+
+
+def assert_person_visible(db: Session, user: User, person_id: int) -> User:
+    person = db.get(User, person_id)
+    if not person or not person.is_active:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die ausgewählte Person wurde nicht gefunden")
+    if user.role != Role.ADMIN and person.id not in visible_person_ids(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Person ist für dich nicht freigegeben")
+    return person
+
+
 def recurrence_dates(data: StayCreate) -> list[tuple[datetime, datetime]]:
     occurrences = [(data.starts_at, data.ends_at)]
     if not data.recurrence_interval_weeks:
@@ -341,13 +355,17 @@ def users(db: Session = Depends(get_db), _: User = Depends(admin)):
 
 
 @router.get("/people", response_model=list[UserOut])
-def people(db: Session = Depends(get_db), _: User = Depends(current_user)):
-    return list(db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name)))
+def people(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    query = select(User).where(User.is_active.is_(True))
+    if user.role != Role.ADMIN:
+        query = query.where(User.id.in_(visible_person_ids(user)))
+    return list(db.scalars(query.order_by(User.display_name)))
 
 
 @router.get("/birthdays", response_model=list[BirthdayOut])
 def birthdays(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
+    has_section_access = user.role == Role.ADMIN or user.id in section_access(db)["birthdays"]
+    if not has_section_access and "BIRTHDAY" not in (user.allowed_event_types or []):
         return []
     query = select(Birthday)
     if user.role != Role.ADMIN:
@@ -359,8 +377,7 @@ def birthdays(db: Session = Depends(get_db), user: User = Depends(current_user))
 
 @router.post("/birthdays", response_model=BirthdayOut, status_code=201, dependencies=[Depends(require_csrf)])
 def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Geburtstag ist nicht freigegeben")
+    require_section_access(db, user, "birthdays")
     values = data.model_dump()
     audience = normalized_audience(db, user.id, values.pop("visible_to_user_ids"))
     values["is_private"] = audience is not None
@@ -375,8 +392,7 @@ def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depend
 
 @router.put("/birthdays/{birthday_id}", response_model=BirthdayOut, dependencies=[Depends(require_csrf)])
 def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Geburtstag ist nicht freigegeben")
+    require_section_access(db, user, "birthdays")
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
@@ -394,8 +410,7 @@ def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db
 
 @router.delete("/birthdays/{birthday_id}", status_code=204, dependencies=[Depends(require_csrf)])
 def delete_birthday(birthday_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Geburtstag ist nicht freigegeben")
+    require_section_access(db, user, "birthdays")
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
@@ -1259,6 +1274,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
     if "STAY" not in (user.allowed_event_types or []):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Betreuung ist für dich nicht freigeschaltet")
     assert_child_access(db, user, data.child_id, edit=True)
+    assert_person_visible(db, user, data.responsible_user_id)
     if user.role != Role.ADMIN and data.status == PlanStatus.CONFIRMED:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Betreuungszeiten erfordern Zustimmung")
     if data.recurrence_interval_weeks and data.recurrence_until:
@@ -1347,6 +1363,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
 @router.post("/stays/conflicts", response_model=list[StayOut], dependencies=[Depends(require_csrf)])
 def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
     assert_child_access(db, user, data.child_id, edit=True)
+    assert_person_visible(db, user, data.responsible_user_id)
     occurrences = recurrence_dates(data)
     found: dict[int, Stay] = {}
     for starts_at, ends_at in occurrences:
@@ -1363,6 +1380,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
     if "STAY" not in (user.allowed_event_types or []):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Betreuung ist für dich nicht freigeschaltet")
     assert_child_access(db, user, data.child_id, edit=True)
+    assert_person_visible(db, user, data.responsible_user_id)
     child = db.get(Child, data.child_id)
     if data.recurrence_interval_weeks and data.recurrence_until:
         duration_minutes = int((data.ends_at - data.starts_at).total_seconds() / 60)
@@ -1410,6 +1428,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
     if not stay:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
+    assert_person_visible(db, user, data.responsible_user_id)
     if user.role != Role.ADMIN and stay.status == PlanStatus.CONFIRMED and not getattr(request.state, "approved_change", False):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Betreuungszeiten müssen über eine Änderungsanfrage geändert werden")
     rule = inferred_recurrence_rule(db, stay)
@@ -1631,9 +1650,7 @@ def create_planning_group(data: GroupPlanningCreate, request: Request, mode: str
     item_payloads = []
     for entry in data.items:
         assert_child_access(db, user, entry.child_id, edit=True)
-        responsible = db.get(User, entry.responsible_user_id)
-        if not responsible or not responsible.is_active:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Eine zugeordnete Person wurde nicht gefunden")
+        responsible = assert_person_visible(db, user, entry.responsible_user_id)
         stay = Stay(
             child_id=entry.child_id,
             responsible_user_id=entry.responsible_user_id,
@@ -1745,6 +1762,7 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
     if not stay:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
+    assert_person_visible(db, user, data.responsible_user_id)
     # The person who currently has the child in the selected period confirms.
     # If the matched database row already belongs to the requester, look for
     # another overlapping plan and finally use the child's normal residence.
@@ -1867,8 +1885,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
             for raw_entry in counter["items"]:
                 entry = GroupPlanningItem.model_validate(raw_entry)
                 assert_child_access(db, user, entry.child_id, edit=True)
-                if not db.get(User, entry.responsible_user_id):
-                    raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Eine zugeordnete Person wurde nicht gefunden")
+                assert_person_visible(db, user, entry.responsible_user_id)
                 stay = Stay(child_id=entry.child_id, responsible_user_id=entry.responsible_user_id, starts_at=entry.starts_at, ends_at=entry.ends_at, status=PlanStatus.DRAFT, note=entry.name, created_by_id=user.id)
                 db.add(stay)
                 db.flush()

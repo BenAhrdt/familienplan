@@ -584,7 +584,11 @@ function Dashboard({
             id: `event-${event.id}`,
             title: event.title,
             detail: [
-              event.child_id ? childNames.get(event.child_id) : "Ganze Familie",
+              event.child_id
+                ? childNames.get(event.child_id)
+                : event.event_type === "WASTE" || event.event_type === "CLEANING"
+                  ? null
+                  : "Ganze Familie",
               event.all_day ? "Ganztägig" : null,
             ]
               .filter(Boolean)
@@ -608,7 +612,7 @@ function Dashboard({
             return {
               id: `birthday-${birthday.id}`,
               title: `🎂 ${birthday.display_name}`,
-              detail: birthday.is_private ? "Privater Geburtstag" : "Geburtstag",
+              detail: "",
               startsAt: next,
               color: "var(--birthday)",
               kind: "Geburtstag" as const,
@@ -2580,8 +2584,9 @@ function CalendarScreen({
                       undefined
                     }
                   >
+                    <option value="">Person auswählen</option>
                     {people.map((p) => (
-                      <option value={p.id}>{p.display_name}</option>
+                      <option key={p.id} value={p.id}>{p.display_name}</option>
                     ))}
                   </select>
                 </label>
@@ -3493,7 +3498,7 @@ function PeopleScreen({
                 )}
                 {open === "edit" && (
                   <fieldset className="childaccess" key={`person-colors-${selected?.user.id}-${draftRole}`}>
-                    <legend>Freigegebene Personenfarben</legend>
+                    <legend>Sichtbare Personen</legend>
                     {people.filter((person) => person.id !== selected?.user.id).map((person) => (
                       <label className="check" key={person.id}>
                         <input
@@ -4614,7 +4619,7 @@ function App() {
   }
   useEffect(() => {
     if (!user || user.role === "ADMIN") return;
-    if (screen === "people" || (screen === "birthdays" && (!user.allowed_event_types.includes("BIRTHDAY") || !sectionAccess.birthdays.includes(user.id))) || (screen === "waste" && (!user.allowed_event_types.includes("WASTE") || !sectionAccess.waste_collection.includes(user.id)))) setScreen("home");
+    if (screen === "people" || screen === "children" || (screen === "birthdays" && !sectionAccess.birthdays.includes(user.id)) || (screen === "waste" && !sectionAccess.waste_collection.includes(user.id))) setScreen("home");
   }, [user, screen, sectionAccess]);
   if (loading) return <div className="splash">FamilienPlan</div>;
   if (setup && !user)
@@ -4674,9 +4679,9 @@ function App() {
     ["planning", ClipboardList],
     ["settings", Palette],
   ] as const).filter(([id]) => {
-    if (id === "people") return user.role === "ADMIN";
-    if (id === "birthdays") return user.role === "ADMIN" || (user.allowed_event_types.includes("BIRTHDAY") && sectionAccess.birthdays.includes(user.id));
-    if (id === "waste") return user.role === "ADMIN" || (user.allowed_event_types.includes("WASTE") && sectionAccess.waste_collection.includes(user.id));
+    if (id === "people" || id === "children") return user.role === "ADMIN";
+    if (id === "birthdays") return user.role === "ADMIN" || sectionAccess.birthdays.includes(user.id);
+    if (id === "waste") return user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id);
     return true;
   });
   let content: React.ReactNode = (

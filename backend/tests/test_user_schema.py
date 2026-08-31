@@ -1,6 +1,8 @@
 from app.models.entities import Role
 from datetime import datetime, timedelta, timezone
 
+from app.api.v1.router import visible_person_ids
+from app.models.entities import User
 from app.schemas.core import CalendarEventCreate, UserOut
 
 
@@ -31,3 +33,9 @@ def test_private_calendar_event_type_is_valid():
 
     assert event.event_type == "PRIVATE"
     assert event.visible_to_user_ids == []
+
+
+def test_visible_people_include_the_user_and_explicitly_shared_people():
+    user = User(id=7, role=Role.EDITOR, allowed_person_color_ids=[11, 13])
+
+    assert visible_person_ids(user) == {7, 11, 13}

@@ -2,6 +2,27 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.43 – 31. August 2026
+
+### Sichtbare Personen
+
+- Die bisherige Freigabe für Personenfarben heißt nun „Sichtbare Personen“ und steuert die gesamte verfügbare Personenliste.
+- Bei der Auswahl „Das Kind ist bei“ erscheinen nur die eigene und ausdrücklich freigegebene Personen; Administratoren sehen weiterhin alle Personen.
+- Auch Gruppenplanungen und Betreuungsanfragen akzeptieren serverseitig keine Zuordnung zu einer nicht freigegebenen Person.
+- Die Personen-API gibt nicht administrativen Benutzern keine nicht freigegebenen Personen mehr preis.
+
+### Getrennte Rubrik- und Kalenderfreigaben
+
+- Die Kinder-Rubrik ist ausschließlich für Administratoren sichtbar; freigegebene Kinder bleiben in Kalender und Planung nutzbar.
+- Die Rubrikenfreigabe erlaubt unabhängig vom Hauptkalender das Öffnen und Pflegen von Geburtstagen beziehungsweise Abfallkalendern.
+- Die persönlichen Terminarten steuern getrennt davon, ob Geburtstage und Abfalltermine im Hauptkalender erscheinen.
+- Die konkrete Auswahl „Sichtbar für“ an Geburtstagen und am Abfallkalender wird zusätzlich berücksichtigt.
+
+### Aufgeräumte Übersicht
+
+- Abfall- und Putzfrauentermine zeigen in „Als Nächstes“ keine unpassende Zuordnung zu „Ganze Familie“ mehr.
+- Geburtstage verzichten dort auf die redundante Zusatzzeile „Geburtstag“ beziehungsweise „Privater Geburtstag“.
+
 ## 0.1.42 – 31. August 2026
 
 ### Terminfarben folgen den Freigaben
