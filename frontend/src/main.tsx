@@ -2240,6 +2240,11 @@ function CalendarScreen({
             );
           })}
         </div>
+        <div className="weekdays weekdays-bottom" aria-label="Wochentage">
+          {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
+            <span key={`bottom-${day}`}>{day}</span>
+          ))}
+        </div>
         <footer className="calendar-navigation calendar-footer-nav">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Vorheriger Monat"><ChevronLeft /></button>
           <h2>{month.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</h2>

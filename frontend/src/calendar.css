@@ -258,6 +258,9 @@
   font-weight: 750;
   color: var(--muted);
 }
+.weekdays-bottom {
+  border-top: 0;
+}
 .monthgrid > article {
   min-height: 125px;
   padding: 0.55rem;

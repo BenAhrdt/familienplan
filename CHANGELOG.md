@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.38 – 31. August 2026
+
+### Orientierung am Kalenderende
+
+- Unterhalb des Monatsrasters erscheint eine zweite Wochentagszeile von Montag bis Sonntag.
+- Die untere Beschriftung verwendet exakt dieselbe Sieben-Spalten-Ausrichtung wie Kalender und obere Wochentagszeile.
+- Auch in der kompakten mobilen Monatsansicht bleiben Abstände und Schriftgrößen konsistent.
+
 ## 0.1.37 – 31. August 2026
 
 ### Aussagekräftige Termineinträge
