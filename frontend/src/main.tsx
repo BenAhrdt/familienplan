@@ -216,7 +216,15 @@ function Field({
   );
 }
 
-function EventColorPicker({ initialColor, people }: { initialColor: string; people: User[] }) {
+function EventColorPicker({
+  initialColor,
+  people,
+  allowedEventTypes,
+}: {
+  initialColor: string;
+  people: User[];
+  allowedEventTypes: EventType[];
+}) {
   const [value, setValue] = useState(initialColor);
   const styles = getComputedStyle(document.documentElement);
   const sessionUser = getSessionUser();
@@ -225,13 +233,20 @@ function EventColorPicker({ initialColor, people }: { initialColor: string; peop
       person.id !== sessionUser?.id &&
       (sessionUser?.role === "ADMIN" || sessionUser?.allowed_person_color_ids?.includes(person.id)),
   );
+  const typeColors: Partial<Record<EventType, string>> = {
+    STAY: styles.getPropertyValue("--green").trim(),
+    BIRTHDAY: styles.getPropertyValue("--birthday").trim(),
+    GENERAL: "#8B6CC1",
+    SCHOOL: styles.getPropertyValue("--school").trim(),
+    CLEANING: "#35A853",
+    WASTE: styles.getPropertyValue("--waste").trim(),
+    PRIVATE: "#9A477E",
+    OTHER: "#6F63B6",
+  };
   const candidates: Array<[string, string]> = [
     ["Meine Farbe", sessionUser?.color || ""],
     ...allowedPeople.map((person): [string, string] => [person.display_name, person.color]),
-    ["Schule", styles.getPropertyValue("--school").trim()],
-    ["Ferien", styles.getPropertyValue("--holiday").trim()],
-    ["Geburtstage", styles.getPropertyValue("--birthday").trim()],
-    ["Abfallkalender", styles.getPropertyValue("--waste").trim()],
+    ...sortedEventTypes(allowedEventTypes).map((type): [string, string] => [eventTypeLabels[type], typeColors[type] || ""]),
   ];
   const presets = candidates.filter(
     ([, color], index) =>
@@ -2435,6 +2450,7 @@ function CalendarScreen({
                   key={`event-color-${editingEvent?.id || stayToConvert?.id || "new"}`}
                   initialColor={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
                   people={people}
+                  allowedEventTypes={availableEventTypes}
                 />
                 {(!editingEvent || editingEvent.recurrence_group) && <label>
                   Wiederholung

@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.42 – 31. August 2026
+
+### Terminfarben folgen den Freigaben
+
+- Die Farbschnellwahl zeigt Typfarben nur noch für freigeschaltete Terminarten.
+- Ohne Freigabe für den Abfallkalender wird dessen Farbe nicht mehr angeboten.
+- Auch die Farben für Betreuung, Allgemein, Putzfrau, Privat und Sonstiges stehen passend zu den jeweiligen Berechtigungen bereit.
+- Personenfarben bleiben unabhängig davon über die administrativen Personenfreigaben gesteuert.
+
 ## 0.1.41 – 31. August 2026
 
 ### Freigaben für Personenfarben
