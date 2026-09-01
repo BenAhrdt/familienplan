@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.52 – 1. September 2026
+
+### Sichtbare Auswahl-Popups
+
+- Ausgelagerte Auswahl-Popups liegen nun zuverlässig über dem geöffneten Hauptdialog und verschwinden nicht mehr optisch dahinter.
+
 ## 0.1.51 – 1. September 2026
 
 ### Betreuungsanfragen zwischen beteiligten Personen
