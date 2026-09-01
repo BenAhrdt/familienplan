@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.46 – 1. September 2026
+
+### Standardbetreuung gezielt ausblenden
+
+- Im Kalenderfilter lässt sich die automatisch aus „Wohnt bei“ abgeleitete Standardbetreuung separat ausblenden.
+- Ausdrücklich angelegte Betreuungstermine bleiben dabei weiterhin sichtbar.
+- Die persönliche Auswahl wird wie die übrigen Terminart-Filter dauerhaft im Browser gespeichert.
+
 ## 0.1.45 – 1. September 2026
 
 ### Abfallkalender persönlich ausblenden

@@ -1220,6 +1220,9 @@ function CalendarScreen({
       try { return JSON.parse(localStorage.getItem("familienplan-calendar-hidden-types") || "[]"); }
       catch { return []; }
     }),
+    [showDefaultCare, setShowDefaultCare] = useState(() =>
+      localStorage.getItem("familienplan-calendar-show-default-care") !== "false"
+    ),
     [month, setMonth] = useState(() => {
       const initial = target ? new Date(target.startsAt) : new Date();
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
@@ -1991,6 +1994,13 @@ function CalendarScreen({
             <span>{eventTypeLabels[type]}</span>
           </label>
         ))}
+        {availableEventTypes.includes("STAY") && <label className={`event-type-chip${showDefaultCare ? "" : " muted-chip"}`} style={{"--chip-color":"var(--green)"} as React.CSSProperties}>
+          <input type="checkbox" checked={showDefaultCare} onChange={(event) => {
+            setShowDefaultCare(event.target.checked);
+            localStorage.setItem("familienplan-calendar-show-default-care", String(event.target.checked));
+          }}/>
+          <span>Standardbetreuung aus „Wohnt bei“</span>
+        </label>}
         </div>
       </details>
       <section className={`monthcalendar${canWriteCalendar ? "" : " calendar-readonly"}`}>
@@ -2189,6 +2199,7 @@ function CalendarScreen({
                         );
                       });
                     }
+                    if (!showDefaultCare) return null;
                     const responsible = people.find(
                       (person) =>
                         person.id === child.default_responsible_user_id,
