@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.54 – 1. September 2026
+
+### Vertrauliche Betreuungsdaten
+
+- Betreuungen nicht freigegebener Personen werden bereits von der API aus Kalender-, Dashboard-, Serien- und Konfliktdaten entfernt.
+- Konfliktkarten verraten dadurch weder Namen noch Zeiträume von Personen, die für das angemeldete Konto nicht sichtbar sind.
+- Direkt beteiligte Empfänger einer konkreten Betreuungsanfrage erhalten weiterhin ausschließlich die für diese Entscheidung erforderlichen Namen.
+
 ## 0.1.53 – 1. September 2026
 
 ### Einheitliche Dialogebenen

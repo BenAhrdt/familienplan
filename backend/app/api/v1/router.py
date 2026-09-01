@@ -1430,6 +1430,8 @@ def stays(child_id: int, from_at: datetime | None = None, to_at: datetime | None
         return []
     assert_child_access(db, user, child_id)
     query = select(Stay).where(Stay.child_id == child_id, Stay.status == PlanStatus.CONFIRMED)
+    if user.role != Role.ADMIN:
+        query = query.where(Stay.responsible_user_id.in_(visible_person_ids(user)))
     if from_at:
         query = query.where(Stay.ends_at > from_at)
     if to_at:
@@ -1540,7 +1542,12 @@ def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User =
             Stay.starts_at < ends_at, Stay.ends_at > starts_at,
         )):
             found[stay.id] = stay
-    return [stay_payload(db, stay) for stay in sorted(found.values(), key=lambda item: item.starts_at)]
+    visible_ids = None if user.role == Role.ADMIN else visible_person_ids(user)
+    return [
+        stay_payload(db, stay)
+        for stay in sorted(found.values(), key=lambda item: item.starts_at)
+        if visible_ids is None or stay.responsible_user_id in visible_ids
+    ]
 
 
 def stay_request_recipient_id(
@@ -1923,7 +1930,10 @@ def stay_series(db: Session = Depends(get_db), user: User = Depends(current_user
         Stay.status == PlanStatus.CONFIRMED,
     ).order_by(Stay.starts_at)
     if user.role != Role.ADMIN:
-        query = query.where(Stay.child_id.in_(allowed_child_ids))
+        query = query.where(
+            Stay.child_id.in_(allowed_child_ids),
+            Stay.responsible_user_id.in_(visible_person_ids(user)),
+        )
     representatives: dict[int, Stay] = {}
     for stay in db.scalars(query):
         representatives.setdefault(stay.recurrence_rule_id, stay)

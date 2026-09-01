@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
-from app.api.v1.router import stay_request_recipient_id, untouched_stay_ranges
+from app.api.v1.router import stay_request_recipient_id, untouched_stay_ranges, visible_person_ids
+from app.models.entities import Role
 
 
 def test_moving_whole_occurrence_does_not_create_minute_remainder():
@@ -45,3 +47,9 @@ def test_handover_is_confirmed_by_the_other_carer():
 
 def test_own_deletion_falls_back_to_default_carer():
     assert stay_request_recipient_id(2, 1, current_responsible_user_id=2) == 1
+
+
+def test_visible_person_ids_only_contains_self_and_explicitly_shared_people():
+    user = SimpleNamespace(id=2, role=Role.VIEWER, allowed_person_color_ids=[3, 5])
+
+    assert visible_person_ids(user) == {2, 3, 5}
