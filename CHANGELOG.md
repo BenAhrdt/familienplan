@@ -2,6 +2,24 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.48 – 1. September 2026
+
+### Eigene Terminarten und zentrale Freigaben
+
+- Die neue, ausschließlich für Administratoren zugängliche Rubrik „Terminarten“ bündelt die Freigaben der festen Standardtypen.
+- Eigene Terminarten können mit Namen, Farbe sowie getrennten Sicht- und Bearbeitungsrechten angelegt werden.
+- Einfache und wiederkehrende Termine unterstützen die eigenen Terminarten.
+- Sichtbarkeitsrechte gelten auch für Suche und Serienansicht; Löschen bleibt Erstellern und Administratoren vorbehalten.
+- Verwendete Terminarten sind vor versehentlichem Löschen geschützt, während Umbenennungen bestehende Termine mitführen.
+
+### Einheitliche Auswahl-Popups und Dialoge
+
+- Mehrfachauswahlen für Personen, Kinder, Terminarten und weitere Freigaben öffnen ein einheitliches kompaktes Popup.
+- Personen werden darin mit ihrer Farbe und Initiale übersichtlich dargestellt.
+- Dialoge besitzen auf allen Bildschirmgrößen vier abgerundete Ecken und besser ausgerichtete, dauerhaft erreichbare Aktionsbuttons.
+- Das Schließen-Symbol bleibt beim Scrollen sichtbar; zusätzlich schließen ein Klick außerhalb oder die Escape-Taste den obersten Dialog.
+- Einfache Ja/Nein-Einstellungen bleiben bewusst direkt bedienbare Checkboxen.
+
 ## 0.1.47 – 1. September 2026
 
 ### Persönliche Kalenderanzeige pro Benutzerkonto

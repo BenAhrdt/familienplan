@@ -73,6 +73,8 @@ type WasteCalendarSetting = {
 type CalendarSourceStatus = { id: number; name: string; kind: string; active: boolean; last_sync_at: string | null; last_result: Record<string, unknown> | null; last_error: string | null };
 type CalendarColorPreferences = { holiday_color: string; birthday_color: string; school_color: string; waste_color: string };
 type CalendarDisplayPreferences = { show_default_care: boolean };
+type CustomCalendarType = { id: string; name: string; color: string; visible_to_user_ids: number[]; editable_by_user_ids: number[]; can_create?: boolean };
+type CalendarTypeSettings = { standard_type_user_ids: Record<string, number[]>; custom_types: CustomCalendarType[] };
 type ApplicationMeta = {
   version: string;
   latest_version: string | null;
@@ -360,6 +362,20 @@ function AudiencePicker({
       )}
     </div>
   );
+}
+
+type PickerItem = { id: string | number; label: string; color?: string; disabled?: boolean };
+function MultiSelectPicker({ title, items, values, onChange, name, hint }: { title: string; items: PickerItem[]; values: Array<string | number>; onChange?: (values: Array<string | number>) => void; name?: string; hint?: string }) {
+  const [open, setOpen] = useState(false), [internal, setInternal] = useState(values);
+  useEffect(() => setInternal(values), [values.map(String).join(",")]);
+  const selected = onChange ? values : internal;
+  const update = (next: Array<string | number>) => { if (onChange) onChange(next); else setInternal(next); };
+  const labels = items.filter((item) => selected.includes(item.id)).map((item) => item.label);
+  return <div className="audience-field multi-select-field"><span className="audience-label">{title}</span>
+    {name && selected.map((id) => <input key={String(id)} type="hidden" name={name} value={id}/>) }
+    <button type="button" className="audience-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><span>{labels.length ? labels.join(", ") : "Keine Auswahl"}</span><b>{selected.length}</b></button>
+    {open && <><button type="button" className="audience-backdrop" aria-label="Auswahl schließen" onClick={() => setOpen(false)}/><section className="audience-popover" role="dialog" aria-label={`${title} auswählen`}><header><strong>{title}</strong><button type="button" onClick={() => setOpen(false)} aria-label="Schließen">×</button></header><div className="audience-list">{items.map((item) => <label key={String(item.id)} className={item.color ? "audience-person-tag" : ""} style={item.color ? {"--person-color":item.color} as React.CSSProperties : undefined}><input type="checkbox" checked={selected.includes(item.id)} disabled={item.disabled} onChange={(event) => update(event.target.checked ? [...selected,item.id] : selected.filter((id) => id !== item.id))}/><span>{item.color && <i>{item.label.slice(0,1).toUpperCase()}</i>}{item.label}</span></label>)}</div>{hint && <p>{hint}</p>}<button type="button" className="audience-done" onClick={() => setOpen(false)}>Fertig</button></section></>}
+  </div>;
 }
 
 function ChildStar({ child }: { child: Child }) {
@@ -1163,6 +1179,8 @@ function CalendarScreen({
     [requests, setRequests] = useState<ChangeRequest[]>([]),
     [holidays, setHolidays] = useState<Array<Holiday & { state: string }>>([]),
     [customBirthdays, setCustomBirthdays] = useState<Birthday[]>([]),
+    [customEventTypes, setCustomEventTypes] = useState<CustomCalendarType[]>([]),
+    [selectedCustomTypeId, setSelectedCustomTypeId] = useState(""),
     [open, setOpen] = useState<"event" | "stay" | null>(null),
     [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null),
     [eventEditScope, setEventEditScope] = useState<
@@ -1227,10 +1245,11 @@ function CalendarScreen({
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
     });
   const now = new Date(),
-    canWriteCalendar = getSessionUser()?.role !== "VIEWER",
+    canWriteCalendar = getSessionUser()?.role !== "VIEWER" || customEventTypes.some((type) => type.can_create),
     availableEventTypes = getSessionUser()?.role === "ADMIN"
       ? sortedEventTypes(Object.keys(eventTypeLabels) as EventType[])
       : sortedEventTypes(Array.from(new Set([...(getSessionUser()?.allowed_event_types || []), "PRIVATE" as EventType]))),
+    creatableEventTypes = getSessionUser()?.role === "VIEWER" ? [] : availableEventTypes,
     monthStart = new Date(month.getFullYear(), month.getMonth(), 1),
     firstWeekday = (monthStart.getDay() + 6) % 7,
     from = new Date(month.getFullYear(), month.getMonth(), 1 - firstWeekday),
@@ -1248,6 +1267,7 @@ function CalendarScreen({
     api<Stay[]>("/stay-series").then(setSeries);
     api<CalendarEvent[]>("/calendar-series").then(setEventSeries);
     api<Birthday[]>("/birthdays").then(setCustomBirthdays);
+    api<CustomCalendarType[]>("/calendar-event-types").then(setCustomEventTypes);
     Promise.all(
       children.map((c) =>
         api<Stay[]>(
@@ -1286,6 +1306,12 @@ function CalendarScreen({
       .then((preferences) => setShowDefaultCare(preferences.show_default_care))
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    if (open === "event" && !editingEvent && getSessionUser()?.role === "VIEWER" && !selectedCustomTypeId) {
+      const first = customEventTypes.find((type) => type.can_create);
+      if (first) { setEventType("OTHER"); setSelectedCustomTypeId(first.id); }
+    }
+  }, [open, editingEvent, customEventTypes, selectedCustomTypeId]);
   useEffect(() => {
     const refresh = () => load();
     window.addEventListener("familienplan:data-changed", refresh);
@@ -1361,8 +1387,8 @@ function CalendarScreen({
           ends_at: new Date(String(f.get("ends_at"))).toISOString(),
           all_day: eventAllDay,
           category: "FAMILY",
-          event_type: String(f.get("event_type")),
-          custom_type_label: f.get("custom_type_label") || null,
+          event_type: eventType,
+          custom_type_label: selectedCustomTypeId ? customEventTypes.find((type) => type.id === selectedCustomTypeId)?.name : f.get("custom_type_label") || null,
           child_id: childlessEventTypes.has(eventType) ? null : Number(f.get("child_id")) || null,
           color: f.get("color"),
           is_private: false,
@@ -1514,7 +1540,9 @@ function CalendarScreen({
     event: CalendarEvent,
     scope: "occurrence" | "future" | "series" = "occurrence",
   ) {
-    if (!canWriteCalendar || (event.event_type === "PRIVATE" && event.created_by_id !== getSessionUser()?.id)) {
+    const customDefinition = customEventTypes.find((type) => type.name === event.custom_type_label);
+    const mayEditEvent = getSessionUser()?.role !== "VIEWER" || Boolean(customDefinition?.can_create);
+    if (!mayEditEvent || (event.event_type === "PRIVATE" && event.created_by_id !== getSessionUser()?.id)) {
       const start = new Date(event.starts_at), end = new Date(event.ends_at);
       setReadOnlyInfo({ title:event.title, message:`${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}${event.description ? `\n\n${event.description}` : ""}\n\nDu besitzt Leserechte und kannst diesen Termin deshalb nicht bearbeiten.` });
       return;
@@ -1533,6 +1561,7 @@ function CalendarScreen({
     );
     setEditingEvent(event);
     setEventType(event.event_type || "GENERAL");
+    setSelectedCustomTypeId(customEventTypes.find((type) => type.name === event.custom_type_label)?.id || "");
     setEventAllDay(event.all_day);
     setEventEditScope(scope);
     setOpen("event");
@@ -2377,9 +2406,15 @@ function CalendarScreen({
                   Terminart
                   <select
                     name="event_type"
-                    value={eventType}
+                    value={selectedCustomTypeId ? `CUSTOM:${selectedCustomTypeId}` : eventType}
                     onChange={(e) => {
+                      if (e.target.value.startsWith("CUSTOM:")) {
+                        setSelectedCustomTypeId(e.target.value.slice(7));
+                        setEventType("OTHER");
+                        return;
+                      }
                       const type = e.target.value as EventType;
+                      setSelectedCustomTypeId("");
                       if (type === "STAY") {
                         setEditingStay(null);
                         setEditingStaySource(null);
@@ -2393,12 +2428,13 @@ function CalendarScreen({
                       }
                     }}
                   >
-                    {availableEventTypes.map((type) => (
+                    {creatableEventTypes.map((type) => (
                       <option key={type} value={type}>{eventTypeLabels[type as EventType]}</option>
                     ))}
+                    {customEventTypes.filter((type) => type.can_create).map((type) => <option key={`custom-${type.id}`} value={`CUSTOM:${type.id}`}>{type.name}</option>)}
                   </select>
                 </label>
-                {eventType === "OTHER" && (
+                {eventType === "OTHER" && !selectedCustomTypeId && (
                   <Field
                     label="Bezeichnung für Sonstiges"
                     name="custom_type_label"
@@ -2574,7 +2610,7 @@ function CalendarScreen({
                       }
                     }}
                   >
-                    {availableEventTypes.map((type) => (
+                    {creatableEventTypes.map((type) => (
                       <option key={type} value={type}>{eventTypeLabels[type as EventType]}</option>
                     ))}
                   </select>
@@ -3482,60 +3518,12 @@ function PeopleScreen({
                     </label>
                   </>
                 )}
-                <fieldset className="childaccess">
-                  <legend>Freigegebene Kinder</legend>
-                  {children.map((c) => (
-                    <label className="check" key={c.id}>
-                      <input
-                        type="checkbox"
-                        name="children"
-                        value={c.id}
-                        defaultChecked={
-                          selected?.user.role === "ADMIN" ||
-                          !!selected?.child_permissions[String(c.id)]
-                        }
-                      />
-                      <span>{c.display_name}</span>
-                    </label>
-                  ))}
-                  {!children.length && (
-                    <p className="hint">Noch keine Kinder vorhanden.</p>
-                  )}
-                </fieldset>
+                <MultiSelectPicker key={`children-${selected?.user.id || "invite"}-${draftRole}`} title="Freigegebene Kinder" name="children" items={children.map((child) => ({id:child.id,label:child.display_name,color:child.color}))} values={children.filter((child) => selected?.user.role === "ADMIN" || !!selected?.child_permissions[String(child.id)]).map((child) => child.id)} hint={children.length ? "Die Berechtigungsstufe ergibt sich aus der gewählten Rolle." : "Noch keine Kinder vorhanden."}/>
                 {open === "edit" && (
-                  <fieldset className="childaccess">
-                    <legend>Freigeschaltete Terminarten</legend>
-                    {sortedEventTypes((Object.keys(eventTypeLabels) as EventType[]).filter((type) => type !== "PRIVATE")).map((type) => (
-                      <label className="check" key={type}>
-                        <input
-                          type="checkbox"
-                          name="allowed_event_types"
-                          value={type}
-                          defaultChecked={(selected?.user.allowed_event_types || ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]).includes(type)}
-                        />
-                        <span>{eventTypeLabels[type]}</span>
-                      </label>
-                    ))}
-                  </fieldset>
+                  <MultiSelectPicker key={`types-${selected?.user.id}-${draftRole}`} title="Freigeschaltete Terminarten" name="allowed_event_types" items={sortedEventTypes((Object.keys(eventTypeLabels) as EventType[]).filter((type) => type !== "PRIVATE")).map((type) => ({id:type,label:eventTypeLabels[type]}))} values={selected?.user.role === "ADMIN" ? sortedEventTypes((Object.keys(eventTypeLabels) as EventType[]).filter((type) => type !== "PRIVATE")) : selected?.user.allowed_event_types || ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]}/>
                 )}
                 {open === "edit" && (
-                  <fieldset className="childaccess" key={`person-colors-${selected?.user.id}-${draftRole}`}>
-                    <legend>Sichtbare Personen</legend>
-                    {people.filter((person) => person.id !== selected?.user.id).map((person) => (
-                      <label className="check" key={person.id}>
-                        <input
-                          type="checkbox"
-                          name="allowed_person_color_ids"
-                          value={person.id}
-                          defaultChecked={draftRole === "ADMIN" || selected?.user.allowed_person_color_ids?.includes(person.id)}
-                          disabled={draftRole === "ADMIN"}
-                        />
-                        <i className="person-color-swatch" style={{ backgroundColor: person.color }} aria-hidden="true" />
-                        <span>{person.display_name}</span>
-                      </label>
-                    ))}
-                    {draftRole === "ADMIN" && <p className="hint">Administratoren sehen automatisch alle Personenfarben – auch von später hinzugefügten Personen.</p>}
-                  </fieldset>
+                  <MultiSelectPicker key={`person-colors-${selected?.user.id}-${draftRole}`} title="Sichtbare Personen" name="allowed_person_color_ids" items={people.filter((person) => person.id !== selected?.user.id).map((person) => ({id:person.id,label:person.display_name,color:person.color}))} values={people.filter((person) => person.id !== selected?.user.id && (draftRole === "ADMIN" || selected?.user.allowed_person_color_ids?.includes(person.id))).map((person) => person.id)} hint={draftRole === "ADMIN" ? "Administratoren sehen automatisch alle Personen – auch später hinzugefügte." : undefined}/>
                 )}
                 <div className="personform-actions">
                   <button>
@@ -3805,7 +3793,7 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
       {calendarSettings.provider === "AWIDO" ? <><Field label="AWIDO-Kennung" name="customer" defaultValue={calendarSettings.customer || "awld"}/><div className="grid2"><Field label="Gemeinde / Stadt" name="city" defaultValue={calendarSettings.city}/><Field label="Ortsteil / Straße" name="street" defaultValue={calendarSettings.street}/></div><p className="hint">Für Hohenahr-Ahrdt: Kennung <code>awld</code>, Gemeinde <code>Hohenahr</code>, Ortsteil <code>Ahrdt</code>.</p></> : <Field label="iCal-/WebCal-Adresse" name="calendar_url" type="url" defaultValue={calendarSettings.calendar_url}/>}
       <label>Grundfarbe des Abfallkalenders<div className="themepicker"><input type="color" name="color" value={calendarSettings.color || "#5C8B58"} onChange={(event) => setCalendarSettings({...calendarSettings, color: event.target.value})}/><code>{(calendarSettings.color || "#5C8B58").toUpperCase()}</code></div></label>
       <fieldset className="waste-type-colors"><legend>Farben der Abfallarten</legend>{Object.entries(wasteTypeLabels).map(([type, label]) => <label key={type}><span>{label}</span><div className="themepicker"><input type="color" name={`type_color_${type}`} value={calendarSettings.type_colors[type]} onChange={(event) => setCalendarSettings({...calendarSettings, type_colors: {...calendarSettings.type_colors, [type]: event.target.value}})}/><code>{calendarSettings.type_colors[type].toUpperCase()}</code></div></label>)}</fieldset>
-      <fieldset className="childaccess"><legend>Sichtbar für</legend>{people.filter((person) => person.role !== "ADMIN").map((person) => <label className="check" key={person.id}><input type="checkbox" name="visible_to_user_ids" value={person.id} defaultChecked={calendarSettings.visible_to_user_ids.includes(person.id)}/><span>{person.display_name}</span></label>)}<p className="hint">Administratoren sehen die Termine immer.</p></fieldset>
+      <MultiSelectPicker key={`waste-visible-${calendarSettings.id || "new"}`} title="Sichtbar für" name="visible_to_user_ids" items={people.filter((person) => person.role !== "ADMIN").map((person) => ({id:person.id,label:person.display_name,color:person.color}))} values={calendarSettings.visible_to_user_ids} hint="Administratoren sehen die Termine immer."/>
       <div className="modalactions"><button>Einstellungen speichern</button>{calendarSettings.id && calendarSettings.can_delete && <button type="button" className="danger secondary" onClick={async () => { if (!confirm(`Abfallkalender „${calendarSettings.name}“ wirklich löschen? Alle importierten Termine dieses Kalenders werden entfernt.`)) return; await api(`/waste-calendars/${calendarSettings.id}`, {method:"DELETE"}); setCalendarOpen(false); setCalendarSettings(null); await loadCalendars(); }}>Kalender löschen</button>}</div>
     </form></div>}
   </>;
@@ -4530,6 +4518,20 @@ function App() {
         return [];
       }
     });
+  useEffect(() => {
+    const closeTopModal = () => {
+      const modals = Array.from(document.querySelectorAll<HTMLElement>(".modal"));
+      modals.at(-1)?.querySelector<HTMLButtonElement>(".panel > .close")?.click();
+    };
+    const clickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.classList.contains("modal")) closeTopModal();
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") closeTopModal(); };
+    document.addEventListener("click", clickOutside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("click", clickOutside); document.removeEventListener("keydown", escape); };
+  }, []);
   const loadChildren = () =>
       api<Child[]>("/children")
         .then(setChildren)
@@ -5052,7 +5054,25 @@ function SectionAccessSettings({ people, value, onChange }: { people: User[]; va
   return <section id="settings-access" className="themebox section-access-settings settings-card"><h2>Rubriken freigeben</h2><p className="muted">Administratoren sehen alle Rubriken. Hier wählst du weitere Personen aus.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
     {(Object.keys(sectionLabels) as Array<keyof SectionAccess>).map((section) => <div className="integration-row" key={section}><span><strong>{sectionLabels[section]}</strong><small>{draft[section].length ? `${draft[section].length} Person(en) freigegeben` : "Nur Administratoren"}</small></span><button type="button" className="secondary" onClick={() => setOpen(section)}>Personen auswählen</button></div>)}
     <button onClick={save}>Freigaben speichern</button>
-    {open && <div className="modal"><section className="panel"><button type="button" className="close" onClick={() => setOpen(null)}>×</button><h2>{sectionLabels[open]} freigeben</h2><div className="audience-list">{people.filter((person) => person.role !== "ADMIN").map((person) => <label key={person.id}><input type="checkbox" checked={draft[open].includes(person.id)} onChange={(event) => setDraft((current) => ({ ...current, [open]: event.target.checked ? [...current[open], person.id] : current[open].filter((id) => id !== person.id) }))}/><span>{person.display_name}</span></label>)}</div><button type="button" className="audience-done" onClick={() => setOpen(null)}>Fertig</button></section></div>}
+    {open && <div className="modal"><section className="panel"><button type="button" className="close" onClick={() => setOpen(null)}>×</button><h2>{sectionLabels[open]} freigeben</h2><div className="audience-list">{people.filter((person) => person.role !== "ADMIN").map((person) => <label key={person.id} className="audience-person-tag" style={{"--person-color":person.color} as React.CSSProperties}><input type="checkbox" checked={draft[open].includes(person.id)} onChange={(event) => setDraft((current) => ({ ...current, [open]: event.target.checked ? [...current[open], person.id] : current[open].filter((id) => id !== person.id) }))}/><span><i>{person.display_name.slice(0,1).toUpperCase()}</i>{person.display_name}</span></label>)}</div><div className="modalactions"><button type="button" className="audience-done" onClick={() => setOpen(null)}>Fertig</button><button type="button" className="secondary" onClick={() => setOpen(null)}>Abbrechen</button></div></section></div>}
+  </section>;
+}
+
+function CalendarEventTypeSettings({ people }: { people: User[] }) {
+  const [settings, setSettings] = useState<CalendarTypeSettings | null>(null), [error, setError] = useState(""), [message, setMessage] = useState("");
+  useEffect(() => { api<CalendarTypeSettings>("/settings/calendar-event-types").then(setSettings).catch((x) => setError((x as Error).message)); }, []);
+  if (!settings) return <section className="themebox settings-card"><h2>Terminarten</h2><p>{error || "Terminarten werden geladen …"}</p></section>;
+  const selectablePeople = people.filter((person) => person.role !== "ADMIN");
+  const changeCustom = (id: string, change: Partial<CustomCalendarType>) => setSettings((current) => current && ({...current, custom_types:current.custom_types.map((type) => type.id === id ? {...type, ...change} : type)}));
+  async function save() {
+    setError(""); setMessage("");
+    try { setSettings(await api<CalendarTypeSettings>("/settings/calendar-event-types", {method:"PUT", body:JSON.stringify(settings)})); setMessage("Terminarten und Freigaben gespeichert."); window.dispatchEvent(new Event("familienplan:data-changed")); }
+    catch (x) { setError((x as Error).message); }
+  }
+  return <section className="themebox settings-card settings-wide"><h2>Terminarten</h2><p className="muted">Nur Administratoren verwalten diese Rubrik. Sichtbarkeit, Bearbeitung und Löschen bleiben getrennte Rechte; Administratoren behalten immer Zugriff.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
+    <h3>Standard-Terminarten</h3><div className="grid2">{Object.keys(settings.standard_type_user_ids).sort((a,b)=>(eventTypeLabels[a as EventType] || a).localeCompare(eventTypeLabels[b as EventType] || b,"de")).map((type) => <MultiSelectPicker key={type} title={eventTypeLabels[type as EventType] || type} items={selectablePeople.map((person)=>({id:person.id,label:person.display_name,color:person.color}))} values={settings.standard_type_user_ids[type] || []} onChange={(values)=>setSettings({...settings,standard_type_user_ids:{...settings.standard_type_user_ids,[type]:values.map(Number)}})} hint="Administratoren haben immer Zugriff."/>)}</div>
+    <h3>Eigene Terminarten</h3>{settings.custom_types.map((type) => <article className="themebox" key={type.id}><div className="grid2"><label>Name<input value={type.name} onChange={(event) => changeCustom(type.id,{name:event.target.value})}/></label><label>Farbe<input type="color" value={type.color} onChange={(event) => changeCustom(type.id,{color:event.target.value})}/></label></div><div className="grid2"><MultiSelectPicker title="Sichtbar für" items={selectablePeople.map((person)=>({id:person.id,label:person.display_name,color:person.color}))} values={type.visible_to_user_ids} onChange={(values)=>changeCustom(type.id,{visible_to_user_ids:values.map(Number)})} hint="Administratoren sehen diese Terminart immer."/><MultiSelectPicker title="Anlegen und bearbeiten" items={selectablePeople.map((person)=>({id:person.id,label:person.display_name,color:person.color}))} values={type.editable_by_user_ids} onChange={(values)=>changeCustom(type.id,{editable_by_user_ids:values.map(Number)})} hint="Bearbeitungsrechte schließen die Sichtbarkeit ein."/></div><button type="button" className="danger secondary" onClick={() => setSettings({...settings,custom_types:settings.custom_types.filter((item)=>item.id!==type.id)})}>Terminart entfernen</button></article>)}
+    <div className="modalactions"><button type="button" className="secondary" onClick={() => setSettings({...settings,custom_types:[...settings.custom_types,{id:crypto.randomUUID(),name:"Neue Terminart",color:"#8B6CC1",visible_to_user_ids:[],editable_by_user_ids:[]} ]})}><Plus size={18}/> Terminart hinzufügen</button><button type="button" onClick={save}>Terminarten speichern</button></div>
   </section>;
 }
 
@@ -5085,7 +5105,7 @@ const auditActionLabels: Record<string,string> = {
   STAY_SERIES_EXTENDED:"hat eine Betreuungsserie verlängert", NEW_STAY_PROPOSED:"hat eine neue Betreuungszeit vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Betreuungsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen einer Betreuungszeit vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",
   CALENDAR_EVENT_CREATED:"hat einen Termin angelegt", CALENDAR_EVENT_CHANGED:"hat einen Termin geändert", CALENDAR_EVENT_DELETED:"hat einen Termin gelöscht", CALENDAR_EVENT_SERIES_CREATED:"hat eine Terminserie angelegt", CALENDAR_EVENT_SERIES_CHANGED:"hat eine Terminserie geändert", CALENDAR_EVENT_SERIES_DELETED:"hat eine Terminserie gelöscht",
   BIRTHDAY_CREATED:"hat einen Geburtstag angelegt", BIRTHDAY_CHANGED:"hat einen Geburtstag geändert", BIRTHDAY_DELETED:"hat einen Geburtstag gelöscht",
-  SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", PERSONAL_CALENDAR_DISPLAY_CHANGED:"hat die persönliche Kalenderanzeige geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
+  SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", CALENDAR_EVENT_TYPES_CHANGED:"hat Terminarten und deren Freigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", PERSONAL_CALENDAR_DISPLAY_CHANGED:"hat die persönliche Kalenderanzeige geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
   SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender eingerichtet",
   SYSTEM_UPDATE_REQUESTED:"hat ein Systemupdate gestartet", IMPERSONATION_STARTED:"hat die Ansicht einer Person übernommen", IMPERSONATION_STOPPED:"hat die übernommene Ansicht beendet",
 };
@@ -5146,7 +5166,7 @@ function SettingsScreen({
     [saved, setSaved] = useState(false),
     [checkingUpdates, setCheckingUpdates] = useState(false),
     [updateCheckMessage, setUpdateCheckMessage] = useState(""),
-    [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
+    [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "event-types" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
     [error, setError] = useState("");
   async function changePassword(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");setSaved(false);const form=e.currentTarget,f=new FormData(form);try{await api("/profile/password",{method:"PUT",body:JSON.stringify({current_password:f.get("current_password"),password:f.get("password"),password_confirm:f.get("password_confirm")})});form.reset();setSaved(true)}catch(x){setError((x as Error).message)}}
   useEffect(() => {
@@ -5238,6 +5258,7 @@ function SettingsScreen({
         <button type="button" className={settingsSection === "profile" ? "active" : ""} onClick={() => setSettingsSection("profile")}>Profil</button>
         <button type="button" className={settingsSection === "calendar" ? "active" : ""} onClick={() => setSettingsSection("calendar")}>Kalender</button>
         {user.role === "ADMIN" && <>
+          <button type="button" className={settingsSection === "event-types" ? "active" : ""} onClick={() => setSettingsSection("event-types")}>Terminarten</button>
           <button type="button" className={settingsSection === "access" ? "active" : ""} onClick={() => setSettingsSection("access")}>Freigaben</button>
           <button type="button" className={settingsSection === "sources" ? "active" : ""} onClick={() => setSettingsSection("sources")}>Externe Kalender</button>
           <button type="button" className={settingsSection === "updates" ? "active" : ""} onClick={() => setSettingsSection("updates")}>Aktualisierungen</button>
@@ -5310,6 +5331,7 @@ function SettingsScreen({
       {user.role === "ADMIN" && settingsSection === "access" && (
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />
       )}
+      {user.role === "ADMIN" && settingsSection === "event-types" && <CalendarEventTypeSettings people={people} />}
       {user.role === "ADMIN" && settingsSection === "sources" && <CalendarSourceOverview />}
       {user.role === "ADMIN" && settingsSection === "updates" && <section id="settings-updates" className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
       {user.role === "ADMIN" && settingsSection === "integrations" && (
@@ -5415,7 +5437,7 @@ function IntegrationSettings() {
     <div className="integration-card">
     <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen. Kalenderdaten einschließlich Betreuungszeiten: <code>/api/v1/integrations/v1/calendar</code></p></div><span className="integration-badge">Nur Lesen</span></div>
     <p className="muted">Der Schlüssel wird nur einmal vollständig angezeigt. Basis: <code>/api/v1/integrations/v1</code></p>
-    <fieldset><legend>Freigegebene Kinder</legend>{apiChildren.map((child)=><label key={child.id} className="checkline"><input type="checkbox" checked={selectedChildren.includes(child.id)} onChange={(e)=>setSelectedChildren(e.target.checked?[...selectedChildren,child.id]:selectedChildren.filter((id)=>id!==child.id))}/>{child.display_name}</label>)}<label className="checkline"><input type="checkbox" checked={privateAccess} onChange={(e)=>setPrivateAccess(e.target.checked)}/>Auch private Termine und Geburtstage freigeben</label></fieldset>
+    <MultiSelectPicker title="Freigegebene Kinder" items={apiChildren.map((child)=>({id:child.id,label:child.display_name,color:child.color}))} values={selectedChildren} onChange={(values)=>setSelectedChildren(values.map(Number))}/><label className="checkline"><input type="checkbox" checked={privateAccess} onChange={(e)=>setPrivateAccess(e.target.checked)}/>Auch private Termine und Geburtstage freigeben</label>
     <div className="buttonrow"><input value={tokenName} onChange={(e)=>setTokenName(e.target.value)} aria-label="Name des API-Schlüssels"/><button onClick={createToken}>API-Schlüssel erstellen</button></div>
     {newToken && <div className="secret-once"><code>{newToken}</code><button onClick={()=>navigator.clipboard.writeText(newToken)}>Kopieren</button></div>}
     {tokens.map((x)=><div className="integration-row" key={x.id}><span><strong>{x.name}</strong><small>{x.revoked_at ? "Widerrufen" : x.last_used_at ? `Zuletzt genutzt: ${new Date(x.last_used_at).toLocaleString("de-DE")}` : "Noch nicht genutzt"}</small></span>{!x.revoked_at&&<button className="danger" onClick={async()=>{await api(`/integration-tokens/${x.id}`,{method:"DELETE"});await reload()}}>Widerrufen</button>}</div>)}

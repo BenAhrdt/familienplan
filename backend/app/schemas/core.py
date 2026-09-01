@@ -405,3 +405,16 @@ class CalendarColorPreferences(BaseModel):
 
 class CalendarDisplayPreferences(BaseModel):
     show_default_care: bool = False
+
+
+class CustomCalendarType(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=120)
+    color: str = Field(default="#8B6CC1", pattern=r"^#[0-9A-Fa-f]{6}$")
+    visible_to_user_ids: list[int] = []
+    editable_by_user_ids: list[int] = []
+
+
+class CalendarTypeSettings(BaseModel):
+    standard_type_user_ids: dict[str, list[int]] = {}
+    custom_types: list[CustomCalendarType] = []

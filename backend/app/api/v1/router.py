@@ -24,7 +24,7 @@ from app.core.security import hash_password, new_token, token_hash, utcnow, veri
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -151,6 +151,23 @@ def upsert_application_setting(db: Session, key: str, value: dict) -> None:
         .values(key=key, value=value)
         .on_conflict_do_update(index_elements=[ApplicationSetting.key], set_={"value": value})
     )
+
+
+def custom_calendar_types(db: Session) -> list[dict]:
+    row = db.get(ApplicationSetting, "custom_calendar_types")
+    return list(row.value or []) if row else []
+
+
+def custom_calendar_type_for_label(db: Session, label: str | None) -> dict | None:
+    normalized = (label or "").strip().casefold()
+    return next((item for item in custom_calendar_types(db) if item.get("name", "").strip().casefold() == normalized), None)
+
+
+def visible_custom_calendar_labels(db: Session, user: User) -> set[str]:
+    if user.role == Role.ADMIN:
+        return {item["name"] for item in custom_calendar_types(db)}
+    return {item["name"] for item in custom_calendar_types(db)
+            if user.id in item.get("visible_to_user_ids", []) or user.id in item.get("editable_by_user_ids", [])}
 
 
 def require_section_access(db: Session, user: User, section: str) -> None:
@@ -484,6 +501,60 @@ def update_calendar_display(data: CalendarDisplayPreferences, request: Request, 
     audit(db, request, "PERSONAL_CALENDAR_DISPLAY_CHANGED", user.id, ("setting", key), values)
     db.commit()
     return data
+
+
+@router.get("/calendar-event-types")
+def available_calendar_event_types(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return [{**item, "can_create": user.role == Role.ADMIN or user.id in item.get("editable_by_user_ids", [])}
+            for item in custom_calendar_types(db)
+            if user.role == Role.ADMIN or user.id in item.get("visible_to_user_ids", []) or user.id in item.get("editable_by_user_ids", [])]
+
+
+@router.get("/settings/calendar-event-types", response_model=CalendarTypeSettings)
+def get_calendar_event_type_settings(db: Session = Depends(get_db), _: User = Depends(admin)):
+    users = list(db.scalars(select(User).where(User.is_active.is_(True), User.role != Role.ADMIN)))
+    standard = {event_type: [user.id for user in users if event_type in (user.allowed_event_types or [])]
+                for event_type in sorted(EVENT_TYPES - {"PRIVATE"})}
+    return {"standard_type_user_ids": standard, "custom_types": custom_calendar_types(db)}
+
+
+@router.put("/settings/calendar-event-types", response_model=CalendarTypeSettings, dependencies=[Depends(require_csrf)])
+def update_calendar_event_type_settings(data: CalendarTypeSettings, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    valid_users = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
+    selected_users = {entry for entries in data.standard_type_user_ids.values() for entry in entries}
+    selected_users.update(entry for item in data.custom_types for entry in [*item.visible_to_user_ids, *item.editable_by_user_ids])
+    if selected_users - valid_users:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Terminarten enthalten unbekannte Personen")
+    unknown_standard = set(data.standard_type_user_ids) - (EVENT_TYPES - {"PRIVATE"})
+    if unknown_standard:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Standard-Terminart")
+    ids = [item.id for item in data.custom_types]
+    names = [item.name.strip().casefold() for item in data.custom_types]
+    if len(ids) != len(set(ids)) or len(names) != len(set(names)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "IDs und Namen eigener Terminarten müssen eindeutig sein")
+    previous = {item.get("id"): item for item in custom_calendar_types(db)}
+    removed = set(previous) - set(ids)
+    for removed_id in removed:
+        old_name = previous[removed_id].get("name")
+        if db.scalar(select(CalendarEvent.id).where(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label == old_name).limit(1)):
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Die Terminart „{old_name}“ wird noch von Terminen verwendet und kann nicht gelöscht werden")
+    stored_custom = []
+    for item in data.custom_types:
+        value = item.model_dump()
+        value["name"] = value["name"].strip()
+        value["visible_to_user_ids"] = sorted(set(value["visible_to_user_ids"]) | set(value["editable_by_user_ids"]))
+        old = previous.get(value["id"])
+        if old and old.get("name") != value["name"]:
+            for event in db.scalars(select(CalendarEvent).where(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label == old.get("name"))):
+                event.custom_type_label = value["name"]
+        stored_custom.append(value)
+    for person in db.scalars(select(User).where(User.is_active.is_(True), User.role != Role.ADMIN)):
+        person.allowed_event_types = sorted(event_type for event_type in EVENT_TYPES - {"PRIVATE"}
+                                            if person.id in data.standard_type_user_ids.get(event_type, []))
+    upsert_application_setting(db, "custom_calendar_types", stored_custom)
+    audit(db, request, "CALENDAR_EVENT_TYPES_CHANGED", user.id, ("setting", "custom_calendar_types"), {"custom_types": [item["name"] for item in stored_custom]})
+    db.commit()
+    return {"standard_type_user_ids": data.standard_type_user_ids, "custom_types": stored_custom}
 
 
 @router.get("/settings/sections", response_model=SectionAccessSetting)
@@ -1789,11 +1860,12 @@ def calendar_series(db: Session = Depends(get_db), user: User = Depends(current_
         | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
     ).order_by(CalendarEvent.starts_at)
     if user.role != Role.ADMIN:
+        custom_labels = visible_custom_calendar_labels(db, user)
         allowed_child_ids = list(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
         query = query.where(
             ((CalendarEvent.child_id.is_(None)) | (CalendarEvent.child_id.in_(allowed_child_ids))),
             ((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id])),
-            or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE"),
+            or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE", and_(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label.in_(custom_labels))),
         )
     representatives: dict[str, CalendarEvent] = {}
     for event in db.scalars(query):
@@ -2011,8 +2083,13 @@ def read_notification(notification_id: int, db: Session = Depends(get_db), user:
 @router.get("/calendar", response_model=list[CalendarEventOut])
 def calendar(from_at: datetime, to_at: datetime, db: Session = Depends(get_db), user: User = Depends(current_user)):
     allowed_child_ids = None
+    visible_custom_labels: set[str] = set()
     if user.role != Role.ADMIN:
         allowed_child_ids = list(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
+        visible_custom_labels = {
+            item["name"] for item in custom_calendar_types(db)
+            if user.id in item.get("visible_to_user_ids", []) or user.id in item.get("editable_by_user_ids", [])
+        }
     query = select(CalendarEvent).where(
         CalendarEvent.starts_at < to_at,
         CalendarEvent.ends_at > from_at,
@@ -2021,11 +2098,18 @@ def calendar(from_at: datetime, to_at: datetime, db: Session = Depends(get_db), 
         | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
     )
     if user.role != Role.ADMIN:
-        query = query.where(or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE"))
+        query = query.where(or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE", and_(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label.in_(visible_custom_labels))))
         query = query.where((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
     if allowed_child_ids is not None:
         query = query.where((CalendarEvent.child_id.is_(None)) | (CalendarEvent.child_id.in_(allowed_child_ids)))
     result = list(db.scalars(query.order_by(CalendarEvent.starts_at)))
+    if user.role != Role.ADMIN:
+        configured_custom_labels = {item["name"] for item in custom_calendar_types(db)}
+        result = [event for event in result if not (
+            event.event_type == "OTHER"
+            and event.custom_type_label in configured_custom_labels
+            and event.custom_type_label not in visible_custom_labels
+        )]
     hidden_waste_calendar_ids = {
         item["id"] for item in list_waste_configs(db)
         if user.id in item.get("hidden_for_user_ids", [])
@@ -2108,8 +2192,9 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
         | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
     )
     if user.role != Role.ADMIN:
+        visible_custom_labels = visible_custom_calendar_labels(db, user)
         event_query = event_query.where(
-            or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE"),
+            or_(CalendarEvent.event_type.in_(user.allowed_event_types or []), CalendarEvent.event_type == "PRIVATE", and_(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label.in_(visible_custom_labels))),
             (CalendarEvent.is_private.is_(False))
             | (CalendarEvent.created_by_id == user.id)
             | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]),
@@ -2278,14 +2363,19 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
 @router.post("/calendar", response_model=CalendarEventOut, status_code=201, dependencies=[Depends(require_csrf)])
 def create_calendar_event(data: CalendarEventCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     waste_section_allowed = data.event_type == "WASTE" and user.id in section_access(db)["waste_collection"]
+    custom_type = custom_calendar_type_for_label(db, data.custom_type_label) if data.event_type == "OTHER" else None
+    custom_type_allowed = bool(custom_type and (user.role == Role.ADMIN or user.id in custom_type.get("editable_by_user_ids", [])))
     if user.role == Role.VIEWER and not waste_section_allowed:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Bearbeitungsberechtigung")
+        if not custom_type_allowed:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Bearbeitungsberechtigung")
     if data.event_type in CHILDLESS_EVENT_TYPES:
         data.child_id = None
     if data.child_id is not None:
         assert_child_access(db, user, data.child_id, edit=not waste_section_allowed)
-    if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
+    if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed and not custom_type_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Terminart ist für dich nicht freigeschaltet")
+    if custom_type:
+        data.color = custom_type["color"]
     values = data.model_dump(exclude={"starts_at", "ends_at", "recurrence_day_of_month"})
     values["visible_to_user_ids"] = normalized_audience(db, user.id, values.get("visible_to_user_ids") or []) if data.event_type == "PRIVATE" else None
     values["is_private"] = data.event_type == "PRIVATE"
@@ -2339,13 +2429,17 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
     if event.is_private and event.created_by_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
-    if user.role == Role.VIEWER:
+    custom_type = custom_calendar_type_for_label(db, data.custom_type_label) if data.event_type == "OTHER" else None
+    custom_type_allowed = bool(custom_type and (user.role == Role.ADMIN or user.id in custom_type.get("editable_by_user_ids", [])))
+    if user.role == Role.VIEWER and not custom_type_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Bearbeitungsberechtigung")
     if user.role != Role.ADMIN and event.child_id is not None:
         assert_child_access(db, user, event.child_id, edit=True)
     waste_section_allowed = data.event_type == "WASTE" and user.id in section_access(db)["waste_collection"]
-    if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed:
+    if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed and not custom_type_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Terminart ist für dich nicht freigeschaltet")
+    if custom_type:
+        data.color = custom_type["color"]
     data.visible_to_user_ids = normalized_audience(db, event.created_by_id or user.id, data.visible_to_user_ids or []) if data.event_type == "PRIVATE" else None
     data.is_private = data.event_type == "PRIVATE"
     if data.event_type in CHILDLESS_EVENT_TYPES:
