@@ -362,6 +362,11 @@ class SectionAccessSetting(BaseModel):
 
 
 class WasteCalendarSetting(BaseModel):
+    id: str | None = None
+    name: str = Field(default="Abfallkalender", min_length=1, max_length=160)
+    owner_user_id: int | None = None
+    can_manage: bool = False
+    can_delete: bool = False
     enabled: bool = False
     provider: str = Field(default="AWIDO", pattern="^(AWIDO|ICAL)$")
     customer: str = Field(default="awld", max_length=80)
@@ -384,6 +389,10 @@ class WasteCalendarSetting(BaseModel):
         if any(not re.fullmatch(r"#[0-9A-Fa-f]{6}", color) for color in value.values()):
             raise ValueError("Alle Farben müssen im Format #RRGGBB angegeben werden")
         return value
+
+
+class WasteCalendarCreate(WasteCalendarSetting):
+    pass
 
 
 class CalendarColorPreferences(BaseModel):

@@ -1,5 +1,6 @@
 import hashlib
 import re
+import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -13,6 +14,7 @@ from app.models.entities import ApplicationSetting, CalendarEvent, CalendarSourc
 
 AWIDO_BASE = "https://awido.cubefour.de"
 SETTING_KEY = "waste_calendar"
+SETTING_LIST_KEY = "waste_calendars"
 SOURCE_KEY = "waste-calendar-import"
 DEFAULT_TYPE_COLORS = {
     "bio": "#795548", "yellow": "#E4B820", "residual": "#4F5963",
@@ -21,9 +23,9 @@ DEFAULT_TYPE_COLORS = {
 settings = get_settings()
 
 
-def get_waste_config(db: Session) -> dict:
-    row = db.get(ApplicationSetting, SETTING_KEY)
-    return row.value if row else {
+def _default_config() -> dict:
+    return {
+        "id": str(uuid.uuid4()), "name": "Abfallkalender", "owner_user_id": None,
         "enabled": False, "provider": "AWIDO", "customer": "awld",
         "city": "Hohenahr", "street": "Ahrdt", "calendar_url": "",
         "color": "#5C8B58",
@@ -33,12 +35,48 @@ def get_waste_config(db: Session) -> dict:
     }
 
 
-def save_waste_config(db: Session, value: dict) -> None:
-    row = db.get(ApplicationSetting, SETTING_KEY)
+def list_waste_configs(db: Session) -> list[dict]:
+    row = db.get(ApplicationSetting, SETTING_LIST_KEY)
     if row:
-        row.value = value
+        return list(row.value or [])
+    legacy = db.get(ApplicationSetting, SETTING_KEY)
+    if legacy:
+        config = {**_default_config(), **(legacy.value or {})}
+        config["id"] = "legacy"
+        config["name"] = "Automatischer Abfallkalender"
+        return [config]
+    return []
+
+
+def get_waste_config(db: Session, calendar_id: str | None = None) -> dict:
+    calendars = list_waste_configs(db)
+    if calendar_id:
+        return next((item for item in calendars if item.get("id") == calendar_id), {})
+    return calendars[0] if calendars else _default_config()
+
+
+def save_waste_config(db: Session, value: dict) -> None:
+    calendars = list_waste_configs(db)
+    value = {**_default_config(), **value}
+    index = next((i for i, item in enumerate(calendars) if item.get("id") == value["id"]), None)
+    if index is None:
+        calendars.append(value)
     else:
-        db.add(ApplicationSetting(key=SETTING_KEY, value=value))
+        calendars[index] = value
+    row = db.get(ApplicationSetting, SETTING_LIST_KEY)
+    if row:
+        row.value = calendars
+    else:
+        db.add(ApplicationSetting(key=SETTING_LIST_KEY, value=calendars))
+
+
+def delete_waste_config(db: Session, calendar_id: str) -> None:
+    row = db.get(ApplicationSetting, SETTING_LIST_KEY)
+    calendars = [item for item in list_waste_configs(db) if item.get("id") != calendar_id]
+    if row:
+        row.value = calendars
+    else:
+        db.add(ApplicationSetting(key=SETTING_LIST_KEY, value=calendars))
 
 
 async def _json(client: httpx.AsyncClient, path: str, params: dict | None = None):
@@ -106,17 +144,25 @@ def _waste_type(title: str) -> str:
     return "other"
 
 
-async def sync_waste_calendar(db: Session) -> dict:
+async def sync_waste_calendar(db: Session, calendar_id: str | None = None) -> dict:
     # Uvicorn uses multiple workers. Serialize creation and reconciliation so
     # two startup workers cannot create the same CalendarSource concurrently.
-    db.execute(text("SELECT pg_advisory_xact_lock(7346220)"))
-    config = dict(get_waste_config(db))
+    config = dict(get_waste_config(db, calendar_id))
+    if not config:
+        raise RuntimeError("Abfallkalender nicht gefunden")
+    lock_id = 7346220 + int(hashlib.sha256(config["id"].encode()).hexdigest()[:6], 16)
+    db.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
     if not config.get("enabled"):
         return {"imported": 0, "message": "Der automatische Abfallkalender ist deaktiviert"}
     provider = config.get("provider", "AWIDO")
-    source = db.scalar(select(CalendarSource).where(CalendarSource.key == SOURCE_KEY))
+    source_key = f"{SOURCE_KEY}-{config['id']}"
+    source = db.scalar(select(CalendarSource).where(CalendarSource.key == source_key))
+    if not source and config["id"] == "legacy":
+        source = db.scalar(select(CalendarSource).where(CalendarSource.key == SOURCE_KEY))
+        if source:
+            source.key = source_key
     if not source:
-        source = CalendarSource(key=SOURCE_KEY, name="Automatischer Abfallkalender", kind="WASTE", is_active=True)
+        source = CalendarSource(key=source_key, name=config.get("name") or "Abfallkalender", kind="WASTE", is_active=True)
         db.add(source)
         db.flush()
     try:
@@ -140,6 +186,7 @@ async def sync_waste_calendar(db: Session) -> dict:
                 response.raise_for_status()
                 texts.append(response.text)
                 source.url = url
+        source.name = config.get("name") or "Abfallkalender"
         audience = [int(item) for item in config.get("visible_to_user_ids", [])]
         type_colors = {**DEFAULT_TYPE_COLORS, **config.get("type_colors", {})}
         imported = 0
@@ -164,6 +211,7 @@ async def sync_waste_calendar(db: Session) -> dict:
             event.visible_to_user_ids = audience
             event.is_private = True
             event.raw_data = {
+                "waste_calendar_id": config["id"],
                 "provider": provider,
                 "location": fields.get("LOCATION"),
                 "waste_type": waste_type,

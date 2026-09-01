@@ -2,6 +2,18 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.44 – 1. September 2026
+
+### Mehrere Abfallkalender mit sicheren Freigaben
+
+- Administratoren können mehrere automatische Abfallkalender mit eigenem Namen, Anbieter, Farben und Synchronisationsstatus anlegen.
+- Jeder Abfallkalender lässt sich gezielt für einzelne Personen freigeben.
+- Freigegebene Personen dürfen den Kalender und seine Termine sehen, aber weder seine Einstellungen verändern noch ihn löschen.
+- Nur Eigentümer und Administratoren dürfen einen Abfallkalender verwalten oder löschen.
+- Beim Löschen werden ausschließlich die importierten Termine des ausgewählten Kalenders entfernt.
+- Der bisherige einzelne Abfallkalender wird automatisch und ohne Datenverlust übernommen.
+- Die Hintergrundsynchronisierung verarbeitet alle aktivierten Abfallkalender getrennt.
+
 ## 0.1.43 – 31. August 2026
 
 ### Sichtbare Personen

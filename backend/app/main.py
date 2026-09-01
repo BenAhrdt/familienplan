@@ -15,7 +15,7 @@ from app.integrations import deliver_outbox_once
 from app.core.database import SessionLocal
 from app.models.entities import CalendarSource, Child
 from sqlalchemy import select, text
-from app.waste_calendar import get_waste_config, sync_waste_calendar
+from app.waste_calendar import list_waste_configs, sync_waste_calendar
 from app.version import VERSION
 
 settings = get_settings()
@@ -36,11 +36,11 @@ async def lifespan(_: FastAPI):
                 last_waste_check = asyncio.get_running_loop().time()
                 try:
                     with SessionLocal() as db:
-                        config = get_waste_config(db)
-                        last_sync = config.get("last_sync_at")
-                        due = not last_sync or datetime.fromisoformat(last_sync) < datetime.now(timezone.utc) - timedelta(hours=24)
-                        if config.get("enabled") and due:
-                            await sync_waste_calendar(db)
+                        for config in list_waste_configs(db):
+                            last_sync = config.get("last_sync_at")
+                            due = not last_sync or datetime.fromisoformat(last_sync) < datetime.now(timezone.utc) - timedelta(hours=24)
+                            if config.get("enabled") and due:
+                                await sync_waste_calendar(db, config["id"])
                 except Exception:
                     import logging
                     logging.getLogger("familienplan.waste").exception("Abfallkalender-Synchronisierung fehlgeschlagen")

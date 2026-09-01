@@ -25,7 +25,7 @@ from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
 from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
-from app.waste_calendar import awido_options, get_waste_config, save_waste_config, sync_waste_calendar
+from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
 settings = get_settings()
@@ -136,9 +136,12 @@ def normalized_audience(db: Session, creator_id: int, user_ids: list[int] | None
 def section_access(db: Session) -> dict[str, list[int]]:
     row = db.get(ApplicationSetting, "section_access")
     value = row.value or {} if row else {}
+    waste_users = set(value.get("waste_collection", []))
+    for calendar in list_waste_configs(db):
+        waste_users.update(calendar.get("visible_to_user_ids", []))
     return {
         "birthdays": list(value.get("birthdays", [])),
-        "waste_collection": list(value.get("waste_collection", [])),
+        "waste_collection": sorted(waste_users),
     }
 
 
@@ -507,12 +510,6 @@ def update_section_access(data: SectionAccessSetting, request: Request, db: Sess
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
     value = data.model_dump()
     upsert_application_setting(db, "section_access", value)
-    # Keep the automatic waste importer on the same canonical audience. Older
-    # versions stored this value in two places, allowing a later importer save
-    # to accidentally restore an outdated selection.
-    waste = dict(get_waste_config(db))
-    waste["visible_to_user_ids"] = list(data.waste_collection)
-    save_waste_config(db, waste)
     audit(db, request, "SECTION_ACCESS_CHANGED", user.id, ("setting", "section_access"), value)
     db.commit()
     stored = db.scalar(select(ApplicationSetting).where(ApplicationSetting.key == "section_access").execution_options(populate_existing=True))
@@ -536,11 +533,44 @@ def waste_appointments(db: Session = Depends(get_db), user: User = Depends(curre
     return sorted([*singles, *representatives.values()], key=lambda item: item.starts_at)
 
 
-@router.get("/waste-calendar/settings", response_model=WasteCalendarSetting)
-def waste_calendar_settings(db: Session = Depends(get_db), _: User = Depends(admin)):
-    value = dict(get_waste_config(db))
-    value["visible_to_user_ids"] = section_access(db)["waste_collection"]
+def waste_calendar_out(value: dict, user: User) -> dict:
+    result = dict(value)
+    owner = result.get("owner_user_id")
+    result["can_manage"] = user.role == Role.ADMIN or owner == user.id
+    result["can_delete"] = user.role == Role.ADMIN or owner == user.id
+    return result
+
+
+def accessible_waste_calendar(db: Session, calendar_id: str, user: User, manage: bool = False) -> dict:
+    value = get_waste_config(db, calendar_id)
+    if not value:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Abfallkalender nicht gefunden")
+    owner = value.get("owner_user_id")
+    can_manage = user.role == Role.ADMIN or owner == user.id
+    if manage and not can_manage:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur Eigentümer oder Administratoren dürfen diesen Abfallkalender verwalten")
+    if not can_manage and user.id not in value.get("visible_to_user_ids", []):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Abfallkalender nicht gefunden")
     return value
+
+
+@router.get("/waste-calendars", response_model=list[WasteCalendarSetting])
+def waste_calendar_settings(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return [waste_calendar_out(value, user) for value in list_waste_configs(db)
+            if user.role == Role.ADMIN or value.get("owner_user_id") == user.id or user.id in value.get("visible_to_user_ids", [])]
+
+
+@router.post("/waste-calendars", response_model=WasteCalendarSetting, status_code=201, dependencies=[Depends(require_csrf)])
+def create_waste_calendar(data: WasteCalendarSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
+    if set(data.visible_to_user_ids) - valid_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
+    value = data.model_dump(exclude={"id", "owner_user_id", "can_manage", "can_delete", "last_sync_at", "last_result", "last_error"})
+    value.update({"id": str(uuid.uuid4()), "owner_user_id": user.id, "last_sync_at": None, "last_result": None, "last_error": None})
+    save_waste_config(db, value)
+    audit(db, request, "WASTE_CALENDAR_CREATED", user.id, ("waste_calendar", value["id"]), {"name": value["name"], "visibility": value["visible_to_user_ids"]})
+    db.commit()
+    return waste_calendar_out(value, user)
 
 
 @router.get("/calendar-sources/status")
@@ -559,7 +589,8 @@ async def synchronize_calendar_source(source_id: int, request: Request, db: Sess
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kalenderquelle nicht gefunden")
     try:
         if source.kind == "WASTE":
-            result = await sync_waste_calendar(db)
+            calendar_id = "legacy" if source.key == "waste-calendar-import" else source.key.removeprefix("waste-calendar-import-")
+            result = await sync_waste_calendar(db, calendar_id)
         elif source.kind == "SCHOOL":
             match = re.fullmatch(r"child-(\d+)-school", source.key)
             child = db.get(Child, int(match.group(1))) if match else None
@@ -575,25 +606,32 @@ async def synchronize_calendar_source(source_id: int, request: Request, db: Sess
     return result
 
 
-@router.put("/waste-calendar/settings", response_model=WasteCalendarSetting, dependencies=[Depends(require_csrf)])
-def update_waste_calendar_settings(data: WasteCalendarSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+@router.put("/waste-calendars/{calendar_id}", response_model=WasteCalendarSetting, dependencies=[Depends(require_csrf)])
+def update_waste_calendar_settings(calendar_id: str, data: WasteCalendarSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    current = accessible_waste_calendar(db, calendar_id, user, manage=True)
     valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
     if set(data.visible_to_user_ids) - valid_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
-    current = get_waste_config(db)
-    value = data.model_dump(exclude={"last_sync_at", "last_result", "last_error"})
+    value = data.model_dump(exclude={"id", "owner_user_id", "can_manage", "can_delete", "last_sync_at", "last_result", "last_error"})
+    value.update({"id": calendar_id, "owner_user_id": current.get("owner_user_id") or user.id})
     value.update({key: current.get(key) for key in ("last_sync_at", "last_result", "last_error")})
     save_waste_config(db, value)
-    section_row = db.get(ApplicationSetting, "section_access")
-    sections = section_access(db)
-    sections["waste_collection"] = list(data.visible_to_user_ids)
-    if section_row:
-        section_row.value = sections
-    else:
-        db.add(ApplicationSetting(key="section_access", value=sections))
-    audit(db, request, "WASTE_CALENDAR_SETTINGS_CHANGED", user.id, ("setting", "waste_calendar"))
+    audit(db, request, "WASTE_CALENDAR_SETTINGS_CHANGED", user.id, ("waste_calendar", calendar_id), {"name": value["name"], "visibility": value["visible_to_user_ids"]})
     db.commit()
-    return value
+    return waste_calendar_out(value, user)
+
+
+@router.delete("/waste-calendars/{calendar_id}", status_code=204, dependencies=[Depends(require_csrf)])
+def remove_waste_calendar(calendar_id: str, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    value = accessible_waste_calendar(db, calendar_id, user, manage=True)
+    source = db.scalar(select(CalendarSource).where(CalendarSource.key == f"waste-calendar-import-{calendar_id}"))
+    if source:
+        db.execute(delete(CalendarEvent).where(CalendarEvent.source_id == source.id))
+        db.delete(source)
+    delete_waste_config(db, calendar_id)
+    audit(db, request, "WASTE_CALENDAR_DELETED", user.id, ("waste_calendar", calendar_id), {"name": value.get("name")})
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/waste-calendar/awido/options")
@@ -604,13 +642,14 @@ async def waste_calendar_awido_options(customer: str = "awld", city: str | None 
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Die AWIDO-Auswahl ist derzeit nicht erreichbar")
 
 
-@router.post("/waste-calendar/sync", dependencies=[Depends(require_csrf)])
-async def synchronize_waste_calendar(request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+@router.post("/waste-calendars/{calendar_id}/sync", dependencies=[Depends(require_csrf)])
+async def synchronize_waste_calendar(calendar_id: str, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    accessible_waste_calendar(db, calendar_id, user, manage=True)
     try:
-        result = await sync_waste_calendar(db)
+        result = await sync_waste_calendar(db, calendar_id)
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
-    audit(db, request, "WASTE_CALENDAR_SYNCED", user.id, ("setting", "waste_calendar"), {"events": result["imported"]})
+    audit(db, request, "WASTE_CALENDAR_SYNCED", user.id, ("waste_calendar", calendar_id), {"events": result["imported"]})
     db.commit()
     return result
 
@@ -718,9 +757,13 @@ def delete_person(user_id: int, request: Request, db: Session = Depends(get_db),
     section_row = db.get(ApplicationSetting, "section_access")
     if section_row:
         section_row.value = sections
-    waste = dict(get_waste_config(db))
-    waste["visible_to_user_ids"] = sections["waste_collection"]
-    save_waste_config(db, waste)
+    for waste_calendar in list_waste_configs(db):
+        audience = waste_calendar.get("visible_to_user_ids", [])
+        if person.id in audience or waste_calendar.get("owner_user_id") == person.id:
+            waste_calendar["visible_to_user_ids"] = [entry for entry in audience if entry != person.id]
+            if waste_calendar.get("owner_user_id") == person.id:
+                waste_calendar["owner_user_id"] = actor.id
+            save_waste_config(db, waste_calendar)
     for event in db.scalars(select(CalendarEvent).where(cast(CalendarEvent.visible_to_user_ids, JSONB).contains([person.id]))):
         event.visible_to_user_ids = [entry for entry in (event.visible_to_user_ids or []) if entry != person.id]
     for birthday in db.scalars(select(Birthday).where(cast(Birthday.visible_to_user_ids, JSONB).contains([person.id]))):
