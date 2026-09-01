@@ -2,6 +2,23 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.49 – 1. September 2026
+
+### Eigene Terminarten im Personenformular
+
+- Administratoren sehen im Personenformular nun auch die eigenen Terminarten.
+- Sichtbarkeit und Anlegen/Bearbeiten können dort getrennt für die ausgewählte Person vergeben werden.
+- Personen- und Terminartenrubrik bearbeiten dieselben zentralen Rechte und bleiben dadurch automatisch synchron.
+- Bearbeitungsrechte schließen Leserechte automatisch ein; Löschen bleibt Erstellern und Administratoren vorbehalten.
+
+### Bereinigte Dialoge und verlässliche Terminarten
+
+- „Terminarten“ ist als eigene, nur für Administratoren sichtbare Hauptrubrik erreichbar.
+- Lange Dialoge besitzen sauber beschnittene, vollständig abgerundete Ecken – einschließlich des Scrollbereichs.
+- Aktionsleisten verdecken keine Formularfelder mehr und Termin- sowie Betreuungsdialoge bieten einen Abbrechen-Button.
+- Das störende mitscrollende Schließen-Symbol wurde entfernt; Hintergrundklick und Escape schließen Dialoge weiterhin.
+- Nach dem Speichern eigener Terminarten prüft FamilienPlan durch einen cachefreien Kontrollabruf, ob sie im Terminformular verfügbar sind.
+
 ## 0.1.48 – 1. September 2026
 
 ### Eigene Terminarten und zentrale Freigaben

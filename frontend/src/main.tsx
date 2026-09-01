@@ -16,6 +16,7 @@ import {
   Palmtree,
   Plus,
   Search,
+  Tags,
   Trash2,
   UserPlus,
   Users,
@@ -51,6 +52,7 @@ type Screen =
   | "people"
   | "birthdays"
   | "waste"
+  | "calendarTypes"
   | "holidays"
   | "planning"
   | "settings";
@@ -91,6 +93,7 @@ const labels = {
   people: "Personen",
   birthdays: "Geburtstage",
   waste: "Abfallkalender",
+  calendarTypes: "Terminarten",
   holidays: "Ferien & Feiertage",
   planning: "Planung zusammenstellen",
   settings: "Einstellungen",
@@ -1267,7 +1270,7 @@ function CalendarScreen({
     api<Stay[]>("/stay-series").then(setSeries);
     api<CalendarEvent[]>("/calendar-series").then(setEventSeries);
     api<Birthday[]>("/birthdays").then(setCustomBirthdays);
-    api<CustomCalendarType[]>("/calendar-event-types").then(setCustomEventTypes);
+    api<CustomCalendarType[]>("/calendar-event-types", {cache:"no-store"}).then(setCustomEventTypes);
     Promise.all(
       children.map((c) =>
         api<Stay[]>(
@@ -2844,6 +2847,7 @@ function CalendarScreen({
                       : "Termin löschen"}
                   </button>
                 )}
+              <button type="button" className="secondary" onClick={() => { setOpen(null); setEditingEvent(null); setEditingStay(null); setStayToConvert(null); setEditingStaySource(null); setSelectedDay(null); setCounterRequest(null); setError(""); }}>Abbrechen</button>
             </div>
           </form>
         </div>
@@ -3246,10 +3250,12 @@ function PeopleScreen({
     [draftRole, setDraftRole] = useState<User["role"]>("EDITOR"),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
+    [customTypes, setCustomTypes] = useState<CustomCalendarType[]>([]),
     [access, setAccess] = useState<PersonAccess[]>([]);
   function load() {
     api<Child[]>("/children").then(setChildren);
     if (isAdmin) {
+      api<CustomCalendarType[]>("/calendar-event-types", {cache:"no-store"}).then(setCustomTypes).catch(() => {});
       api<PersonAccess[]>("/people/access")
         .then(setAccess)
         .catch(() => {});
@@ -3282,6 +3288,8 @@ function PeopleScreen({
             birth_date: f.get("birth_date") || null,
             allowed_event_types: f.getAll("allowed_event_types"),
             allowed_person_color_ids: f.getAll("allowed_person_color_ids").map(Number),
+            visible_custom_event_type_ids: f.getAll("visible_custom_event_type_ids"),
+            editable_custom_event_type_ids: f.getAll("editable_custom_event_type_ids"),
             child_permissions: permissions(f, role),
           }),
         });
@@ -3525,6 +3533,10 @@ function PeopleScreen({
                 {open === "edit" && (
                   <MultiSelectPicker key={`person-colors-${selected?.user.id}-${draftRole}`} title="Sichtbare Personen" name="allowed_person_color_ids" items={people.filter((person) => person.id !== selected?.user.id).map((person) => ({id:person.id,label:person.display_name,color:person.color}))} values={people.filter((person) => person.id !== selected?.user.id && (draftRole === "ADMIN" || selected?.user.allowed_person_color_ids?.includes(person.id))).map((person) => person.id)} hint={draftRole === "ADMIN" ? "Administratoren sehen automatisch alle Personen – auch später hinzugefügte." : undefined}/>
                 )}
+                {open === "edit" && customTypes.length > 0 && <>
+                  <MultiSelectPicker key={`custom-visible-${selected?.user.id}-${draftRole}`} title="Eigene Terminarten sichtbar" name="visible_custom_event_type_ids" items={customTypes.map((type)=>({id:type.id,label:type.name,color:type.color}))} values={customTypes.filter((type)=>draftRole === "ADMIN" || type.visible_to_user_ids.includes(selected!.user.id) || type.editable_by_user_ids.includes(selected!.user.id)).map((type)=>type.id)} hint="Bearbeitbare Terminarten sind automatisch ebenfalls sichtbar."/>
+                  <MultiSelectPicker key={`custom-editable-${selected?.user.id}-${draftRole}`} title="Eigene Terminarten anlegen und bearbeiten" name="editable_custom_event_type_ids" items={customTypes.map((type)=>({id:type.id,label:type.name,color:type.color}))} values={customTypes.filter((type)=>draftRole === "ADMIN" || type.editable_by_user_ids.includes(selected!.user.id)).map((type)=>type.id)} hint="Löschen dürfen weiterhin nur Ersteller und Administratoren."/>
+                </>}
                 <div className="personform-actions">
                   <button>
                     {open === "edit"
@@ -3537,6 +3549,7 @@ function PeopleScreen({
                   {open === "edit" && selected && selected.user.id !== getSessionUser()?.id && (
                     <button type="button" className="danger" onClick={() => { setDeleteChoice(selected.user); setOpen(null); setError(""); }}>Person löschen</button>
                   )}
+                  <button type="button" className="secondary" onClick={() => setOpen(null)}>Abbrechen</button>
                 </div>
               </>
             )}
@@ -4654,7 +4667,7 @@ function App() {
   }
   useEffect(() => {
     if (!user || user.role === "ADMIN") return;
-    if (screen === "people" || screen === "children" || (screen === "birthdays" && !sectionAccess.birthdays.includes(user.id)) || (screen === "waste" && !sectionAccess.waste_collection.includes(user.id))) setScreen("home");
+    if (screen === "people" || screen === "children" || screen === "calendarTypes" || (screen === "birthdays" && !sectionAccess.birthdays.includes(user.id)) || (screen === "waste" && !sectionAccess.waste_collection.includes(user.id))) setScreen("home");
   }, [user, screen, sectionAccess]);
   if (loading) return <div className="splash">FamilienPlan</div>;
   if (setup && !user)
@@ -4710,11 +4723,13 @@ function App() {
     ["people", UserPlus],
     ["birthdays", Cake],
     ["waste", Trash2],
+    ["calendarTypes", Tags],
     ["holidays", Palmtree],
     ["planning", ClipboardList],
     ["settings", Palette],
   ] as const).filter(([id]) => {
     if (id === "people" || id === "children") return user.role === "ADMIN";
+    if (id === "calendarTypes") return user.role === "ADMIN";
     if (id === "birthdays") return user.role === "ADMIN" || sectionAccess.birthdays.includes(user.id);
     if (id === "waste") return user.role === "ADMIN" || sectionAccess.waste_collection.includes(user.id);
     return true;
@@ -4740,6 +4755,7 @@ function App() {
     content = <PeopleScreen people={people} reload={loadPeople} />;
   else if (screen === "birthdays") content = <BirthdaysScreen />;
   else if (screen === "waste") content = <WasteCollectionScreen people={people} children={children} user={user} />;
+  else if (screen === "calendarTypes" && user.role === "ADMIN") content = <><header className="pagehead"><div><span className="eyebrow">Administration</span><h1>Terminarten</h1><p>Standardtypen freigeben und eigene Kalendereintragstypen verwalten.</p></div></header><CalendarEventTypeSettings people={people}/></>;
   else if (screen === "holidays")
     content = (
       <HolidaysScreen
@@ -5066,7 +5082,16 @@ function CalendarEventTypeSettings({ people }: { people: User[] }) {
   const changeCustom = (id: string, change: Partial<CustomCalendarType>) => setSettings((current) => current && ({...current, custom_types:current.custom_types.map((type) => type.id === id ? {...type, ...change} : type)}));
   async function save() {
     setError(""); setMessage("");
-    try { setSettings(await api<CalendarTypeSettings>("/settings/calendar-event-types", {method:"PUT", body:JSON.stringify(settings)})); setMessage("Terminarten und Freigaben gespeichert."); window.dispatchEvent(new Event("familienplan:data-changed")); }
+    try {
+      await api<CalendarTypeSettings>("/settings/calendar-event-types", {method:"PUT", body:JSON.stringify(settings)});
+      const persisted = await api<CalendarTypeSettings>("/settings/calendar-event-types", {cache:"no-store"});
+      const available = await api<CustomCalendarType[]>("/calendar-event-types", {cache:"no-store"});
+      const missing = persisted.custom_types.filter((type) => !available.some((entry) => entry.id === type.id));
+      if (missing.length) throw new Error(`Die Terminart „${missing[0].name}“ wurde gespeichert, ist aber im Kalender noch nicht verfügbar.`);
+      setSettings(persisted);
+      setMessage(persisted.custom_types.length ? `Terminarten gespeichert. ${persisted.custom_types.map((type) => `„${type.name}“`).join(", ")} können im Kalender im Feld „Terminart“ ausgewählt werden.` : "Terminarten und Freigaben gespeichert.");
+      window.dispatchEvent(new Event("familienplan:data-changed"));
+    }
     catch (x) { setError((x as Error).message); }
   }
   return <section className="themebox settings-card settings-wide"><h2>Terminarten</h2><p className="muted">Nur Administratoren verwalten diese Rubrik. Sichtbarkeit, Bearbeitung und Löschen bleiben getrennte Rechte; Administratoren behalten immer Zugriff.</p>{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
@@ -5166,7 +5191,7 @@ function SettingsScreen({
     [saved, setSaved] = useState(false),
     [checkingUpdates, setCheckingUpdates] = useState(false),
     [updateCheckMessage, setUpdateCheckMessage] = useState(""),
-    [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "event-types" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
+    [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
     [error, setError] = useState("");
   async function changePassword(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");setSaved(false);const form=e.currentTarget,f=new FormData(form);try{await api("/profile/password",{method:"PUT",body:JSON.stringify({current_password:f.get("current_password"),password:f.get("password"),password_confirm:f.get("password_confirm")})});form.reset();setSaved(true)}catch(x){setError((x as Error).message)}}
   useEffect(() => {
@@ -5258,7 +5283,6 @@ function SettingsScreen({
         <button type="button" className={settingsSection === "profile" ? "active" : ""} onClick={() => setSettingsSection("profile")}>Profil</button>
         <button type="button" className={settingsSection === "calendar" ? "active" : ""} onClick={() => setSettingsSection("calendar")}>Kalender</button>
         {user.role === "ADMIN" && <>
-          <button type="button" className={settingsSection === "event-types" ? "active" : ""} onClick={() => setSettingsSection("event-types")}>Terminarten</button>
           <button type="button" className={settingsSection === "access" ? "active" : ""} onClick={() => setSettingsSection("access")}>Freigaben</button>
           <button type="button" className={settingsSection === "sources" ? "active" : ""} onClick={() => setSettingsSection("sources")}>Externe Kalender</button>
           <button type="button" className={settingsSection === "updates" ? "active" : ""} onClick={() => setSettingsSection("updates")}>Aktualisierungen</button>
@@ -5331,7 +5355,6 @@ function SettingsScreen({
       {user.role === "ADMIN" && settingsSection === "access" && (
         <SectionAccessSettings people={people} value={sectionAccess} onChange={onSectionAccessChange} />
       )}
-      {user.role === "ADMIN" && settingsSection === "event-types" && <CalendarEventTypeSettings people={people} />}
       {user.role === "ADMIN" && settingsSection === "sources" && <CalendarSourceOverview />}
       {user.role === "ADMIN" && settingsSection === "updates" && <section id="settings-updates" className="themebox settings-card"><h2>Aktualisierungen</h2><p className="muted">Installiert: Version {updateMeta?.version || "…"}. Die Prüfung kann unabhängig vom automatischen Prüfintervall neu gestartet werden.</p>{updateCheckMessage && <p className={updateMeta?.update_available ? "success" : "hint"}>{updateCheckMessage}</p>}<button type="button" onClick={checkForUpdates} disabled={checkingUpdates}>{checkingUpdates ? "Suche nach Update …" : "Jetzt nach Update suchen"}</button></section>}
       {user.role === "ADMIN" && settingsSection === "integrations" && (

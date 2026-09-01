@@ -167,6 +167,8 @@ class PersonAccessUpdate(BaseModel):
     birth_date: date | None = None
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
     allowed_person_color_ids: list[int] = []
+    visible_custom_event_type_ids: list[str] = []
+    editable_custom_event_type_ids: list[str] = []
 
 
 class ProfileUpdate(BaseModel):

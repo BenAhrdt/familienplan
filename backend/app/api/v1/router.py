@@ -802,6 +802,27 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
     if unknown_person_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Person in der Farbenfreigabe")
     person.allowed_person_color_ids = list(dict.fromkeys(data.allowed_person_color_ids))
+    custom_types = custom_calendar_types(db)
+    known_custom_type_ids = {item.get("id") for item in custom_types}
+    requested_visible = set(data.visible_custom_event_type_ids) | set(data.editable_custom_event_type_ids)
+    requested_editable = set(data.editable_custom_event_type_ids)
+    if (requested_visible | requested_editable) - known_custom_type_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte eigene Terminart")
+    for item in custom_types:
+        visible_ids = set(item.get("visible_to_user_ids", []))
+        editable_ids = set(item.get("editable_by_user_ids", []))
+        if item.get("id") in requested_visible:
+            visible_ids.add(person.id)
+        else:
+            visible_ids.discard(person.id)
+        if item.get("id") in requested_editable:
+            editable_ids.add(person.id)
+            visible_ids.add(person.id)
+        else:
+            editable_ids.discard(person.id)
+        item["visible_to_user_ids"] = sorted(visible_ids)
+        item["editable_by_user_ids"] = sorted(editable_ids)
+    upsert_application_setting(db, "custom_calendar_types", custom_types)
     existing = list(db.scalars(select(ChildUserPermission).where(ChildUserPermission.user_id == person.id)))
     existing_by_child = {row.child_id: row for row in existing}
     for row in existing:
@@ -814,7 +835,7 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
             existing_by_child[child_id].permission = permission
         else:
             db.add(ChildUserPermission(child_id=child_id, user_id=person.id, permission=permission))
-    audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions), "person_colors": person.allowed_person_color_ids})
+    audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions), "person_colors": person.allowed_person_color_ids, "visible_custom_types": sorted(requested_visible), "editable_custom_types": sorted(requested_editable)})
     db.commit()
     return PersonAccessOut(user=person, child_permissions=data.child_permissions)
 
