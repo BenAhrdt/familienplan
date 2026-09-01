@@ -64,7 +64,7 @@ type PlanningItem = HolidayPlanningDraft & {
 };
 type SectionAccess = { birthdays: number[]; waste_collection: number[] };
 type WasteCalendarSetting = {
-  id: string | null; name: string; owner_user_id: number | null; can_manage: boolean; can_delete: boolean;
+  id: string | null; name: string; owner_user_id: number | null; can_manage: boolean; can_delete: boolean; hidden_for_me: boolean;
   enabled: boolean; provider: "AWIDO" | "ICAL"; customer: string; city: string;
   street: string; calendar_url: string; color: string; visible_to_user_ids: number[];
   type_colors: Record<string, string>;
@@ -3715,6 +3715,14 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
     } catch (x) { setError((x as Error).message); }
     finally { setSyncing(false); }
   }
+  async function toggleCalendarVisibility(calendar: WasteCalendarSetting) {
+    try {
+      await api(`/waste-calendars/${calendar.id}/personal-visibility?hidden=${!calendar.hidden_for_me}`, {method:"PUT"});
+      await loadCalendars();
+      window.dispatchEvent(new Event("familienplan:data-changed"));
+      setSyncMessage(calendar.hidden_for_me ? `„${calendar.name}“ wird wieder im Kalender angezeigt.` : `„${calendar.name}“ ist für dich ausgeblendet.`);
+    } catch (x) { setError((x as Error).message); }
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -3744,14 +3752,14 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
   }
   const start = editing ? new Date(editing.starts_at) : new Date(), end = editing ? new Date(editing.ends_at) : new Date(start.getTime() + 3600000);
   return <>
-    <header className="pagehead"><div><span className="eyebrow">Kalender</span><h1>Abfallkalender</h1><p>Automatische Abfuhrpläne gezielt freigeben und eigene Abholtermine verwalten.</p></div><div className="waste-import-actions">{user.role === "ADMIN" && <button className="secondary" onClick={() => { setCalendarSettings({id:null, name:"Neuer Abfallkalender", owner_user_id:user.id, can_manage:true, can_delete:true, enabled:false, provider:"AWIDO", customer:"awld", city:"", street:"", calendar_url:"", color:"#5C8B58", type_colors:{bio:"#795548",yellow:"#E4B820",residual:"#4F5963",paper:"#3979B8",hazardous:"#B33A3A",other:"#5C8B58"},visible_to_user_ids:[],last_sync_at:null,last_result:null,last_error:null}); setCalendarOpen(true); }}><Plus size={18}/> Kalender</button>}{canEdit && <button onClick={() => { setError(""); setRepeat("once"); setEditing(null); }}><Plus size={18}/> Abholtermin</button>}</div></header>
+    <header className="pagehead"><div><span className="eyebrow">Kalender</span><h1>Abfallkalender</h1><p>Automatische Abfuhrpläne gezielt freigeben und eigene Abholtermine verwalten.</p></div><div className="waste-import-actions">{user.role === "ADMIN" && <button className="secondary" onClick={() => { setCalendarSettings({id:null, name:"Neuer Abfallkalender", owner_user_id:user.id, can_manage:true, can_delete:true, hidden_for_me:false, enabled:false, provider:"AWIDO", customer:"awld", city:"", street:"", calendar_url:"", color:"#5C8B58", type_colors:{bio:"#795548",yellow:"#E4B820",residual:"#4F5963",paper:"#3979B8",hazardous:"#B33A3A",other:"#5C8B58"},visible_to_user_ids:[],last_sync_at:null,last_result:null,last_error:null}); setCalendarOpen(true); }}><Plus size={18}/> Kalender</button>}{canEdit && <button onClick={() => { setError(""); setRepeat("once"); setEditing(null); }}><Plus size={18}/> Abholtermin</button>}</div></header>
     {error && <p className="error">{error}</p>}
     {syncMessage && <p className="success">{syncMessage}</p>}
-    {calendars.map((calendar) => <section className="themebox waste-import-card" key={calendar.id}>
-      <div><h2>{calendar.name}</h2><p className="muted">{calendar.enabled ? `${calendar.provider === "AWIDO" ? `${calendar.city} · ${calendar.street}` : "iCal/WebCal"} · tägliche Synchronisierung` : "Noch nicht aktiviert"}</p>
+    {calendars.sort((a, b) => Number(a.hidden_for_me) - Number(b.hidden_for_me)).map((calendar) => <section className={`themebox waste-import-card${calendar.hidden_for_me ? " is-muted" : ""}`} key={calendar.id}>
+      <div><h2>{calendar.name}</h2><p className="muted">{calendar.hidden_for_me ? "Für dich ausgeblendet · " : ""}{calendar.enabled ? `${calendar.provider === "AWIDO" ? `${calendar.city} · ${calendar.street}` : "iCal/WebCal"} · tägliche Synchronisierung` : "Noch nicht aktiviert"}</p>
       {calendar.last_sync_at && <small>Zuletzt synchronisiert: {new Date(calendar.last_sync_at).toLocaleString("de-DE")}{calendar.last_result?.events !== undefined ? ` · ${calendar.last_result.events} Termine` : ""}</small>}
       {calendar.last_error && <p className="error">{calendar.last_error}</p>}</div>
-      {calendar.can_manage && <div className="waste-import-actions"><button type="button" className="secondary" onClick={() => { setCalendarSettings(calendar); setCalendarOpen(true); }}>Einrichten</button>{calendar.enabled && <button type="button" onClick={() => syncCalendar(calendar)} disabled={syncing}>{syncing ? "Synchronisiere …" : "Jetzt synchronisieren"}</button>}</div>}
+      <div className="waste-import-actions"><button type="button" className="secondary" onClick={() => toggleCalendarVisibility(calendar)}>{calendar.hidden_for_me ? "Für mich einblenden" : "Für mich ausblenden"}</button>{calendar.can_manage && <><button type="button" className="secondary" onClick={() => { setCalendarSettings(calendar); setCalendarOpen(true); }}>Einrichten</button>{calendar.enabled && <button type="button" onClick={() => syncCalendar(calendar)} disabled={syncing}>{syncing ? "Synchronisiere …" : "Jetzt synchronisieren"}</button>}</>}</div>
     </section>)}
     <h2 className="sectiontitle">Manuell angelegte Abholtermine</h2>
     {!items.length && <p className="hint">Keine manuellen Abholtermine vorhanden. Automatisch importierte Termine findest du im normalen Kalender.</p>}

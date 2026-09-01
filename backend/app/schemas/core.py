@@ -367,6 +367,7 @@ class WasteCalendarSetting(BaseModel):
     owner_user_id: int | None = None
     can_manage: bool = False
     can_delete: bool = False
+    hidden_for_me: bool = False
     enabled: bool = False
     provider: str = Field(default="AWIDO", pattern="^(AWIDO|ICAL)$")
     customer: str = Field(default="awld", max_length=80)

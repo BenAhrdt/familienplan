@@ -538,6 +538,7 @@ def waste_calendar_out(value: dict, user: User) -> dict:
     owner = result.get("owner_user_id")
     result["can_manage"] = user.role == Role.ADMIN or owner == user.id
     result["can_delete"] = user.role == Role.ADMIN or owner == user.id
+    result["hidden_for_me"] = user.id in value.get("hidden_for_user_ids", [])
     return result
 
 
@@ -565,8 +566,8 @@ def create_waste_calendar(data: WasteCalendarSetting, request: Request, db: Sess
     valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
     if set(data.visible_to_user_ids) - valid_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
-    value = data.model_dump(exclude={"id", "owner_user_id", "can_manage", "can_delete", "last_sync_at", "last_result", "last_error"})
-    value.update({"id": str(uuid.uuid4()), "owner_user_id": user.id, "last_sync_at": None, "last_result": None, "last_error": None})
+    value = data.model_dump(exclude={"id", "owner_user_id", "can_manage", "can_delete", "hidden_for_me", "last_sync_at", "last_result", "last_error"})
+    value.update({"id": str(uuid.uuid4()), "owner_user_id": user.id, "hidden_for_user_ids": [], "last_sync_at": None, "last_result": None, "last_error": None})
     save_waste_config(db, value)
     audit(db, request, "WASTE_CALENDAR_CREATED", user.id, ("waste_calendar", value["id"]), {"name": value["name"], "visibility": value["visible_to_user_ids"]})
     db.commit()
@@ -612,11 +613,25 @@ def update_waste_calendar_settings(calendar_id: str, data: WasteCalendarSetting,
     valid_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
     if set(data.visible_to_user_ids) - valid_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Auswahl enthält unbekannte Personen")
-    value = data.model_dump(exclude={"id", "owner_user_id", "can_manage", "can_delete", "last_sync_at", "last_result", "last_error"})
-    value.update({"id": calendar_id, "owner_user_id": current.get("owner_user_id") or user.id})
+    value = data.model_dump(exclude={"id", "owner_user_id", "can_manage", "can_delete", "hidden_for_me", "last_sync_at", "last_result", "last_error"})
+    value.update({"id": calendar_id, "owner_user_id": current.get("owner_user_id") or user.id, "hidden_for_user_ids": current.get("hidden_for_user_ids", [])})
     value.update({key: current.get(key) for key in ("last_sync_at", "last_result", "last_error")})
     save_waste_config(db, value)
     audit(db, request, "WASTE_CALENDAR_SETTINGS_CHANGED", user.id, ("waste_calendar", calendar_id), {"name": value["name"], "visibility": value["visible_to_user_ids"]})
+    db.commit()
+    return waste_calendar_out(value, user)
+
+
+@router.put("/waste-calendars/{calendar_id}/personal-visibility", response_model=WasteCalendarSetting, dependencies=[Depends(require_csrf)])
+def update_waste_calendar_personal_visibility(calendar_id: str, hidden: bool, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    value = accessible_waste_calendar(db, calendar_id, user)
+    hidden_for = set(value.get("hidden_for_user_ids", []))
+    if hidden:
+        hidden_for.add(user.id)
+    else:
+        hidden_for.discard(user.id)
+    value["hidden_for_user_ids"] = sorted(hidden_for)
+    save_waste_config(db, value)
     db.commit()
     return waste_calendar_out(value, user)
 
@@ -759,8 +774,10 @@ def delete_person(user_id: int, request: Request, db: Session = Depends(get_db),
         section_row.value = sections
     for waste_calendar in list_waste_configs(db):
         audience = waste_calendar.get("visible_to_user_ids", [])
-        if person.id in audience or waste_calendar.get("owner_user_id") == person.id:
+        hidden_for = waste_calendar.get("hidden_for_user_ids", [])
+        if person.id in audience or person.id in hidden_for or waste_calendar.get("owner_user_id") == person.id:
             waste_calendar["visible_to_user_ids"] = [entry for entry in audience if entry != person.id]
+            waste_calendar["hidden_for_user_ids"] = [entry for entry in hidden_for if entry != person.id]
             if waste_calendar.get("owner_user_id") == person.id:
                 waste_calendar["owner_user_id"] = actor.id
             save_waste_config(db, waste_calendar)
@@ -1993,6 +2010,21 @@ def calendar(from_at: datetime, to_at: datetime, db: Session = Depends(get_db), 
     if allowed_child_ids is not None:
         query = query.where((CalendarEvent.child_id.is_(None)) | (CalendarEvent.child_id.in_(allowed_child_ids)))
     result = list(db.scalars(query.order_by(CalendarEvent.starts_at)))
+    hidden_waste_calendar_ids = {
+        item["id"] for item in list_waste_configs(db)
+        if user.id in item.get("hidden_for_user_ids", [])
+    }
+    if hidden_waste_calendar_ids:
+        hidden_source_keys = {f"waste-calendar-import-{calendar_id}" for calendar_id in hidden_waste_calendar_ids}
+        if "legacy" in hidden_waste_calendar_ids:
+            hidden_source_keys.add("waste-calendar-import")
+        hidden_source_ids = set(db.scalars(select(CalendarSource.id).where(CalendarSource.key.in_(hidden_source_keys))))
+        result = [event for event in result if not (
+            event.event_type == "WASTE"
+            and (event.source_id in hidden_source_ids or (
+                event.raw_data and event.raw_data.get("waste_calendar_id") in hidden_waste_calendar_ids
+            ))
+        )]
     children_by_id = {
         child.id: child
         for child in db.scalars(select(Child).where(Child.id.in_({event.child_id for event in result if event.child_id})))

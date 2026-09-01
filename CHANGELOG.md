@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.45 – 1. September 2026
+
+### Abfallkalender persönlich ausblenden
+
+- Jeder sichtbare Abfallkalender kann über „Für mich ausblenden“ aus dem persönlichen Kalender entfernt werden.
+- Das Ausblenden verändert weder die Synchronisierung noch die Freigaben und Ansichten anderer Personen.
+- Ausgeblendete Kalender bleiben in der Verwaltung erkennbar und können jederzeit wieder eingeblendet werden.
+- Bereits importierte Termine werden unmittelbar anhand ihrer Kalenderquelle ausgefiltert.
+
 ## 0.1.44 – 1. September 2026
 
 ### Mehrere Abfallkalender mit sicheren Freigaben
