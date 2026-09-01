@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import {
   Bell,
   Cake,
@@ -327,7 +328,7 @@ function AudiencePicker({
         <span>{summary}</span>
         <b>{selected.length || 1}</b>
       </button>
-      {open && (
+      {open && createPortal(
         <>
           <button
             type="button"
@@ -361,7 +362,8 @@ function AudiencePicker({
             <p>Du selbst hast immer Zugriff.</p>
             <button type="button" className="audience-done" onClick={() => setOpen(false)}>Fertig</button>
           </section>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
@@ -377,7 +379,7 @@ function MultiSelectPicker({ title, items, values, onChange, name, hint }: { tit
   return <div className="audience-field multi-select-field"><span className="audience-label">{title}</span>
     {name && selected.map((id) => <input key={String(id)} type="hidden" name={name} value={id}/>) }
     <button type="button" className="audience-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><span>{labels.length ? labels.join(", ") : "Keine Auswahl"}</span><b>{selected.length}</b></button>
-    {open && <><button type="button" className="audience-backdrop" aria-label="Auswahl schließen" onClick={() => setOpen(false)}/><section className="audience-popover" role="dialog" aria-label={`${title} auswählen`}><header><strong>{title}</strong><button type="button" onClick={() => setOpen(false)} aria-label="Schließen">×</button></header><div className="audience-list">{items.map((item) => <label key={String(item.id)} className={item.color ? "audience-person-tag" : ""} style={item.color ? {"--person-color":item.color} as React.CSSProperties : undefined}><input type="checkbox" checked={selected.includes(item.id)} disabled={item.disabled} onChange={(event) => update(event.target.checked ? [...selected,item.id] : selected.filter((id) => id !== item.id))}/><span>{item.color && <i>{item.label.slice(0,1).toUpperCase()}</i>}{item.label}</span></label>)}</div>{hint && <p>{hint}</p>}<button type="button" className="audience-done" onClick={() => setOpen(false)}>Fertig</button></section></>}
+    {open && createPortal(<><button type="button" className="audience-backdrop" aria-label="Auswahl schließen" onClick={() => setOpen(false)}/><section className="audience-popover" role="dialog" aria-label={`${title} auswählen`}><header><strong>{title}</strong><button type="button" onClick={() => setOpen(false)} aria-label="Schließen">×</button></header><div className="audience-list">{items.map((item) => <label key={String(item.id)} className={item.color ? "audience-person-tag" : ""} style={item.color ? {"--person-color":item.color} as React.CSSProperties : undefined}><input type="checkbox" checked={selected.includes(item.id)} disabled={item.disabled} onChange={(event) => update(event.target.checked ? [...selected,item.id] : selected.filter((id) => id !== item.id))}/><span>{item.color && <i>{item.label.slice(0,1).toUpperCase()}</i>}{item.label}</span></label>)}</div>{hint && <p>{hint}</p>}<button type="button" className="audience-done" onClick={() => setOpen(false)}>Fertig</button></section></>, document.body)}
   </div>;
 }
 

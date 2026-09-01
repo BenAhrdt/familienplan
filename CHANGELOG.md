@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.50 – 1. September 2026
+
+### Auswahl-Popups in langen Dialogen
+
+- Auswahl-Popups werden nun unabhängig vom scrollbaren Hauptdialog dargestellt.
+- Dadurch bleiben sie vollständig sichtbar, mittig im Browserfenster und werden nicht mehr an den abgerundeten Dialogkanten abgeschnitten.
+
 ## 0.1.49 – 1. September 2026
 
 ### Eigene Terminarten im Personenformular
