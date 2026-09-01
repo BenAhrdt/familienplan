@@ -24,7 +24,7 @@ from app.core.security import hash_password, new_token, token_hash, utcnow, veri
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventCreate, CalendarEventOut, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -468,6 +468,22 @@ def update_calendar_colors(data: CalendarColorPreferences, request: Request, db:
     db.commit()
     stored = db.scalar(select(ApplicationSetting).where(ApplicationSetting.key == key).execution_options(populate_existing=True))
     return CalendarColorPreferences(**stored.value)
+
+
+@router.get("/settings/calendar-display", response_model=CalendarDisplayPreferences)
+def get_calendar_display(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    row = db.get(ApplicationSetting, f"calendar_display_{user.id}")
+    return CalendarDisplayPreferences(**(row.value if row else {}))
+
+
+@router.put("/settings/calendar-display", response_model=CalendarDisplayPreferences, dependencies=[Depends(require_csrf)])
+def update_calendar_display(data: CalendarDisplayPreferences, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    key = f"calendar_display_{user.id}"
+    values = data.model_dump()
+    upsert_application_setting(db, key, values)
+    audit(db, request, "PERSONAL_CALENDAR_DISPLAY_CHANGED", user.id, ("setting", key), values)
+    db.commit()
+    return data
 
 
 @router.get("/settings/sections", response_model=SectionAccessSetting)

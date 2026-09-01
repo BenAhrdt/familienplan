@@ -401,3 +401,7 @@ class CalendarColorPreferences(BaseModel):
     birthday_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     school_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     waste_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class CalendarDisplayPreferences(BaseModel):
+    show_default_care: bool = False

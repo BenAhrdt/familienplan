@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.47 – 1. September 2026
+
+### Persönliche Kalenderanzeige pro Benutzerkonto
+
+- Die automatisch aus „Wohnt bei“ abgeleitete Standardbetreuung ist nun standardmäßig ausgeblendet.
+- Die Anzeige lässt sich weiterhin unabhängig von ausdrücklich angelegten Betreuungsterminen einschalten.
+- Die Auswahl wird serverseitig pro Benutzerkonto gespeichert und gilt damit über Browser und Geräte hinweg.
+- Andere Benutzerkonten – auch im selben Browser – übernehmen diese persönliche Einstellung nicht.
+
 ## 0.1.46 – 1. September 2026
 
 ### Standardbetreuung gezielt ausblenden

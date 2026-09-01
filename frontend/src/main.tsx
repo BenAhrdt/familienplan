@@ -72,6 +72,7 @@ type WasteCalendarSetting = {
 };
 type CalendarSourceStatus = { id: number; name: string; kind: string; active: boolean; last_sync_at: string | null; last_result: Record<string, unknown> | null; last_error: string | null };
 type CalendarColorPreferences = { holiday_color: string; birthday_color: string; school_color: string; waste_color: string };
+type CalendarDisplayPreferences = { show_default_care: boolean };
 type ApplicationMeta = {
   version: string;
   latest_version: string | null;
@@ -1220,9 +1221,7 @@ function CalendarScreen({
       try { return JSON.parse(localStorage.getItem("familienplan-calendar-hidden-types") || "[]"); }
       catch { return []; }
     }),
-    [showDefaultCare, setShowDefaultCare] = useState(() =>
-      localStorage.getItem("familienplan-calendar-show-default-care") !== "false"
-    ),
+    [showDefaultCare, setShowDefaultCare] = useState(false),
     [month, setMonth] = useState(() => {
       const initial = target ? new Date(target.startsAt) : new Date();
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
@@ -1282,6 +1281,11 @@ function CalendarScreen({
     }
   }, [requests]);
   useEffect(load, [children.length, month.getFullYear(), month.getMonth()]);
+  useEffect(() => {
+    api<CalendarDisplayPreferences>("/settings/calendar-display")
+      .then((preferences) => setShowDefaultCare(preferences.show_default_care))
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     const refresh = () => load();
     window.addEventListener("familienplan:data-changed", refresh);
@@ -1995,9 +1999,15 @@ function CalendarScreen({
           </label>
         ))}
         {availableEventTypes.includes("STAY") && <label className={`event-type-chip${showDefaultCare ? "" : " muted-chip"}`} style={{"--chip-color":"var(--green)"} as React.CSSProperties}>
-          <input type="checkbox" checked={showDefaultCare} onChange={(event) => {
-            setShowDefaultCare(event.target.checked);
-            localStorage.setItem("familienplan-calendar-show-default-care", String(event.target.checked));
+          <input type="checkbox" checked={showDefaultCare} onChange={async (event) => {
+            const changed = event.target.checked;
+            setShowDefaultCare(changed);
+            try {
+              await api<CalendarDisplayPreferences>("/settings/calendar-display", {method:"PUT", body:JSON.stringify({show_default_care:changed})});
+            } catch (x) {
+              setShowDefaultCare(!changed);
+              setError((x as Error).message);
+            }
           }}/>
           <span>Standardbetreuung aus „Wohnt bei“</span>
         </label>}
@@ -5075,7 +5085,7 @@ const auditActionLabels: Record<string,string> = {
   STAY_SERIES_EXTENDED:"hat eine Betreuungsserie verlängert", NEW_STAY_PROPOSED:"hat eine neue Betreuungszeit vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Betreuungsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen einer Betreuungszeit vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",
   CALENDAR_EVENT_CREATED:"hat einen Termin angelegt", CALENDAR_EVENT_CHANGED:"hat einen Termin geändert", CALENDAR_EVENT_DELETED:"hat einen Termin gelöscht", CALENDAR_EVENT_SERIES_CREATED:"hat eine Terminserie angelegt", CALENDAR_EVENT_SERIES_CHANGED:"hat eine Terminserie geändert", CALENDAR_EVENT_SERIES_DELETED:"hat eine Terminserie gelöscht",
   BIRTHDAY_CREATED:"hat einen Geburtstag angelegt", BIRTHDAY_CHANGED:"hat einen Geburtstag geändert", BIRTHDAY_DELETED:"hat einen Geburtstag gelöscht",
-  SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
+  SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", PERSONAL_CALENDAR_DISPLAY_CHANGED:"hat die persönliche Kalenderanzeige geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
   SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender eingerichtet",
   SYSTEM_UPDATE_REQUESTED:"hat ein Systemupdate gestartet", IMPERSONATION_STARTED:"hat die Ansicht einer Person übernommen", IMPERSONATION_STOPPED:"hat die übernommene Ansicht beendet",
 };
