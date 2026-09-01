@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.51 – 1. September 2026
+
+### Betreuungsanfragen zwischen beteiligten Personen
+
+- Bei einer Übergabe bestätigen sich bisherige und zukünftige Betreuungsperson gegenseitig; die Standardbezugsperson bleibt dabei außen vor.
+- Die Standardbezugsperson wird nur als Ersatz angefragt, wenn jemand eine eigene neue Betreuung oder die Löschung der eigenen Betreuung vorschlägt.
+- Eine neue Einzelbetreuung, die eine vorhandene Betreuung überschneidet, wird als Übergabe behandelt und erzeugt keinen parallelen Eintrag.
+- Empfänger sehen die für ihre Entscheidung benötigten Personennamen und können die Anfrage auch ohne allgemeine Sichtbarkeit der anderen Person bestätigen.
+
 ## 0.1.50 – 1. September 2026
 
 ### Auswahl-Popups in langen Dialogen

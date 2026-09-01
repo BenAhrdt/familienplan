@@ -1543,6 +1543,21 @@ def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User =
     return [stay_payload(db, stay) for stay in sorted(found.values(), key=lambda item: item.starts_at)]
 
 
+def stay_request_recipient_id(
+    requester_id: int,
+    default_responsible_user_id: int | None,
+    current_responsible_user_id: int | None = None,
+    proposed_responsible_user_id: int | None = None,
+) -> int | None:
+    """Choose the other person involved in a care request."""
+    if current_responsible_user_id and proposed_responsible_user_id and current_responsible_user_id != proposed_responsible_user_id:
+        recipient_id = current_responsible_user_id if requester_id == proposed_responsible_user_id else proposed_responsible_user_id
+    else:
+        responsible_user_id = proposed_responsible_user_id or current_responsible_user_id
+        recipient_id = responsible_user_id if responsible_user_id != requester_id else default_responsible_user_id
+    return recipient_id if recipient_id and recipient_id != requester_id else None
+
+
 @router.post("/stay-proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
 def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if "STAY" not in (user.allowed_event_types or []):
@@ -1563,12 +1578,45 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
             delta_seconds = int((data.starts_at - rule.starts_at).total_seconds())
             if interval == data.recurrence_interval_weeks and delta_seconds % period_seconds == 0 and rule.until_at and data.recurrence_until <= rule.until_at:
                 raise HTTPException(status.HTTP_409_CONFLICT, "Diese Serie besteht mit demselben Rhythmus und Zeitraum bereits")
-    affected_id = child.default_responsible_user_id
-    if affected_id == user.id:
-        affected_id = data.responsible_user_id if data.responsible_user_id != user.id else None
+    occurrences = recurrence_dates(data)
+    overlapping: dict[int, Stay] = {}
+    for starts_at, ends_at in occurrences:
+        for stay in db.scalars(select(Stay).where(
+            Stay.child_id == data.child_id,
+            Stay.status == PlanStatus.CONFIRMED,
+            Stay.starts_at < ends_at,
+            Stay.ends_at > starts_at,
+        )):
+            overlapping[stay.id] = stay
+    if overlapping:
+        if len(occurrences) != 1 or len(overlapping) != 1:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Für diesen Zeitraum bestehen bereits Betreuungen. Bitte ändere die vorhandenen Einträge einzeln.")
+        existing = next(iter(overlapping.values()))
+        if existing.responsible_user_id == data.responsible_user_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Für diese Person besteht in diesem Zeitraum bereits eine Betreuung")
+        affected_id = stay_request_recipient_id(user.id, child.default_responsible_user_id, existing.responsible_user_id, data.responsible_user_id)
+        if not affected_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diesen Vorschlag gibt es keine andere Person zur Bestätigung")
+        proposed = {
+            "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(),
+            "responsible_user_id": data.responsible_user_id, "note": data.note,
+            "scope": "occurrence", "preserve_remainder": False,
+        }
+        item = ChangeRequest(
+            object_type="stay", object_id=existing.id, requested_by_id=user.id,
+            affected_user_id=affected_id, status=PlanStatus.CHANGE_PROPOSED,
+            before_data={"starts_at": existing.starts_at.isoformat(), "ends_at": existing.ends_at.isoformat(), "responsible_user_id": existing.responsible_user_id, "note": existing.note},
+            proposed_data=proposed,
+        )
+        db.add(item); db.flush()
+        notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Übergabe der Betreuung vor. {change_request_details(db, item)}", item.id)
+        audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected_id, "scope": "occurrence", "converted_from_create": True})
+        db.commit(); db.refresh(item)
+        return change_request_payload(db, item)
+
+    affected_id = stay_request_recipient_id(user.id, child.default_responsible_user_id, proposed_responsible_user_id=data.responsible_user_id)
     if not affected_id or affected_id == user.id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diesen Vorschlag gibt es keine andere Person zur Bestätigung")
-    occurrences = recurrence_dates(data)
     rule = None
     if data.recurrence_interval_weeks:
         rule = RecurrenceRule(child_id=data.child_id, responsible_user_id=data.responsible_user_id, rrule=f"FREQ={data.recurrence_frequency};INTERVAL={data.recurrence_interval_weeks};BYMONTHDAY={data.recurrence_day_of_month or data.starts_at.day}", starts_at=data.starts_at, duration_minutes=int((data.ends_at-data.starts_at).total_seconds()/60), until_at=data.recurrence_until)
@@ -1595,8 +1643,9 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
     stay = db.get(Stay, stay_id)
     if not stay:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
-    assert_child_access(db, user, stay.child_id, edit=True)
-    assert_person_visible(db, user, data.responsible_user_id)
+    if not getattr(request.state, "approved_change", False):
+        assert_child_access(db, user, stay.child_id, edit=True)
+        assert_person_visible(db, user, data.responsible_user_id)
     if user.role != Role.ADMIN and stay.status == PlanStatus.CONFIRMED and not getattr(request.state, "approved_change", False):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Betreuungszeiten müssen über eine Änderungsanfrage geändert werden")
     rule = inferred_recurrence_rule(db, stay)
@@ -1740,7 +1789,7 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
     child = db.get(Child, stay.child_id)
-    affected_id = stay.responsible_user_id if stay.responsible_user_id != user.id else child.default_responsible_user_id
+    affected_id = stay_request_recipient_id(user.id, child.default_responsible_user_id, current_responsible_user_id=stay.responsible_user_id)
     if not affected_id or affected_id == user.id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diese Löschung gibt es keine andere Person zur Bestätigung")
     item = ChangeRequest(
@@ -1761,13 +1810,22 @@ def change_request_payload(db: Session, item: ChangeRequest) -> ChangeRequestOut
     stay = db.get(Stay, item.object_id) if item.object_type == "stay" else None
     child = db.get(Child, stay.child_id) if stay else None
     proposed_data = dict(item.proposed_data or {})
+    before_data = dict(item.before_data or {})
+    proposed_person_id = proposed_data.get("responsible_user_id")
+    previous_person_id = before_data.get("responsible_user_id")
+    proposed_person = db.get(User, proposed_person_id) if proposed_person_id else None
+    previous_person = db.get(User, previous_person_id) if previous_person_id else None
+    if proposed_person:
+        proposed_data["responsible_user_name"] = proposed_person.display_name
+    if previous_person:
+        before_data["responsible_user_name"] = previous_person.display_name
     if proposed_data.get("action") == "CREATE" and stay and stay.recurrence_rule_id:
         rule = db.get(RecurrenceRule, stay.recurrence_rule_id)
         if rule:
             match = re.search(r"INTERVAL=(\d+)", rule.rrule)
             proposed_data.setdefault("recurrence_interval_weeks", int(match.group(1)) if match else 1)
             proposed_data.setdefault("recurrence_until", rule.until_at.isoformat() if rule.until_at else None)
-    return ChangeRequestOut(id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected.display_name, status=item.status, proposed_data=proposed_data, before_data=item.before_data or {}, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
+    return ChangeRequestOut(id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected.display_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
 
 
 def change_request_details(db: Session, item: ChangeRequest) -> str:
@@ -1932,27 +1990,13 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     assert_child_access(db, user, stay.child_id, edit=True)
     assert_person_visible(db, user, data.responsible_user_id)
-    # The person who currently has the child in the selected period confirms.
-    # If the matched database row already belongs to the requester, look for
-    # another overlapping plan and finally use the child's normal residence.
-    affected_user_id = stay.responsible_user_id if stay.responsible_user_id != user.id else None
-    if not affected_user_id:
-        other_stay = db.scalar(select(Stay).where(
-            Stay.id != stay.id,
-            Stay.child_id == stay.child_id,
-            Stay.status == PlanStatus.CONFIRMED,
-            Stay.responsible_user_id != user.id,
-            Stay.starts_at < data.ends_at,
-            Stay.ends_at > data.starts_at,
-        ).order_by(Stay.updated_at.desc()).limit(1))
-        if other_stay:
-            affected_user_id = other_stay.responsible_user_id
-    if not affected_user_id:
-        child = db.get(Child, stay.child_id)
-        if child and child.default_responsible_user_id != user.id:
-            affected_user_id = child.default_responsible_user_id
-    if not affected_user_id and data.responsible_user_id != user.id:
-        affected_user_id = data.responsible_user_id
+    child = db.get(Child, stay.child_id)
+    affected_user_id = stay_request_recipient_id(
+        user.id,
+        child.default_responsible_user_id if child else None,
+        current_responsible_user_id=stay.responsible_user_id,
+        proposed_responsible_user_id=data.responsible_user_id,
+    )
     affected = db.get(User, affected_user_id) if affected_user_id else None
     if not affected or not affected.is_active:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die angefragte Person wurde nicht gefunden")

@@ -1857,7 +1857,7 @@ function CalendarScreen({
                       schlägt die Löschung einer Betreuungszeit vor.
                       <small>
                         {request.child_name || "Kind"} · bisher bei{" "}
-                        {previousPerson?.display_name || "unbekannt"} ·{" "}
+                        {previousPerson?.display_name || before.responsible_user_name || "unbekannt"} ·{" "}
                         {before.starts_at
                           ? new Date(before.starts_at).toLocaleString("de-DE")
                           : ""}{" "}
@@ -1872,7 +1872,7 @@ function CalendarScreen({
                     <>
                       schlägt eine neue Betreuungszeit bei{" "}
                       <strong>
-                        {proposedPerson?.display_name || "unbekannt"}
+                        {proposedPerson?.display_name || proposal.responsible_user_name || "unbekannt"}
                       </strong>{" "}
                       vor.
                       <small>
@@ -1891,8 +1891,8 @@ function CalendarScreen({
                         {before.responsible_user_id !==
                           proposal.responsible_user_id && (
                           <span>
-                            Person: {previousPerson?.display_name || "unbekannt"}{" "}
-                            → {proposedPerson?.display_name || "unbekannt"}
+                            Person: {previousPerson?.display_name || before.responsible_user_name || "unbekannt"}{" "}
+                            → {proposedPerson?.display_name || proposal.responsible_user_name || "unbekannt"}
                           </span>
                         )}
                         {(before.starts_at !== proposal.starts_at ||

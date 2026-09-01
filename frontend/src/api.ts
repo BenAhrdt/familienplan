@@ -106,6 +106,7 @@ export type ChangeRequest = {
     starts_at?: string;
     ends_at?: string;
     responsible_user_id?: number;
+    responsible_user_name?: string;
     note?: string | null;
     scope: "occurrence" | "future" | "series";
     recurrence_interval_weeks?: number | null;
@@ -115,6 +116,7 @@ export type ChangeRequest = {
     starts_at?: string;
     ends_at?: string;
     responsible_user_id?: number;
+    responsible_user_name?: string;
     note?: string | null;
   };
   child_id: number | null;
