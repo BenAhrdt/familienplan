@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.55 – 1. September 2026
+
+### Anonymisierte Übergabeanfragen
+
+- Antragsteller sehen eine nicht freigegebene aktuelle Betreuungsperson auch innerhalb ihrer offenen Übergabeanfrage nur als „Andere Betreuungsperson“.
+- Der tatsächliche Empfänger der Anfrage sieht weiterhin die beteiligten Namen, die er für seine Entscheidung benötigt.
+
 ## 0.1.54 – 1. September 2026
 
 ### Vertrauliche Betreuungsdaten

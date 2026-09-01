@@ -1619,7 +1619,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Übergabe der Betreuung vor. {change_request_details(db, item)}", item.id)
         audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected_id, "scope": "occurrence", "converted_from_create": True})
         db.commit(); db.refresh(item)
-        return change_request_payload(db, item)
+        return change_request_payload(db, item, user)
 
     affected_id = stay_request_recipient_id(user.id, child.default_responsible_user_id, proposed_responsible_user_id=data.responsible_user_id)
     if not affected_id or affected_id == user.id:
@@ -1642,7 +1642,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
     notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine neue Betreuungszeit vor.", item.id)
     audit(db, request, "NEW_STAY_PROPOSED", user.id, ("change_request", str(item.id)), {"occurrences": len(created)})
     db.commit(); db.refresh(item)
-    return change_request_payload(db, item)
+    return change_request_payload(db, item, user)
 
 
 @router.put("/stays/{stay_id}", response_model=list[StayOut], dependencies=[Depends(require_csrf)])
@@ -1809,10 +1809,10 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
     notify(db, affected_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", f"{user.display_name} schlägt vor, eine Betreuungszeit zu löschen.", item.id)
     audit(db, request, "STAY_DELETE_PROPOSED", user.id, ("change_request", str(item.id)), {"scope": scope})
     db.commit(); db.refresh(item)
-    return change_request_payload(db, item)
+    return change_request_payload(db, item, user)
 
 
-def change_request_payload(db: Session, item: ChangeRequest) -> ChangeRequestOut:
+def change_request_payload(db: Session, item: ChangeRequest, viewer: User) -> ChangeRequestOut:
     requester, affected = db.get(User, item.requested_by_id), db.get(User, item.affected_user_id)
     stay = db.get(Stay, item.object_id) if item.object_type == "stay" else None
     child = db.get(Child, stay.child_id) if stay else None
@@ -1822,9 +1822,11 @@ def change_request_payload(db: Session, item: ChangeRequest) -> ChangeRequestOut
     previous_person_id = before_data.get("responsible_user_id")
     proposed_person = db.get(User, proposed_person_id) if proposed_person_id else None
     previous_person = db.get(User, previous_person_id) if previous_person_id else None
-    if proposed_person:
+    viewer_may_see_all = viewer.role == Role.ADMIN or viewer.id == item.affected_user_id
+    visible_ids = visible_person_ids(viewer)
+    if proposed_person and (viewer_may_see_all or proposed_person.id in visible_ids):
         proposed_data["responsible_user_name"] = proposed_person.display_name
-    if previous_person:
+    if previous_person and (viewer_may_see_all or previous_person.id in visible_ids):
         before_data["responsible_user_name"] = previous_person.display_name
     if proposed_data.get("action") == "CREATE" and stay and stay.recurrence_rule_id:
         rule = db.get(RecurrenceRule, stay.recurrence_rule_id)
@@ -1832,7 +1834,8 @@ def change_request_payload(db: Session, item: ChangeRequest) -> ChangeRequestOut
             match = re.search(r"INTERVAL=(\d+)", rule.rrule)
             proposed_data.setdefault("recurrence_interval_weeks", int(match.group(1)) if match else 1)
             proposed_data.setdefault("recurrence_until", rule.until_at.isoformat() if rule.until_at else None)
-    return ChangeRequestOut(id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected.display_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
+    affected_name = affected.display_name if viewer_may_see_all or affected.id in visible_ids else "Andere Betreuungsperson"
+    return ChangeRequestOut(id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
 
 
 def change_request_details(db: Session, item: ChangeRequest) -> str:
@@ -1990,7 +1993,7 @@ def change_requests(db: Session = Depends(get_db), user: User = Depends(current_
     query = select(ChangeRequest).where(ChangeRequest.status.in_([PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED]))
     if user.role != Role.ADMIN:
         query = query.where((ChangeRequest.affected_user_id == user.id) | (ChangeRequest.requested_by_id == user.id))
-    return [change_request_payload(db, item) for item in db.scalars(query.order_by(ChangeRequest.created_at.desc()))]
+    return [change_request_payload(db, item, user) for item in db.scalars(query.order_by(ChangeRequest.created_at.desc()))]
 
 
 @router.post("/stays/{stay_id}/proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
@@ -2018,7 +2021,7 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
     notify(db, affected.id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
     audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected.id, "scope": data.scope})
     db.commit(); db.refresh(item)
-    return change_request_payload(db, item)
+    return change_request_payload(db, item, user)
 
 
 @router.post("/change-requests/{change_id}/decision", response_model=ChangeRequestOut, dependencies=[Depends(require_csrf)])
@@ -2122,7 +2125,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         notify(db, previous_requester, "STAY_COUNTER", "Gegenvorschlag zur Gruppenplanung" if item.proposed_data.get("action") == "GROUP_CREATE" else "Gegenvorschlag zur Betreuung", f"{user.display_name} hat einen Gegenvorschlag gesendet. {change_request_details(db, item)}{f' · Kommentare: {decision_comment}' if decision_comment else ''}", item.id)
         db.commit()
     db.refresh(item)
-    return change_request_payload(db, item)
+    return change_request_payload(db, item, user)
 
 
 @router.get("/notifications", response_model=list[NotificationOut])
