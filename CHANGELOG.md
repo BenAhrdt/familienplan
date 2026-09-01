@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.53 – 1. September 2026
+
+### Einheitliche Dialogebenen
+
+- Hauptdialoge, nachgelagerte Bestätigungen und Auswahl-Popups besitzen appweit klar getrennte Darstellungsebenen.
+- Verschachtelte Popups bleiben dadurch zuverlässig sichtbar und werden nicht von ihrem Ausgangsdialog überdeckt.
+- Escape schließt nur noch die oberste sichtbare Ebene, statt Auswahl- und Hauptdialog gleichzeitig zu schließen.
+- Auch der Löschdialog für Geburtstage lässt sich einheitlich über Escape und einen Hintergrundklick schließen.
+
 ## 0.1.52 – 1. September 2026
 
 ### Sichtbare Auswahl-Popups

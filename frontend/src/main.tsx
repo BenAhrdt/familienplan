@@ -3671,6 +3671,7 @@ function BirthdaysScreen() {
       {deleting && (
         <div className="modal confirmmodal">
           <section className="panel">
+            <button type="button" className="close" onClick={() => setDeleting(null)} aria-label="Schließen">×</button>
             <h2>Geburtstag löschen?</h2>
             <p>„{deleting.display_name}“ wird dauerhaft aus dem Kalender entfernt.</p>
             <div className="modalactions">
@@ -4535,8 +4536,16 @@ function App() {
     });
   useEffect(() => {
     const closeTopModal = () => {
-      const modals = Array.from(document.querySelectorAll<HTMLElement>(".modal"));
-      modals.at(-1)?.querySelector<HTMLButtonElement>(".panel > .close")?.click();
+      const popovers = Array.from(document.querySelectorAll<HTMLElement>(".audience-popover"));
+      const popoverClose = popovers.at(-1)?.querySelector<HTMLButtonElement>("header button");
+      if (popoverClose) {
+        popoverClose.click();
+        return;
+      }
+      const modals = Array.from(document.querySelectorAll<HTMLElement>(".modal"))
+        .map((modal, order) => ({ modal, order, layer: Number.parseInt(getComputedStyle(modal).zIndex, 10) || 0 }))
+        .sort((left, right) => left.layer - right.layer || left.order - right.order);
+      modals.at(-1)?.modal.querySelector<HTMLButtonElement>(".panel > .close")?.click();
     };
     const clickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;

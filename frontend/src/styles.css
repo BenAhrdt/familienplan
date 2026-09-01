@@ -231,6 +231,8 @@ html { overflow-y:scroll; scroll-behavior:smooth; }
 body { min-height:100%; overscroll-behavior-x:none; }
 .link-button { margin-top:.75rem!important; background:transparent!important; color:var(--green)!important; box-shadow:none!important; }
 .modal { z-index:100; overflow-y:auto; overscroll-behavior:contain; }
+.modal.confirmmodal,.modal.decision-modal,.modal.group-review-modal { z-index:120; }
+.modal.update-dialog,.modal.changelog-modal { z-index:130; }
 .modal .panel { max-height:min(90dvh,900px); overflow-y:auto; overscroll-behavior:contain; scroll-padding-bottom:7rem; }
 @media (max-width:900px) {
   .sidebar,.notification-toggle { display:none; }
@@ -284,8 +286,8 @@ body { min-height:100%; overscroll-behavior-x:none; }
 .audience-trigger { width:100%; min-height:3rem; padding:.75rem .9rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; text-align:left; color:var(--ink); background:#fbfcfa; border:1px solid var(--line); border-radius:9px; }
 .audience-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .audience-trigger b { min-width:1.65rem; height:1.65rem; padding:0 .35rem; display:grid; place-items:center; border-radius:99px; color:white; background:var(--green); font-size:.75rem; }
-.audience-backdrop { position:fixed; z-index:160; inset:0; background:#142a2355; }
-.audience-popover { position:fixed; z-index:161; top:50%; left:50%; width:min(23rem,calc(100% - 2rem)); max-height:min(34rem,calc(100vh - 2rem)); padding:1.4rem; overflow:auto; transform:translate(-50%,-50%); border-radius:16px; background:white; box-shadow:0 24px 70px #10241d55; color:var(--ink); }
+.audience-backdrop { position:fixed; z-index:140; inset:0; background:#142a2355; }
+.audience-popover { position:fixed; z-index:141; top:50%; left:50%; width:min(23rem,calc(100% - 2rem)); max-height:min(34rem,calc(100vh - 2rem)); padding:1.4rem; overflow:auto; transform:translate(-50%,-50%); border-radius:16px; background:white; box-shadow:0 24px 70px #10241d55; color:var(--ink); }
 .audience-popover header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; font-size:1.15rem; }
 .audience-popover header button { padding:.15rem .4rem; background:transparent; color:var(--muted); font-size:1.6rem; }
 .audience-list { display:grid; gap:.35rem; }
