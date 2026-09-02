@@ -163,6 +163,31 @@ function calendarEventOccursOnDay(event: CalendarEvent, day: Date, dayEnd: Date)
   return new Date(event.starts_at) < dayEnd && new Date(event.ends_at) > day;
 }
 
+const normalizedHolidayName = (name: string) => name
+  .normalize("NFKD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLocaleLowerCase("de-DE")
+  .replace(/\b(?:gesetzlicher\s+)?feiertag\b/g, "")
+  .replace(/\b(?:he|hessen)\b/g, "")
+  .replace(/[^a-z0-9]+/g, " ")
+  .trim();
+
+function holidayNamesMatch(left: string, right: string) {
+  const normalizedLeft = normalizedHolidayName(left),
+    normalizedRight = normalizedHolidayName(right);
+  return Boolean(normalizedLeft && normalizedRight) &&
+    (normalizedLeft === normalizedRight ||
+      (Math.min(normalizedLeft.length, normalizedRight.length) >= 7 &&
+        (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft))));
+}
+
+function schoolEventDuplicatesHoliday(event: CalendarEvent, holidays: Array<{ name:string; starts_on:string; ends_on:string }>) {
+  const eventDate = localDateKey(new Date(event.starts_at));
+  return event.category === "SCHOOL" && holidays.some((holiday) =>
+    holiday.starts_on <= eventDate && eventDate <= holiday.ends_on && holidayNamesMatch(event.title, holiday.name),
+  );
+}
+
 function calendarEventTiming(event: CalendarEvent) {
   if (event.all_day) {
     const startKey = event.raw_data?.all_day_start;
@@ -2137,6 +2162,7 @@ function CalendarScreen({
             const dayEvents = events.filter(
               (event) =>
                 !hiddenEventTypes.includes(event.event_type) &&
+                !schoolEventDuplicatesHoliday(event, holidays) &&
                 calendarEventOccursOnDay(event, day, dayEnd),
             );
             const duplicateEventIds = new Set(
@@ -3990,7 +4016,7 @@ function HolidaysScreen({
         kind: "FEIERTAG",
       });
   });
-  schoolItems.forEach((item) => {
+  schoolItems.filter((item) => !schoolEventDuplicatesHoliday(item, [...items, ...publicItems])).forEach((item) => {
     const start = new Date(item.starts_at),
       end = new Date(item.ends_at),
       inclusiveEnd = item.all_day

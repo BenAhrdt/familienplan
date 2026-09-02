@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.62 – 2. September 2026
+
+### Keine doppelten Ferien und Feiertage
+
+- Schulkalendereinträge werden ausgeblendet, wenn Name und Datum bereits durch die offiziellen Ferien- oder Feiertagsdaten abgedeckt sind.
+- Die Bereinigung gilt in „Ferien & Feiertage“ und im normalen Monatskalender.
+- Eigenständige Schultermine wie erste Schultage, Brückentage und bewegliche Ferientage bleiben erhalten.
+
 ## 0.1.61 – 2. September 2026
 
 ### Tagesdetails unter dem Monatskalender
