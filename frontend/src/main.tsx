@@ -1878,7 +1878,7 @@ function CalendarScreen({
     }
   }
   function mobileDayAgenda(position: "top" | "bottom") {
-    return <section className={`mobile-day-agenda ${position}`} aria-live={position === "top" ? "polite" : "off"}>
+    return <section className={`mobile-day-agenda mobile-agenda-${position}`} aria-live={position === "top" ? "polite" : "off"}>
       <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
       {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>

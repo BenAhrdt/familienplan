@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.64 – 2. September 2026
+
+### Sichtbare untere Tagesdetails
+
+- Die untere Tagesdetailkarte verwendet keine mit der mobilen Navigation kollidierende CSS-Klasse mehr.
+- Sie erscheint dadurch zuverlässig zwischen Monatskalender und Terminartenfilter.
+
 ## 0.1.63 – 2. September 2026
 
 ### Tagesdetails ober- und unterhalb des Kalenders
