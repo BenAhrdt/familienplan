@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.67 – 2. September 2026
+
+### Wischmopp für Reinigungstermine
+
+- Termine der Art „Putzfrau“ erhalten ein Wischmopp-Symbol.
+- Das Symbol erscheint einheitlich in der Familienübersicht sowie in der Desktop- und mobilen Kalenderansicht.
+
 ## 0.1.66 – 2. September 2026
 
 ### Einheitliche Symbole in Übersicht und Kalender
