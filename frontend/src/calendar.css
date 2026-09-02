@@ -590,7 +590,8 @@
 }
 .mobile-day-agenda { display:none; }
 @media (max-width:900px) {
-  .calendar-content .mobile-day-agenda { order:2; }
+  .calendar-content .mobile-day-agenda.top { order:0; }
+  .calendar-content .mobile-day-agenda.bottom { order:2; }
   .calendar-content .calendar-type-filters { order:3; }
   .calendar-content .series-list { order:4; }
   .mobile-day-agenda { display:grid; gap:.5rem; margin:-.7rem 0 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:14px; background:white; }

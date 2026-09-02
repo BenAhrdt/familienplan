@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.63 – 2. September 2026
+
+### Tagesdetails ober- und unterhalb des Kalenders
+
+- Die mobile Tagesdetailkarte wird synchron oberhalb und unterhalb des Monatskalenders angezeigt.
+- Dadurch bleiben die ausgewählten Einträge sowohl in den oberen als auch in den unteren Kalenderwochen direkt erreichbar.
+
 ## 0.1.62 – 2. September 2026
 
 ### Keine doppelten Ferien und Feiertage

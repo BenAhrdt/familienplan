@@ -1877,6 +1877,26 @@ function CalendarScreen({
       setError((x as Error).message);
     }
   }
+  function mobileDayAgenda(position: "top" | "bottom") {
+    return <section className={`mobile-day-agenda ${position}`} aria-live={position === "top" ? "polite" : "off"}>
+      <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
+      {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
+      {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
+        <i className="agenda-entry-icon" aria-hidden="true">{event.event_type === "WASTE" ? <Trash2 /> : event.event_type === "BIRTHDAY" ? <Cake /> : <i className="agenda-color-dot" />}</i>
+        <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
+      </button>)}
+      {mobileDayStays.map((stay) => <button key={`${position}-mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
+        <i className="agenda-entry-icon care" aria-hidden="true">{children.find((child) => child.id === stay.child_id) && people.find((person) => person.id === stay.responsible_user_id) && <CareMarkers child={children.find((child) => child.id === stay.child_id)!} responsible={people.find((person) => person.id === stay.responsible_user_id)!} />}</i>
+        <span><strong>{children.find((child) => child.id === stay.child_id)?.display_name || "Betreuung"} bei {stay.responsible_display_name || people.find((person) => person.id === stay.responsible_user_id)?.display_name || "Person"}</strong><small>{calendarEventTiming({starts_at:stay.starts_at,ends_at:stay.ends_at,all_day:false} as CalendarEvent)}</small></span><ChevronRight />
+      </button>)}
+      {mobileDayBirthdays.map((birthday) => <button key={`${position}-mobile-birthday-${birthday.name}-${birthday.birthDate}`} onClick={() => setReadOnlyInfo({title:`Geburtstag von ${birthday.name}`,message:"Dieser Geburtstag wird automatisch aus den Personendaten erzeugt."})} style={{"--entry-color":"var(--birthday)"} as React.CSSProperties}>
+        <i className="agenda-entry-icon" aria-hidden="true"><Cake /></i><span><strong>{birthday.name} wird {birthday.age}</strong><small>Geburtstag</small></span><ChevronRight />
+      </button>)}
+      {mobileDayHolidays.map((holiday) => <button key={`${position}-mobile-holiday-${holiday.state}-${holiday.name}`} onClick={() => setReadOnlyInfo({title:holiday.name,message:"Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt."})} style={{"--entry-color":"var(--holiday)"} as React.CSSProperties}>
+        <i className="agenda-entry-icon" aria-hidden="true"><i className="agenda-color-dot" /></i><span><strong>{holiday.name}</strong><small>Ferien</small></span><ChevronRight />
+      </button>)}
+    </section>;
+  }
   return (
     <>
       <header className="pagehead">
@@ -2116,6 +2136,7 @@ function CalendarScreen({
         </label>}
         </div>
       </details>
+      {mobileDayAgenda("top")}
       <section className={`monthcalendar${canWriteCalendar ? "" : " calendar-readonly"}`}>
         <header className="calendar-navigation">
           <button
@@ -2441,24 +2462,7 @@ function CalendarScreen({
           {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setEventAllDay(true); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
         </footer>
       </section>
-      <section className="mobile-day-agenda" aria-live="polite">
-        <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
-        {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
-        {mobileDayEvents.map((event) => <button key={`mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
-          <i className="agenda-entry-icon" aria-hidden="true">{event.event_type === "WASTE" ? <Trash2 /> : event.event_type === "BIRTHDAY" ? <Cake /> : <i className="agenda-color-dot" />}</i>
-          <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
-        </button>)}
-        {mobileDayStays.map((stay) => <button key={`mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
-          <i className="agenda-entry-icon care" aria-hidden="true">{children.find((child) => child.id === stay.child_id) && people.find((person) => person.id === stay.responsible_user_id) && <CareMarkers child={children.find((child) => child.id === stay.child_id)!} responsible={people.find((person) => person.id === stay.responsible_user_id)!} />}</i>
-          <span><strong>{children.find((child) => child.id === stay.child_id)?.display_name || "Betreuung"} bei {stay.responsible_display_name || people.find((person) => person.id === stay.responsible_user_id)?.display_name || "Person"}</strong><small>{calendarEventTiming({starts_at:stay.starts_at,ends_at:stay.ends_at,all_day:false} as CalendarEvent)}</small></span><ChevronRight />
-        </button>)}
-        {mobileDayBirthdays.map((birthday) => <button key={`mobile-birthday-${birthday.name}-${birthday.birthDate}`} onClick={() => setReadOnlyInfo({title:`Geburtstag von ${birthday.name}`,message:"Dieser Geburtstag wird automatisch aus den Personendaten erzeugt."})} style={{"--entry-color":"var(--birthday)"} as React.CSSProperties}>
-          <i className="agenda-entry-icon" aria-hidden="true"><Cake /></i><span><strong>{birthday.name} wird {birthday.age}</strong><small>Geburtstag</small></span><ChevronRight />
-        </button>)}
-        {mobileDayHolidays.map((holiday) => <button key={`mobile-holiday-${holiday.state}-${holiday.name}`} onClick={() => setReadOnlyInfo({title:holiday.name,message:"Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt."})} style={{"--entry-color":"var(--holiday)"} as React.CSSProperties}>
-          <i className="agenda-entry-icon" aria-hidden="true"><i className="agenda-color-dot" /></i><span><strong>{holiday.name}</strong><small>Ferien</small></span><ChevronRight />
-        </button>)}
-      </section>
+      {mobileDayAgenda("bottom")}
       </div>
       {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
       {open && (
