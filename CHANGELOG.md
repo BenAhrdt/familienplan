@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.68 – 2. September 2026
+
+### Automatische Symbole anhand des Termintitels
+
+- Termine ohne festes Standardsymbol erhalten anhand häufiger Begriffe ein passendes Motiv, etwa Ticket, Theatermasken, Musiknote, Filmklappe, Arzt-, Sport-, Einkaufs-, Reise- oder Werkstattsymbol.
+- Anime-, Manga- und Cosplay-Termine werden mit einer eigenen stilisierten Figur gekennzeichnet; diese Erkennung hat Vorrang vor allgemeineren Begriffen wie „Festival“.
+- Die zentrale Erkennung gilt einheitlich in der Familienübersicht, im Monatskalender und in der mobilen Tagesansicht.
+
 ## 0.1.67 – 2. September 2026
 
 ### Wischmopp für Reinigungstermine

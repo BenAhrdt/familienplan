@@ -3,26 +3,46 @@ import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import {
   Bell,
+  Baby,
   BookOpen,
+  BriefcaseBusiness,
+  Bus,
   Cake,
   CalendarDays,
+  Car,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Clapperboard,
   Copy,
+  Drama,
+  Dumbbell,
+  Gift,
   Home,
+  House,
   LogOut,
   Menu,
+  MicVocal,
   Mop,
+  Music,
   Palette,
   Palmtree,
+  PawPrint,
+  Plane,
   Plus,
   Search,
+  Scissors,
+  ShoppingCart,
+  Stethoscope,
   Tags,
+  Ticket,
+  Train,
   Trash2,
+  Utensils,
   UserPlus,
   Users,
+  Wrench,
 } from "lucide-react";
 import {
   api,
@@ -427,6 +447,44 @@ function CareMarkers({ child, responsible }: { child: Child; responsible: User }
   </span>;
 }
 
+function AnimeIcon({ className }: { className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 9.5C5 5.9 7.8 3 12 3s7 2.9 7 6.5V14c0 4-3 7-7 7s-7-3-7-7Z" />
+    <path d="m5.4 10 3-4 .8 3 3-4 1.1 3 2.4-2 2.9 4" />
+    <path d="M8 13.5h2M14 13.5h2M10 17c1.3.8 2.7.8 4 0" />
+  </svg>;
+}
+
+function EventSymbol({ eventType, title, className }: { eventType?: EventType; title: string; className?: string }) {
+  if (eventType === "WASTE") return <Trash2 className={className} />;
+  if (eventType === "BIRTHDAY") return <Cake className={className} />;
+  if (eventType === "SCHOOL") return <BookOpen className={className} />;
+  if (eventType === "CLEANING") return <Mop className={className} />;
+  const value = title.toLocaleLowerCase("de-DE");
+  if (/anime|manga|cosplay/.test(value)) return <AnimeIcon className={className} />;
+  if (/musical|theater|theatre|oper\b|operette/.test(value)) return <Drama className={className} />;
+  if (/festival|messe\b|ausstellung|event|show\b/.test(value)) return <Ticket className={className} />;
+  if (/konzert|musik|chor\b|band\b|singen|gesang/.test(value)) return <Music className={className} />;
+  if (/karaoke|mikrofon/.test(value)) return <MicVocal className={className} />;
+  if (/kino|film|movie/.test(value)) return <Clapperboard className={className} />;
+  if (/arzt|ärzt|zahnarzt|therapie|impf|klinik|krankenhaus|physio/.test(value)) return <Stethoscope className={className} />;
+  if (/fußball|fussball|handball|tennis|training|sport|turnier|fitness/.test(value)) return <Dumbbell className={className} />;
+  if (/einkauf|einkaufen|supermarkt|lebensmittel/.test(value)) return <ShoppingCart className={className} />;
+  if (/friseur|haarschnitt|schneiden/.test(value)) return <Scissors className={className} />;
+  if (/urlaub|reise|flug|fliegen|flughafen/.test(value)) return <Plane className={className} />;
+  if (/restaurant|essen|frühstück|mittagessen|abendessen|brunch/.test(value)) return <Utensils className={className} />;
+  if (/auto|tüv|reifen|führerschein/.test(value)) return <Car className={className} />;
+  if (/werkstatt|reparatur|handwerker|wartung/.test(value)) return <Wrench className={className} />;
+  if (/hund|katze|tierarzt|haustier/.test(value)) return <PawPrint className={className} />;
+  if (/geschenk|bescherung|weihnacht/.test(value)) return <Gift className={className} />;
+  if (/arbeit|büro|meeting|besprechung|geschäftlich/.test(value)) return <BriefcaseBusiness className={className} />;
+  if (/kita|kindergarten|krabbelgruppe|baby/.test(value)) return <Baby className={className} />;
+  if (/bus|busfahrt/.test(value)) return <Bus className={className} />;
+  if (/zug|bahn|bahnhof/.test(value)) return <Train className={className} />;
+  if (/haus|wohnung|zuhause|umzug/.test(value)) return <House className={className} />;
+  return null;
+}
+
 function Setup({ done }: { done: (u: User) => void }) {
   const [error, setError] = useState("");
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -814,10 +872,7 @@ function Dashboard({
                       <CareMarkers child={children.find((child) => child.id === item.childId)!} responsible={people.find((person) => person.id === item.responsibleUserId)!} />
                     ) : (
                       <>
-                        {item.eventType === "WASTE" && <Trash2 />}
-                        {item.eventType === "BIRTHDAY" && <Cake />}
-                        {item.eventType === "SCHOOL" && <BookOpen />}
-                        {item.eventType === "CLEANING" && <Mop />}
+                        <EventSymbol eventType={item.eventType} title={item.title} />
                         {item.childId && children.find((child) => child.id === item.childId) && <ChildStar child={children.find((child) => child.id === item.childId)!} />}
                       </>
                     )}
@@ -1905,7 +1960,7 @@ function CalendarScreen({
       <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
       {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
-        <i className="agenda-entry-icon" aria-hidden="true">{event.event_type === "WASTE" ? <Trash2 /> : event.event_type === "BIRTHDAY" ? <Cake /> : event.event_type === "SCHOOL" ? <BookOpen /> : event.event_type === "CLEANING" ? <Mop /> : <i className="agenda-color-dot" />}</i>
+        <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
         <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
       </button>)}
       {mobileDayStays.map((stay) => <button key={`${position}-mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
@@ -2422,9 +2477,7 @@ function CalendarScreen({
                         pointerEvent.stopPropagation()
                       }
                     >
-                      {event.event_type === "WASTE" && <Trash2 className="calendar-waste-icon" aria-hidden="true" />}
-                      {event.event_type === "SCHOOL" && <BookOpen className="calendar-school-icon" aria-hidden="true" />}
-                      {event.event_type === "CLEANING" && <Mop className="calendar-cleaning-icon" aria-hidden="true" />}
+                      <EventSymbol eventType={event.event_type} title={event.title} className="calendar-event-icon" />
                       {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
                       {event.title}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
