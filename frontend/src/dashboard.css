@@ -89,10 +89,35 @@
   border-bottom: 0;
 }
 
-.dashboarditem i {
+.dashboarditem > .dashboard-colorbar {
   flex: 0 0 8px;
   height: 42px;
   border-radius: 8px;
+}
+
+.dashboarditem > .dashboard-symbols {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  flex: 0 0 2rem;
+  color: var(--muted);
+}
+
+.dashboard-symbols > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 2.2;
+}
+
+.dashboard-symbols .care-markers {
+  flex-direction: column;
+}
+
+.dashboard-symbols .care-person-marker,
+.dashboard-symbols .care-child-star {
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
 .dashboarditem span {

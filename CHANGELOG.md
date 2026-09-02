@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.66 – 2. September 2026
+
+### Einheitliche Symbole in Übersicht und Kalender
+
+- Die Familienübersicht zeigt für Geburtstage und Abfalltermine nun dieselben Torten- und Mülltonnensymbole wie der Kalender.
+- Betreuungszeiten und kindbezogene Termine übernehmen ihre Personen- und Kindermarkierungen ebenfalls in die Übersicht.
+- Schultermine erhalten in der Übersicht sowie in der Desktop- und mobilen Kalenderansicht ein Buchsymbol.
+
 ## 0.1.65 – 2. September 2026
 
 ### Lange Namen im mobilen Menü

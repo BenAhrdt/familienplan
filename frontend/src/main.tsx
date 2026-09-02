@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import {
   Bell,
+  BookOpen,
   Cake,
   CalendarDays,
   CheckCircle2,
@@ -560,6 +561,9 @@ type DashboardItem = {
   startsAt: Date;
   color: string;
   kind: "Termin" | "Betreuung" | "Geburtstag";
+  eventType?: EventType;
+  childId?: number | null;
+  responsibleUserId?: number | null;
 };
 type CalendarTarget = {
   kind: "event" | "stay" | "birthday";
@@ -644,6 +648,8 @@ function Dashboard({
             startsAt: new Date(event.starts_at),
             color: eventDisplayColor(event),
             kind: "Termin" as const,
+            eventType: event.event_type,
+            childId: event.child_id,
           })),
           ...staysByChild.flat().map((stay) => ({
             id: `stay-${stay.id}`,
@@ -652,6 +658,8 @@ function Dashboard({
             startsAt: new Date(stay.starts_at),
             color: people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)",
             kind: "Betreuung" as const,
+            childId: stay.child_id,
+            responsibleUserId: stay.responsible_user_id,
           })),
           ...birthdays.map((birthday) => {
             const birthDate = new Date(`${birthday.birth_date}T12:00:00`),
@@ -659,11 +667,12 @@ function Dashboard({
             if (next < from) next.setFullYear(next.getFullYear() + 1);
             return {
               id: `birthday-${birthday.id}`,
-              title: `🎂 ${birthday.display_name}`,
+              title: birthday.display_name,
               detail: "",
               startsAt: next,
               color: "var(--birthday)",
               kind: "Geburtstag" as const,
+              eventType: "BIRTHDAY" as const,
             };
           }),
         ]
@@ -798,7 +807,19 @@ function Dashboard({
                     })
                   }
                 >
-                  <i style={{ background: item.color }} />
+                  <i className="dashboard-colorbar" style={{ background: item.color }} />
+                  <span className="dashboard-symbols" aria-hidden="true">
+                    {item.kind === "Betreuung" && item.childId && item.responsibleUserId && children.find((child) => child.id === item.childId) && people.find((person) => person.id === item.responsibleUserId) ? (
+                      <CareMarkers child={children.find((child) => child.id === item.childId)!} responsible={people.find((person) => person.id === item.responsibleUserId)!} />
+                    ) : (
+                      <>
+                        {item.eventType === "WASTE" && <Trash2 />}
+                        {item.eventType === "BIRTHDAY" && <Cake />}
+                        {item.eventType === "SCHOOL" && <BookOpen />}
+                        {item.childId && children.find((child) => child.id === item.childId) && <ChildStar child={children.find((child) => child.id === item.childId)!} />}
+                      </>
+                    )}
+                  </span>
                   <span>
                     <strong>{item.title}</strong>
                     <small>{itemDate(item.startsAt)} · {item.kind}</small>
@@ -1882,7 +1903,7 @@ function CalendarScreen({
       <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
       {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
-        <i className="agenda-entry-icon" aria-hidden="true">{event.event_type === "WASTE" ? <Trash2 /> : event.event_type === "BIRTHDAY" ? <Cake /> : <i className="agenda-color-dot" />}</i>
+        <i className="agenda-entry-icon" aria-hidden="true">{event.event_type === "WASTE" ? <Trash2 /> : event.event_type === "BIRTHDAY" ? <Cake /> : event.event_type === "SCHOOL" ? <BookOpen /> : <i className="agenda-color-dot" />}</i>
         <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
       </button>)}
       {mobileDayStays.map((stay) => <button key={`${position}-mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
@@ -2400,6 +2421,7 @@ function CalendarScreen({
                       }
                     >
                       {event.event_type === "WASTE" && <Trash2 className="calendar-waste-icon" aria-hidden="true" />}
+                      {event.event_type === "SCHOOL" && <BookOpen className="calendar-school-icon" aria-hidden="true" />}
                       {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
                       {event.title}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
