@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.61 – 2. September 2026
+
+### Tagesdetails unter dem Monatskalender
+
+- Die mobile Tagesdetailkarte erscheint nun direkt unterhalb des Monatskalenders statt davor.
+- Filter und periodische Einträge folgen anschließend, sodass Termine der unteren Kalenderwochen ohne Zurückscrollen erreichbar sind.
+
 ## 0.1.60 – 2. September 2026
 
 ### Korrigierte mobile Kalenderkennzeichnung
