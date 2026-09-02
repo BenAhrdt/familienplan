@@ -323,6 +323,10 @@
 }
 
 @media (max-width: 900px) {
+  .content {
+    padding-top: calc(140px + env(safe-area-inset-top));
+  }
+
   .dashboardtimeline {
     padding: 0.25rem 0.85rem;
   }

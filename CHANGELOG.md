@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.60 – 2. September 2026
+
+### Korrigierte mobile Kalenderkennzeichnung
+
+- Der Abstand zur feststehenden Suche wird nun in der tatsächlich zuletzt wirksamen Layoutregel gesetzt, sodass Rubrik und Überschrift vollständig sichtbar bleiben.
+- Normale Terminmarkierungen bleiben durch feste Abmessungen zuverlässig kreisrund.
+- Personen-Kreis und Kinderstern einer Betreuung stehen mit erkennbarem Abstand nebeneinander.
+- Die Tagesdetailkarte zeigt dieselben Mülltonnen-, Torten-, Betreuungs- und Farbkreissymbole wie das Monatsraster.
+
 ## 0.1.59 – 2. September 2026
 
 ### Aussagekräftige Kalendersymbole
