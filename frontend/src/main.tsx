@@ -2170,7 +2170,12 @@ function CalendarScreen({
                   backgroundColor: "color-mix(in srgb, var(--waste) 9%, white)",
                 } : undefined}
               >
-                <time>{day.getDate()}</time>
+                <time dateTime={localDateTime(day).slice(0, 10)}>
+                  <span className="day-number">{day.getDate()}</span>
+                  <span className="mobile-day-label">
+                    {day.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                  </span>
+                </time>
                 <div className="dayentries">
                   {availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY") && children.map((child) => {
                     const childStays = dayStays

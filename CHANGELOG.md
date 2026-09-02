@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.57 – 2. September 2026
+
+### Mobile Monatsagenda
+
+- Der Monatskalender erscheint auf kleinen Bildschirmen als übersichtliche Agenda mit Datum und vollständigen Einträgen statt als zu enges Sieben-Spalten-Raster.
+- Tage ohne Einträge und die angrenzenden Monatstage werden in der mobilen Agenda ausgeblendet.
+- Der Abstand zwischen feststehender Suche und Seitenüberschrift wurde weiter vergrößert.
+
 ## 0.1.56 – 2. September 2026
 
 ### Verbesserte mobile Kalenderansicht
