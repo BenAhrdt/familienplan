@@ -294,9 +294,6 @@
   font-size: 0.8rem;
   font-weight: 700;
 }
-.mobile-day-label {
-  display: none;
-}
 .dayentries {
   display: grid;
   gap: 0.3rem;
@@ -539,55 +536,45 @@
   .monthcalendar > .calendar-navigation button:first-child { grid-column:1; grid-row:1; }
   .monthcalendar > .calendar-navigation button:nth-of-type(2) { grid-column:3; grid-row:1; }
   .monthcalendar > .calendar-navigation .calendar-create { grid-column:1 / -1; grid-row:2; justify-self:end; min-width:0; }
-  .weekdays { display: none; }
-  .monthgrid { display: block; min-width: 0; }
+  .weekdays,
+  .monthgrid { min-width: 0; }
   .monthgrid > article {
-    display: grid;
-    grid-template-columns: 4.4rem minmax(0, 1fr);
-    gap: .65rem;
-    min-height: 0;
-    padding: .7rem;
-    border-right: 0;
+    min-height: 72px;
+    padding: .25rem;
   }
-  .monthgrid > article.outside,
-  .monthgrid > article:not(:has(.dayentries > span)) {
-    display: none;
-  }
+  .monthgrid > article.mobile-selected { outline:2px solid var(--green); outline-offset:-2px; }
   .monthgrid time {
-    display: block;
-    width: auto;
-    height: auto;
-    padding-top: .22rem;
-    border-radius: 0;
-    color: var(--muted);
-    font-size: .72rem;
-    text-transform: capitalize;
-  }
-  .monthgrid > article.todaycell time {
-    background: transparent;
-    color: var(--green);
-    font-weight: 800;
-  }
-  .day-number { display: none; }
-  .mobile-day-label { display: block; }
-  .monthgrid > article.holidaycell {
-    background-image: none;
+    width: 22px;
+    height: 22px;
+    font-size: .68rem;
   }
   .dayentries {
-    gap: .3rem;
-    margin-top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .2rem;
+    margin-top: .25rem;
   }
-  .dayentries span {
-    max-height: none;
-    padding: .42rem .5rem;
-    font-size: .74rem;
-    line-height: 1.25;
-    white-space: normal;
-    overflow-wrap: break-word;
+  .dayentries > span {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: 0 !important;
+    border-radius: 50%;
+    font-size: 0;
+    overflow: hidden;
   }
-  .dayentries span small {
-    display: block;
-  }
+  .dayentries > span:nth-child(n + 8) { display:none; }
+  .dayentries span small,.care-markers,.care-child-star { display:none; }
+}
+.mobile-day-agenda { display:none; }
+@media (max-width:900px) {
+  .mobile-day-agenda { display:grid; gap:.5rem; margin:-.7rem 0 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:14px; background:white; }
+  .mobile-day-agenda h3 { margin:0 0 .25rem; font:700 1.15rem Georgia,serif; text-transform:capitalize; }
+  .mobile-day-agenda p { margin:.25rem 0; color:var(--muted); }
+  .mobile-day-agenda button { display:flex; align-items:center; gap:.65rem; width:100%; padding:.7rem .75rem; border-left:4px solid var(--entry-color); border-radius:9px; background:color-mix(in srgb,var(--entry-color) 13%,white); color:var(--ink); text-align:left; }
+  .mobile-day-agenda button span { display:grid; gap:.18rem; min-width:0; flex:1; }
+  .mobile-day-agenda button small { color:var(--muted); }
+  .mobile-day-agenda button svg { width:18px; flex:0 0 auto; }
 }
 .childcard:disabled {
   cursor: default;

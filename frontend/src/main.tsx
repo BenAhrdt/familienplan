@@ -1238,6 +1238,9 @@ function CalendarScreen({
       holidays: Array<Holiday & { state: string }>;
     } | null>(null),
     [selectedDay, setSelectedDay] = useState<Date | null>(null),
+    [mobileSelectedDay, setMobileSelectedDay] = useState(() =>
+      target ? new Date(target.startsAt) : new Date(),
+    ),
     [readOnlyInfo, setReadOnlyInfo] = useState<{ title: string; message: string } | null>(null),
     [error, setError] = useState(""),
     [hiddenEventTypes, setHiddenEventTypes] = useState<EventType[]>(() => {
@@ -1264,6 +1267,33 @@ function CalendarScreen({
       (_, index) =>
         new Date(from.getFullYear(), from.getMonth(), from.getDate() + index),
     );
+  const mobileSelectedDayEnd = new Date(
+      mobileSelectedDay.getFullYear(),
+      mobileSelectedDay.getMonth(),
+      mobileSelectedDay.getDate() + 1,
+    ),
+    mobileDayEvents = events.filter((event) =>
+      !hiddenEventTypes.includes(event.event_type) &&
+      calendarEventOccursOnDay(event, mobileSelectedDay, mobileSelectedDayEnd),
+    ),
+    mobileDayStays = stays.filter((stay) =>
+      availableEventTypes.includes("STAY") &&
+      !hiddenEventTypes.includes("STAY") &&
+      new Date(stay.starts_at) < mobileSelectedDayEnd &&
+      new Date(stay.ends_at) > mobileSelectedDay,
+    ),
+    mobileDayHolidays = holidays.filter((holiday) =>
+      new Date(`${holiday.starts_on}T00:00:00`) < mobileSelectedDayEnd &&
+      new Date(`${holiday.ends_on}T23:59:59`) >= mobileSelectedDay,
+    ),
+    mobileDayBirthdays = !availableEventTypes.includes("BIRTHDAY") || hiddenEventTypes.includes("BIRTHDAY") ? [] : [
+      ...children.filter((child) => child.birth_date).map((child) => ({ name:child.display_name, birthDate:child.birth_date! })),
+      ...people.filter((person) => person.birth_date).map((person) => ({ name:person.display_name, birthDate:person.birth_date! })),
+      ...customBirthdays.map((birthday) => ({ name:birthday.display_name, birthDate:birthday.birth_date })),
+    ].filter((birthday) => {
+      const date = new Date(`${birthday.birthDate}T00:00:00`);
+      return date.getMonth() === mobileSelectedDay.getMonth() && date.getDate() === mobileSelectedDay.getDate();
+    }).map((birthday) => ({ ...birthday, age:mobileSelectedDay.getFullYear() - new Date(`${birthday.birthDate}T00:00:00`).getFullYear() }));
   function load() {
     api<CalendarEvent[]>(
       `/calendar?from_at=${from.toISOString()}&to_at=${to.toISOString()}`,
@@ -1571,6 +1601,20 @@ function CalendarScreen({
     setEventEditScope(scope);
     setOpen("event");
     setError("");
+  }
+  function showCalendarEvent(event: CalendarEvent) {
+    if (event.source_id) {
+      const timing = calendarEventTiming(event);
+      const details = event.description?.trim() ? `\n\n${event.description.trim()}` : "";
+      setReadOnlyInfo({
+        title: event.title,
+        message: `${timing}${details}\n\n${event.event_type === "WASTE"
+          ? "Dieser Termin wurde aus dem externen Abfallkalender übernommen. Änderungen erfolgen an der Onlinequelle oder über die Einrichtung des Abfallkalenders."
+          : event.event_type === "SCHOOL"
+            ? "Dieser Termin wurde aus dem Schulkalender übernommen. Änderungen erfolgen an der Onlinequelle der Schule."
+            : "Dieser Termin wurde aus einer externen Kalenderquelle übernommen und kann hier nicht bearbeitet werden."}`,
+      });
+    } else openCalendarEvent(event);
   }
   function openDay(day: Date, dayStays: Stay[], selectedStay?: Stay) {
     const source = selectedStay || dayStays[0] || null;
@@ -2152,10 +2196,14 @@ function CalendarScreen({
             const isToday = day.toDateString() === now.toDateString();
             return (
               <article
-                className={`${day.getMonth() !== month.getMonth() ? "outside " : ""}${isToday ? "todaycell " : ""}${dayHolidays.length ? "holidaycell" : ""}`}
+                className={`${day.getMonth() !== month.getMonth() ? "outside " : ""}${isToday ? "todaycell " : ""}${day.toDateString() === mobileSelectedDay.toDateString() ? "mobile-selected " : ""}${dayHolidays.length ? "holidaycell" : ""}`}
                 key={day.toISOString()}
                 onClick={(event) => {
                   if ((event.target as HTMLElement).closest(".dayevent")) return;
+                  if (window.matchMedia("(max-width: 900px)").matches) {
+                    setMobileSelectedDay(day);
+                    return;
+                  }
                   if (!canWriteCalendar) return;
                   setSelectedDay(day);
                   setEditingEvent(null);
@@ -2170,12 +2218,7 @@ function CalendarScreen({
                   backgroundColor: "color-mix(in srgb, var(--waste) 9%, white)",
                 } : undefined}
               >
-                <time dateTime={localDateTime(day).slice(0, 10)}>
-                  <span className="day-number">{day.getDate()}</span>
-                  <span className="mobile-day-label">
-                    {day.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
-                  </span>
-                </time>
+                <time dateTime={localDateTime(day).slice(0, 10)}>{day.getDate()}</time>
                 <div className="dayentries">
                   {availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY") && children.map((child) => {
                     const childStays = dayStays
@@ -2302,18 +2345,7 @@ function CalendarScreen({
                       title={event.event_type === "PRIVATE" ? ((event.visible_to_user_ids?.length || 0) > 1 ? "Privater Termin · für ausgewählte Personen sichtbar" : "Privater Termin · nur für mich sichtbar") : undefined}
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
-                        if (event.source_id) {
-                          const timing = calendarEventTiming(event);
-                          const details = event.description?.trim() ? `\n\n${event.description.trim()}` : "";
-                          setReadOnlyInfo({
-                            title: event.title,
-                            message: `${timing}${details}\n\n${event.event_type === "WASTE"
-                              ? "Dieser Termin wurde aus dem externen Abfallkalender übernommen. Änderungen erfolgen an der Onlinequelle oder über die Einrichtung des Abfallkalenders."
-                              : event.event_type === "SCHOOL"
-                                ? "Dieser Termin wurde aus dem Schulkalender übernommen. Änderungen erfolgen an der Onlinequelle der Schule."
-                                : "Dieser Termin wurde aus einer externen Kalenderquelle übernommen und kann hier nicht bearbeitet werden."}`,
-                          });
-                        } else openCalendarEvent(event);
+                        showCalendarEvent(event);
                       }}
                       onPointerDown={(pointerEvent) =>
                         pointerEvent.stopPropagation()
@@ -2380,6 +2412,22 @@ function CalendarScreen({
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Nächster Monat"><ChevronRight /></button>
           {canWriteCalendar && <button className="calendar-create" onClick={() => { setEditingEvent(null); setStayToConvert(null); setEventType("GENERAL"); setEventRepeatKind("once"); setEventAllDay(true); setSelectedDay(null); setOpen("event"); }}><Plus size={18}/> Termin anlegen</button>}
         </footer>
+      </section>
+      <section className="mobile-day-agenda" aria-live="polite">
+        <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
+        {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
+        {mobileDayEvents.map((event) => <button key={`mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
+          <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
+        </button>)}
+        {mobileDayStays.map((stay) => <button key={`mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
+          <span><strong>{children.find((child) => child.id === stay.child_id)?.display_name || "Betreuung"} bei {stay.responsible_display_name || people.find((person) => person.id === stay.responsible_user_id)?.display_name || "Person"}</strong><small>{calendarEventTiming({starts_at:stay.starts_at,ends_at:stay.ends_at,all_day:false} as CalendarEvent)}</small></span><ChevronRight />
+        </button>)}
+        {mobileDayBirthdays.map((birthday) => <button key={`mobile-birthday-${birthday.name}-${birthday.birthDate}`} onClick={() => setReadOnlyInfo({title:`Geburtstag von ${birthday.name}`,message:"Dieser Geburtstag wird automatisch aus den Personendaten erzeugt."})} style={{"--entry-color":"var(--birthday)"} as React.CSSProperties}>
+          <span><strong>🎂 {birthday.name} wird {birthday.age}</strong><small>Geburtstag</small></span><ChevronRight />
+        </button>)}
+        {mobileDayHolidays.map((holiday) => <button key={`mobile-holiday-${holiday.state}-${holiday.name}`} onClick={() => setReadOnlyInfo({title:holiday.name,message:"Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt."})} style={{"--entry-color":"var(--holiday)"} as React.CSSProperties}>
+          <span><strong>{holiday.name}</strong><small>Ferien</small></span><ChevronRight />
+        </button>)}
       </section>
       </div>
       {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}

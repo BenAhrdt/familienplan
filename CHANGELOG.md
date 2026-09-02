@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.58 – 2. September 2026
+
+### Mobiles Monatsraster mit Tagesdetails
+
+- Auf Mobilgeräten bleibt das vertraute Monatsraster erhalten; Einträge werden darin als kompakte Farbpunkte dargestellt.
+- Ein Tipp auf einen Tag markiert ihn und zeigt Termine, Betreuungen, Geburtstage und Ferien darunter vollständig lesbar an.
+- Erst ein Tipp auf den konkreten Eintrag öffnet dessen Details oder Bearbeitung.
+
 ## 0.1.57 – 2. September 2026
 
 ### Mobile Monatsagenda
