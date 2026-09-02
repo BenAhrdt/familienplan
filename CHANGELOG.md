@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.56 – 2. September 2026
+
+### Verbesserte mobile Kalenderansicht
+
+- Seitenüberschriften beginnen auf Mobilgeräten zuverlässig unterhalb des feststehenden Suchfeldes.
+- Termine im Monatskalender werden auf kleinen Bildschirmen mehrzeilig dargestellt und sind dadurch direkt besser lesbar.
+
 ## 0.1.55 – 1. September 2026
 
 ### Anonymisierte Übergabeanfragen
