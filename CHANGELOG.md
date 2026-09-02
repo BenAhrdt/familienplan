@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.59 – 2. September 2026
+
+### Aussagekräftige Kalendersymbole
+
+- Abfalltermine zeigen eine Mülltonne in der konfigurierten Abfallfarbe – mobil und im Desktopkalender.
+- Geburtstage werden im mobilen Raster mit der Geburtstagstorte gekennzeichnet.
+- Betreuungen zeigen den farbigen Anfangsbuchstaben der betreuenden Person zusammen mit dem Stern des Kindes.
+- Alle übrigen Termine erscheinen mobil als echte runde Farbmarkierung statt als Oval.
+- Seitenüberschriften erhalten auf Mobilgeräten nochmals deutlich mehr Abstand zur feststehenden Suche.
+
 ## 0.1.58 – 2. September 2026
 
 ### Mobiles Monatsraster mit Tagesdetails

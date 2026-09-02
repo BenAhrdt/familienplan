@@ -2334,14 +2334,15 @@ function CalendarScreen({
                   })}
                   {dayEvents.map((event) => (
                     <span
-                      className={`dayevent${event.child_id ? " has-child-marker" : ""}${target?.kind === "event" && target.id === event.id ? " calendar-highlight" : ""}`}
+                      className={`dayevent${event.event_type === "WASTE" ? " waste-marker" : ""}${event.child_id ? " has-child-marker" : ""}${target?.kind === "event" && target.id === event.id ? " calendar-highlight" : ""}`}
                       key={`event-${event.id}`}
                       data-calendar-target={`event-${event.id}`}
                       style={{
+                        "--event-color": eventDisplayColor(event),
                         backgroundColor: `color-mix(in srgb, ${eventDisplayColor(event)} 20%, white)`,
                         color: `color-mix(in srgb, ${eventDisplayColor(event)} 70%, #172d27)`,
                         borderLeft: `3px solid ${eventDisplayColor(event)}`,
-                      }}
+                      } as React.CSSProperties}
                       title={event.event_type === "PRIVATE" ? ((event.visible_to_user_ids?.length || 0) > 1 ? "Privater Termin · für ausgewählte Personen sichtbar" : "Privater Termin · nur für mich sichtbar") : undefined}
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
@@ -2351,6 +2352,7 @@ function CalendarScreen({
                         pointerEvent.stopPropagation()
                       }
                     >
+                      {event.event_type === "WASTE" && <Trash2 className="calendar-waste-icon" aria-hidden="true" />}
                       {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
                       {event.title}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
@@ -2374,7 +2376,7 @@ function CalendarScreen({
                         setReadOnlyInfo({ title: `Geburtstag von ${birthday.name}`, message: "Dieser Geburtstag wird automatisch aus den Personendaten erzeugt und kann deshalb nicht direkt im Kalender bearbeitet werden. Ändere ihn in der jeweiligen Person, beim Kind oder in der Rubrik Geburtstage." });
                       }}
                     >
-                      🎂 {birthday.name} wird {birthday.age}
+                      <Cake className="calendar-birthday-icon" aria-hidden="true" /> {birthday.name} wird {birthday.age}
                     </span>
                   ))}
                   {dayHolidays.map((holiday) => (

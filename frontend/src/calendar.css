@@ -390,6 +390,14 @@
   background: #f0e8ff;
   color: #674b87;
 }
+.calendar-waste-icon,.calendar-birthday-icon {
+  display:inline-block;
+  width:.9rem;
+  height:.9rem;
+  margin-right:.22rem;
+  vertical-align:-.18rem;
+  stroke-width:2.4;
+}
 .dayevent.has-child-marker {
   position: relative;
   padding-right: 1.9rem;
@@ -555,16 +563,24 @@
     margin-top: .25rem;
   }
   .dayentries > span {
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     padding: 0;
     border: 0 !important;
     border-radius: 50%;
     font-size: 0;
     overflow: hidden;
+    background:var(--event-color,currentColor) !important;
   }
   .dayentries > span:nth-child(n + 8) { display:none; }
-  .dayentries span small,.care-markers,.care-child-star { display:none; }
+  .dayentries span small { display:none; }
+  .dayentries > .waste-marker,.dayentries > .daybirthday { display:grid; place-items:center; width:18px; height:18px; background:transparent !important; overflow:visible; }
+  .dayentries > .waste-marker { color:var(--event-color); }
+  .calendar-waste-icon,.calendar-birthday-icon { width:17px; height:17px; margin:0; vertical-align:0; }
+  .dayentries > .daystay { position:relative; display:block; width:34px; height:20px; padding:0 !important; background:transparent !important; overflow:visible; }
+  .dayentries > .daystay .care-markers { position:relative; display:inline-flex; width:34px; height:20px; margin:0; padding:0 !important; overflow:visible !important; }
+  .dayentries > .daystay .care-person-marker { width:20px; height:20px; font-size:.62rem; }
+  .dayentries > .daystay .care-child-star { display:block; top:0; right:0; width:20px; height:20px; }
 }
 .mobile-day-agenda { display:none; }
 @media (max-width:900px) {
