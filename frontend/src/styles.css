@@ -259,6 +259,7 @@ body { min-height:100%; overscroll-behavior-x:none; }
   .mobile-menu header button { width:40px; height:40px; border-radius:50%; background:var(--sage); font-size:1.5rem; }
   .mobile-menu nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; }
   .mobile-menu nav button { min-height:74px; display:flex; align-items:center; gap:.75rem; padding:1rem; border:1px solid var(--line); border-radius:12px; background:#f8faf8; color:var(--ink); text-align:left; }
+  .mobile-menu nav button > span { min-width:0; max-width:100%; line-height:1.25; white-space:normal; overflow-wrap:break-word; hyphens:auto; }
   .mobile-menu nav button.active { border-color:var(--green); background:color-mix(in srgb,var(--green) 10%,white); color:var(--green); font-weight:700; }
   .mobile-menu nav svg { flex:0 0 auto; }
   .notification-panel { top:calc(58px + env(safe-area-inset-top)); right:.5rem; width:calc(100vw - 1rem); max-height:calc(100dvh - 74px - env(safe-area-inset-top)); }

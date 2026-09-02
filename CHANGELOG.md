@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.65 – 2. September 2026
+
+### Lange Namen im mobilen Menü
+
+- Lange Menübezeichnungen wie „Planung zusammenstellen“ brechen innerhalb ihres Buttons sauber auf mehrere Zeilen um.
+- Die Beschriftung kann nicht mehr über den Rand der Menüschaltfläche hinausragen.
+
 ## 0.1.64 – 2. September 2026
 
 ### Sichtbare untere Tagesdetails
