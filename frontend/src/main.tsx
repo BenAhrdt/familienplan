@@ -15,7 +15,6 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
-  ExternalLink,
   Clapperboard,
   Copy,
   Drama,
@@ -1297,6 +1296,11 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
     else setViewerItem(null);
   }
 
+  function viewerUrl(item: CalendarEventAttachment) {
+    const url = `/api/v1/calendar/${event.id}/attachments/${item.id}/file`;
+    return item.content_type === "application/pdf" ? `${url}#page=1&view=Fit&zoom=page-fit` : url;
+  }
+
   async function uploadFiles(files: FileList | File[]) {
     setAttachmentError("");
     setBusy(true);
@@ -1369,10 +1373,9 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
         <nav aria-label="Dokumentaktionen">
           <button type="button" onClick={() => downloadAttachment(viewerItem)} title="Dokument herunterladen"><Download size={20}/><span>Download</span></button>
           <button type="button" onClick={() => shareAttachment(viewerItem)} title="Dokument teilen"><Share2 size={20}/><span>Teilen</span></button>
-          <a href={`/api/v1/calendar/${event.id}/attachments/${viewerItem.id}/file`} target="_blank" rel="noopener noreferrer" title="Separat im Browser öffnen"><ExternalLink size={20}/><span>Separat öffnen</span></a>
         </nav>
       </header>
-      <iframe src={`/api/v1/calendar/${event.id}/attachments/${viewerItem.id}/file`} title={viewerItem.original_name}/>
+      <iframe src={viewerUrl(viewerItem)} title={viewerItem.original_name}/>
       {attachmentError && <p className="attachment-viewer-error">{attachmentError}</p>}
     </div>, document.body)}
   </section>;

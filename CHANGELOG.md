@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.72 – 3. September 2026
+
+### Eingepasste und zoombare Dokumentansicht
+
+- PDFs öffnen standardmäßig mit vollständig eingepasster erster Seite.
+- Die bisherige globale Zoom-Sperre für Mobilgeräte wurde entfernt, sodass Dokumente per Zwei-Finger-Geste vergrößert werden können.
+- Die im Home-Bildschirm-Modus problematische Aktion „Separat öffnen“ wurde entfernt.
+- Zurück, Download und Teilen bleiben direkt oberhalb des Dokuments erreichbar.
+
 ## 0.1.71 – 3. September 2026
 
 ### Mobile Dokumentansicht, Download und Teilen
