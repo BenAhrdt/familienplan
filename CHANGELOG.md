@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.74 – 3. September 2026
+
+### Schwebende Schließen-Schaltfläche
+
+- Dialoge erhalten oben rechts eine gut sichtbare, runde Schließen-Schaltfläche.
+- Das Schließen-X bleibt beim Scrollen langer Formulare an seiner Position.
+- Auf Mobilgeräten wird die Schaltfläche fest innerhalb der Safe Area angezeigt.
+- Kontrast, Schatten und sichtbarer Tastaturfokus verbessern Erkennbarkeit und Bedienbarkeit.
+
 ## 0.1.73 – 3. September 2026
 
 ### Eigener mobiler PDF-Viewer

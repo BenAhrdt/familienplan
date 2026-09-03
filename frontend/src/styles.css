@@ -305,12 +305,40 @@ body { min-height:100%; overscroll-behavior-x:none; }
 .modal .panel::-webkit-scrollbar { width:10px; }
 .modal .panel::-webkit-scrollbar-track { margin-block:18px; background:transparent; }
 .modal .panel::-webkit-scrollbar-thumb { border:3px solid transparent; border-radius:99px; background:#87918d; background-clip:padding-box; }
-.modal .panel > .close { display:none!important; }
+.modal .panel > .close {
+  display:grid!important;
+  position:sticky;
+  z-index:20;
+  top:0;
+  float:right;
+  width:44px;
+  height:44px;
+  margin:-1.35rem -1.35rem .5rem .75rem;
+  padding:0;
+  place-items:center;
+  border:2px solid white;
+  border-radius:50%;
+  background:var(--green);
+  color:white;
+  box-shadow:0 5px 18px #10241d44;
+  font-size:1.65rem;
+  line-height:1;
+}
+.modal .panel > .close:hover { background:color-mix(in srgb,var(--green) 85%,black); }
+.modal .panel > .close:focus-visible { outline:3px solid color-mix(in srgb,var(--green) 35%,white); outline-offset:2px; }
 .modal .modalactions,.modal .personform-actions,.modal .form-actions { position:static; justify-content:flex-end; margin:1.5rem 0 0; padding:1rem 0 0; border-top:1px solid var(--line); background:white; }
 .modal .groupreviewactions { position:static; margin-top:1.5rem; padding:1rem 0 0; }
 .modal .form-actions > button.secondary { margin-top:0; background:var(--sage); color:var(--green); }
 .multi-select-field { min-width:0; }
 @media(max-width:900px){
+  .modal .panel > .close {
+    position:fixed;
+    top:calc(env(safe-area-inset-top) + .35rem);
+    right:.35rem;
+    width:46px;
+    height:46px;
+    margin:0;
+  }
   .modal { align-items:center; padding:calc(env(safe-area-inset-top) + .75rem) .75rem calc(env(safe-area-inset-bottom) + .75rem); }
   .modal .panel { width:min(100%,42rem); max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1.5rem); margin:auto; padding-bottom:2rem; border-radius:18px; }
   .modal .modalactions,.modal .personform-actions,.modal .form-actions { margin:1.5rem 0 0; padding:1rem 0 calc(.25rem + env(safe-area-inset-bottom)); }
