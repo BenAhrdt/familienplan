@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.76 – 3. September 2026
+
+### Aussagekräftige Feriennamen und erneut nutzbare Suche
+
+- Ferien werden im Kalender mit ihrem konkreten Namen wie Sommerferien oder Winterferien angezeigt.
+- Bei einem oder zwei betroffenen Kindern erscheinen deren Namen; bei drei oder mehr Kindern wird die Anzahl und bei allen Schulkindern „Alle Kinder“ angezeigt.
+- Der Detaildialog nennt unabhängig von der kompakten Beschriftung stets alle betroffenen Kinder.
+- Nach dem Öffnen eines Suchtreffers kann die globale Suche durch Klick oder weitere Eingabe sofort erneut verwendet werden, ohne sie zuvor über das X zurücksetzen zu müssen.
+
 ## 0.1.75 – 3. September 2026
 
 ### Dauerhaft sichtbares Schließen-X

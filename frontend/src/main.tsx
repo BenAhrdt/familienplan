@@ -1897,6 +1897,20 @@ function CalendarScreen({
       });
     } else openCalendarEvent(event);
   }
+  function childrenForHoliday(holiday: Holiday & { state: string }) {
+    return children.filter((child) => child.school_state_code === holiday.state);
+  }
+  function holidayAudience(holiday: Holiday & { state: string }) {
+    const affected = childrenForHoliday(holiday);
+    const schoolChildren = children.filter((child) => child.school_state_code);
+    if (affected.length === schoolChildren.length && schoolChildren.length > 1) return "Alle Kinder";
+    if (affected.length <= 2) return affected.map((child) => child.display_name).join(", ");
+    return `${affected.length} Kinder`;
+  }
+  function holidayDetails(holiday: Holiday & { state: string }) {
+    const names = childrenForHoliday(holiday).map((child) => child.display_name).join(", ");
+    return `Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt und kann nicht direkt im Kalender bearbeitet werden.${names ? `\n\nBetroffene Kinder: ${names}` : ""}`;
+  }
   function openDay(day: Date, dayStays: Stay[], selectedStay?: Stay) {
     const source = selectedStay || dayStays[0] || null;
     if (!canWriteCalendar) {
@@ -2148,8 +2162,8 @@ function CalendarScreen({
       {mobileDayBirthdays.map((birthday) => <button key={`${position}-mobile-birthday-${birthday.name}-${birthday.birthDate}`} onClick={() => setReadOnlyInfo({title:`Geburtstag von ${birthday.name}`,message:"Dieser Geburtstag wird automatisch aus den Personendaten erzeugt."})} style={{"--entry-color":"var(--birthday)"} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><Cake /></i><span><strong>{birthday.name} wird {birthday.age}</strong><small>Geburtstag</small></span><ChevronRight />
       </button>)}
-      {mobileDayHolidays.map((holiday) => <button key={`${position}-mobile-holiday-${holiday.state}-${holiday.name}`} onClick={() => setReadOnlyInfo({title:holiday.name,message:"Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt."})} style={{"--entry-color":"var(--holiday)"} as React.CSSProperties}>
-        <i className="agenda-entry-icon" aria-hidden="true"><i className="agenda-color-dot" /></i><span><strong>{holiday.name}</strong><small>Ferien</small></span><ChevronRight />
+      {mobileDayHolidays.map((holiday) => <button key={`${position}-mobile-holiday-${holiday.state}-${holiday.name}`} onClick={() => setReadOnlyInfo({title:holiday.name,message:holidayDetails(holiday)})} style={{"--entry-color":"var(--holiday)"} as React.CSSProperties}>
+        <i className="agenda-entry-icon" aria-hidden="true"><i className="agenda-color-dot" /></i><span><strong>{holiday.name}</strong><small>{holidayAudience(holiday) || "Ferien"}</small></span><ChevronRight />
       </button>)}
     </section>;
   }
@@ -2692,16 +2706,11 @@ function CalendarScreen({
                       title={holiday.name}
                       onClick={(event) => {
                         event.stopPropagation();
-                        setReadOnlyInfo({ title: holiday.name, message: "Dieser Ferienzeitraum wird automatisch anhand des hinterlegten Bundeslandes erzeugt und kann nicht direkt im Kalender bearbeitet werden." });
+                        setReadOnlyInfo({ title: holiday.name, message: holidayDetails(holiday) });
                       }}
                     >
-                      Ferien ·{" "}
-                      {children
-                        .filter(
-                          (child) => child.school_state_code === holiday.state,
-                        )
-                        .map((child) => child.display_name)
-                        .join(", ")}
+                      {holiday.name} ·{" "}
+                      {holidayAudience(holiday)}
                     </span>
                   ))}
                 </div>
@@ -4787,8 +4796,12 @@ function GlobalSearch({
       <Search aria-hidden="true" />
       <input
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setFocused(true);
+        }}
         onFocus={() => setFocused(true)}
+        onClick={() => setFocused(true)}
         onBlur={() => window.setTimeout(() => setFocused(false), 160)}
         placeholder="Kinder, Personen, Termine und Betreuung suchen …"
         aria-label="FamilienPlan durchsuchen"
