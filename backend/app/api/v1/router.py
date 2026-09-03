@@ -11,7 +11,8 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -23,15 +24,40 @@ from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
 from app.integrations import queue_mail, queue_webhooks
 from app.version import VERSION
-from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
 settings = get_settings()
 EVENT_TYPES = {"STAY", "BIRTHDAY", "GENERAL", "SCHOOL", "CLEANING", "WASTE", "PRIVATE", "OTHER"}
 CHILDLESS_EVENT_TYPES = {"BIRTHDAY", "CLEANING", "WASTE"}
+ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
+ATTACHMENT_TYPES = {
+    "application/pdf", "image/jpeg", "image/png", "image/webp",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.oasis.opendocument.text", "text/plain",
+}
 _release_cache: tuple[float, dict] | None = None
+
+
+def require_event_view(db: Session, user: User, event_id: int) -> CalendarEvent:
+    event = db.get(CalendarEvent, event_id)
+    if not event:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+    visible_private = event.created_by_id == user.id or user.id in (event.visible_to_user_ids or [])
+    if (event.event_type == "PRIVATE" or event.is_private) and not visible_private and user.role != Role.ADMIN:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+    if user.role != Role.ADMIN:
+        if event.child_id and not db.scalar(select(ChildUserPermission.id).where(ChildUserPermission.child_id == event.child_id, ChildUserPermission.user_id == user.id)):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+        if event.event_type not in (user.allowed_event_types or []) and event.event_type not in {"PRIVATE", "OTHER"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+        if event.event_type == "OTHER":
+            custom = next((item for item in custom_calendar_types(db) if item["name"] == event.custom_type_label), None)
+            if not custom or user.id not in set(custom.get("visible_to_user_ids", []) + custom.get("editable_by_user_ids", [])):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Termin nicht gefunden")
+    return event
 
 
 def _version_parts(value: str) -> tuple[int, ...]:
@@ -1781,6 +1807,8 @@ def delete_stay(stay_id: int, scope: str, request: Request, db: Session = Depend
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     targets = stay_scope_targets(db, stay, scope)
     for target in targets:
+        for attachment in target.attachments:
+            (settings.upload_dir.resolve() / "calendar-attachments" / attachment.storage_name).unlink(missing_ok=True)
         db.delete(target)
     audit(db, request, "STAY_DELETED", user.id, ("stay", str(stay_id)), {"scope": scope, "affected": len(targets)})
     db.commit()
@@ -2436,6 +2464,74 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
         return (2, -starts_at.timestamp())
 
     return sorted(results, key=search_order)[:40]
+
+
+@router.get("/calendar/{event_id}/attachments", response_model=list[CalendarEventAttachmentOut])
+def list_calendar_event_attachments(event_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    require_event_view(db, user, event_id)
+    return list(db.scalars(select(CalendarEventAttachment).where(CalendarEventAttachment.event_id == event_id).order_by(CalendarEventAttachment.created_at)))
+
+
+@router.post("/calendar/{event_id}/attachments", response_model=CalendarEventAttachmentOut, status_code=201, dependencies=[Depends(require_csrf)])
+async def upload_calendar_event_attachment(event_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(current_user)):
+    event = require_event_view(db, user, event_id)
+    if user.role == Role.VIEWER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst keine Dokumente hinzufügen")
+    content_type = (file.content_type or "application/octet-stream").lower()
+    if content_type not in ATTACHMENT_TYPES:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Erlaubt sind PDF-, Bild-, Text- und gängige Textdokumente")
+    original_name = Path(file.filename or "Dokument").name.replace("\x00", "")[:255] or "Dokument"
+    storage_name = uuid.uuid4().hex
+    directory = settings.upload_dir.resolve() / "calendar-attachments"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / storage_name
+    size = 0
+    try:
+        with target.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > ATTACHMENT_MAX_BYTES:
+                    raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Die Datei darf höchstens 15 MB groß sein")
+                output.write(chunk)
+        if size == 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Datei ist leer")
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    attachment = CalendarEventAttachment(event_id=event.id, uploaded_by_id=user.id, original_name=original_name, storage_name=storage_name, content_type=content_type, size=size)
+    db.add(attachment)
+    audit(db, request, "CALENDAR_EVENT_ATTACHMENT_ADDED", user.id, ("calendar_event", str(event.id)), {"filename": original_name, "size": size})
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@router.get("/calendar/{event_id}/attachments/{attachment_id}/file")
+def download_calendar_event_attachment(event_id: int, attachment_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    require_event_view(db, user, event_id)
+    attachment = db.scalar(select(CalendarEventAttachment).where(CalendarEventAttachment.id == attachment_id, CalendarEventAttachment.event_id == event_id))
+    if not attachment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dokument nicht gefunden")
+    target = settings.upload_dir.resolve() / "calendar-attachments" / attachment.storage_name
+    if not target.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Datei nicht gefunden")
+    return FileResponse(target, media_type=attachment.content_type, filename=attachment.original_name, content_disposition_type="inline")
+
+
+@router.delete("/calendar/{event_id}/attachments/{attachment_id}", status_code=204, dependencies=[Depends(require_csrf)])
+def delete_calendar_event_attachment(event_id: int, attachment_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    require_event_view(db, user, event_id)
+    if user.role == Role.VIEWER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst keine Dokumente löschen")
+    attachment = db.scalar(select(CalendarEventAttachment).where(CalendarEventAttachment.id == attachment_id, CalendarEventAttachment.event_id == event_id))
+    if not attachment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dokument nicht gefunden")
+    storage_name, original_name = attachment.storage_name, attachment.original_name
+    db.delete(attachment)
+    audit(db, request, "CALENDAR_EVENT_ATTACHMENT_DELETED", user.id, ("calendar_event", str(event_id)), {"filename": original_name})
+    db.commit()
+    (settings.upload_dir.resolve() / "calendar-attachments" / storage_name).unlink(missing_ok=True)
+    return Response(status_code=204)
 
 
 @router.post("/calendar", response_model=CalendarEventOut, status_code=201, dependencies=[Depends(require_csrf)])

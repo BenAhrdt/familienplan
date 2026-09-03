@@ -343,6 +343,17 @@ class CalendarEventOut(CalendarEventCreate):
     recurrence_group: str | None = None
     color: str | None = None
     raw_data: dict | None = None
+    attachment_count: int = 0
+
+
+class CalendarEventAttachmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    event_id: int
+    original_name: str
+    content_type: str
+    size: int
+    created_at: datetime
 
 
 class HolidayOut(BaseModel):

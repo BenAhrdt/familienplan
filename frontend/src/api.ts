@@ -64,6 +64,15 @@ export type CalendarEvent = {
   recurrence_frequency: "WEEKLY" | "MONTHLY" | null;
   recurrence_interval: number | null;
   recurrence_until: string | null;
+  attachment_count: number;
+};
+export type CalendarEventAttachment = {
+  id: number;
+  event_id: number;
+  original_name: string;
+  content_type: string;
+  size: number;
+  created_at: string;
 };
 export type Stay = {
   id: number;
@@ -217,7 +226,7 @@ export async function api<T>(
 ): Promise<T> {
   const background = options.background === true;
   const headers = new Headers(options.headers);
-  if (options.body) headers.set("Content-Type", "application/json");
+  if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (options.method && !["GET", "HEAD"].includes(options.method) && csrf)
     headers.set("X-CSRF-Token", csrf);
   if (!background) requestStarted();

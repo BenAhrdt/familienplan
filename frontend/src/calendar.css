@@ -16,6 +16,21 @@
   background: #fbfcfa;
 }
 .readonly-details { white-space: pre-line; line-height: 1.55; }
+.inline-attachment-icon { display:inline-block; vertical-align:-2px; margin-left:.2rem; flex:none; }
+.event-attachments { margin-top:1.2rem; border-top:1px solid var(--line); padding-top:1rem; }
+.event-attachments h3 { display:flex; align-items:center; gap:.45rem; margin:.15rem 0 .75rem; font-size:1rem; }
+.event-attachments h3 span { min-width:1.35rem; padding:.1rem .4rem; border-radius:99px; background:var(--sage); color:var(--green); text-align:center; font-size:.72rem; }
+.event-attachments ul { list-style:none; margin:0 0 .75rem; padding:0; display:grid; gap:.45rem; }
+.event-attachments li { display:flex; align-items:center; border:1px solid var(--line); border-radius:9px; background:#fbfcfa; }
+.attachment-open { flex:1; min-width:0; display:flex; align-items:center; gap:.65rem; padding:.65rem .75rem; background:transparent; color:var(--ink); text-align:left; }
+.attachment-open span { min-width:0; display:grid; }
+.attachment-open strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attachment-open small,.attachment-empty,.attachment-dropzone small { color:var(--muted); font-weight:400; }
+.attachment-delete { align-self:stretch; padding:.65rem .8rem; background:transparent; color:#a94336; border-left:1px solid var(--line); }
+.attachment-dropzone { position:relative; display:grid!important; place-items:center; gap:.25rem!important; margin-top:.75rem!important; padding:1rem; border:2px dashed #b8c8c0; border-radius:10px; background:#f7faf8; color:var(--green)!important; text-align:center; cursor:pointer; }
+.attachment-dropzone.dragging { border-color:var(--green); background:var(--sage); }
+.attachment-dropzone.busy { opacity:.65; cursor:wait; }
+.attachment-dropzone input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
 .calendar-content { display:flex; flex-direction:column; }
 .calendar-content .monthcalendar { order:1; }
 .calendar-content .calendar-type-filters { order:2; }

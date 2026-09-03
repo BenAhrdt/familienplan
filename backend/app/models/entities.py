@@ -159,6 +159,26 @@ class CalendarEvent(Base):
     recurrence_interval: Mapped[int | None] = mapped_column(Integer)
     recurrence_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    attachments: Mapped[list["CalendarEventAttachment"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    @property
+    def attachment_count(self) -> int:
+        return len(self.attachments)
+
+
+class CalendarEventAttachment(Base):
+    __tablename__ = "calendar_event_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("calendar_events.id", ondelete="CASCADE"), index=True)
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    original_name: Mapped[str] = mapped_column(String(255))
+    storage_name: Mapped[str] = mapped_column(String(80), unique=True)
+    content_type: Mapped[str] = mapped_column(String(120))
+    size: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    event: Mapped[CalendarEvent] = relationship(back_populates="attachments")
 
 
 class Stay(Base):

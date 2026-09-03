@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.69 – 3. September 2026
+
+### Dokumente an Kalendereinträgen
+
+- An bestehenden Terminen lassen sich PDF-, Bild-, Text-, Word- und OpenDocument-Dateien per Dateiauswahl oder Drag-and-drop anhängen.
+- Anhänge können geschützt im Browser geöffnet und von berechtigten Personen wieder gelöscht werden; pro Datei gilt eine Größenbegrenzung von 15 MB.
+- Die Funktion steht auch für importierte Termine aus Schul- und anderen externen Kalendern zur Verfügung.
+- Eine Büroklammer kennzeichnet Termine mit Dokumenten in Familienübersicht, Monatskalender, mobiler Tagesansicht und Serienübersicht.
+- Eine neue Datenbankmigration speichert Metadaten und Berechtigungsbezug der Anhänge, während die Dateien im konfigurierten Upload-Verzeichnis abgelegt werden.
+
 ## 0.1.68 – 2. September 2026
 
 ### Automatische Symbole anhand des Termintitels

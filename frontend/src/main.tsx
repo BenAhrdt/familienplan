@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
   Clapperboard,
   Copy,
   Drama,
@@ -31,6 +32,7 @@ import {
   PawPrint,
   Plane,
   Plus,
+  Paperclip,
   Search,
   Scissors,
   ShoppingCart,
@@ -39,6 +41,7 @@ import {
   Ticket,
   Train,
   Trash2,
+  Upload,
   Utensils,
   UserPlus,
   Users,
@@ -49,6 +52,7 @@ import {
   AppNotification,
   Birthday,
   CalendarEvent,
+  CalendarEventAttachment,
   ChangeRequest,
   Child,
   EventType,
@@ -693,7 +697,7 @@ function Dashboard({
         const upcoming: DashboardItem[] = [
           ...events.map((event) => ({
             id: `event-${event.id}`,
-            title: event.title,
+            title: `${event.title}${event.attachment_count > 0 ? " · 📎" : ""}`,
             detail: [
               event.child_id
                 ? childNames.get(event.child_id)
@@ -1267,6 +1271,60 @@ const localDateTime = (date: Date) => {
   return shifted.toISOString().slice(0, 16);
 };
 
+function EventAttachments({ event, editable, onCountChange }: { event: CalendarEvent; editable: boolean; onCountChange?: (count: number) => void }) {
+  const [items, setItems] = useState<CalendarEventAttachment[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
+  const loadAttachments = () => api<CalendarEventAttachment[]>(`/calendar/${event.id}/attachments`).then((result) => {
+    setItems(result);
+    onCountChange?.(result.length);
+  }).catch((failure) => setAttachmentError((failure as Error).message));
+  useEffect(() => { loadAttachments(); }, [event.id]);
+
+  async function uploadFiles(files: FileList | File[]) {
+    setAttachmentError("");
+    setBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const body = new FormData();
+        body.append("file", file);
+        await api(`/calendar/${event.id}/attachments`, { method:"POST", body });
+      }
+      await loadAttachments();
+    } catch (failure) {
+      setAttachmentError((failure as Error).message);
+    } finally { setBusy(false); }
+  }
+
+  async function removeAttachment(item: CalendarEventAttachment) {
+    if (!window.confirm(`„${item.original_name}“ wirklich löschen?`)) return;
+    try {
+      await api(`/calendar/${event.id}/attachments/${item.id}`, { method:"DELETE" });
+      await loadAttachments();
+    } catch (failure) { setAttachmentError((failure as Error).message); }
+  }
+
+  return <section className="event-attachments">
+    <h3><Paperclip size={18}/> Dokumente {items.length > 0 && <span>{items.length}</span>}</h3>
+    {items.length > 0 ? <ul>{items.map((item) => <li key={item.id}>
+      <button type="button" className="attachment-open" onClick={() => window.open(`/api/v1/calendar/${event.id}/attachments/${item.id}/file`, "_blank", "noopener")} title="Dokument öffnen">
+        <Download size={17}/><span><strong>{item.original_name}</strong><small>{(item.size / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits:1 })} MB</small></span>
+      </button>
+      {editable && <button type="button" className="attachment-delete" onClick={() => removeAttachment(item)} aria-label={`${item.original_name} löschen`}><Trash2 size={17}/></button>}
+    </li>)}</ul> : <p className="attachment-empty">Noch keine Dokumente angehängt.</p>}
+    {editable && <label className={`attachment-dropzone${dragging ? " dragging" : ""}${busy ? " busy" : ""}`}
+      onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); }}>
+      <Upload size={20}/><span>{busy ? "Wird hochgeladen …" : "Dateien hier ablegen oder auswählen"}</span>
+      <small>PDF, Bilder und Textdokumente · maximal 15 MB je Datei</small>
+      <input type="file" multiple disabled={busy} accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.odt,.txt" onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ""; }}/>
+    </label>}
+    {attachmentError && <p className="error">{attachmentError}</p>}
+  </section>;
+}
+
 function CalendarScreen({
   children,
   people,
@@ -1344,7 +1402,7 @@ function CalendarScreen({
     [mobileSelectedDay, setMobileSelectedDay] = useState(() =>
       target ? new Date(target.startsAt) : new Date(),
     ),
-    [readOnlyInfo, setReadOnlyInfo] = useState<{ title: string; message: string } | null>(null),
+    [readOnlyInfo, setReadOnlyInfo] = useState<{ title: string; message: string; event?: CalendarEvent } | null>(null),
     [error, setError] = useState(""),
     [hiddenEventTypes, setHiddenEventTypes] = useState<EventType[]>(() => {
       try { return JSON.parse(localStorage.getItem("familienplan-calendar-hidden-types") || "[]"); }
@@ -1682,7 +1740,7 @@ function CalendarScreen({
     const mayEditEvent = getSessionUser()?.role !== "VIEWER" || Boolean(customDefinition?.can_create);
     if (!mayEditEvent || (event.event_type === "PRIVATE" && event.created_by_id !== getSessionUser()?.id)) {
       const start = new Date(event.starts_at), end = new Date(event.ends_at);
-      setReadOnlyInfo({ title:event.title, message:`${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}${event.description ? `\n\n${event.description}` : ""}\n\nDu besitzt Leserechte und kannst diesen Termin deshalb nicht bearbeiten.` });
+      setReadOnlyInfo({ title:event.title, message:`${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}${event.description ? `\n\n${event.description}` : ""}\n\nDu besitzt Leserechte und kannst diesen Termin deshalb nicht bearbeiten.`, event });
       return;
     }
     const interval = event.recurrence_interval || 1;
@@ -1711,6 +1769,7 @@ function CalendarScreen({
       const details = event.description?.trim() ? `\n\n${event.description.trim()}` : "";
       setReadOnlyInfo({
         title: event.title,
+        event,
         message: `${timing}${details}\n\n${event.event_type === "WASTE"
           ? "Dieser Termin wurde aus dem externen Abfallkalender übernommen. Änderungen erfolgen an der Onlinequelle oder über die Einrichtung des Abfallkalenders."
           : event.event_type === "SCHOOL"
@@ -1961,7 +2020,7 @@ function CalendarScreen({
       {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
-        <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
+        <span><strong>{event.title} {event.attachment_count > 0 && <Paperclip className="inline-attachment-icon" size={14}/>}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
       </button>)}
       {mobileDayStays.map((stay) => <button key={`${position}-mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
         <i className="agenda-entry-icon care" aria-hidden="true">{children.find((child) => child.id === stay.child_id) && people.find((person) => person.id === stay.responsible_user_id) && <CareMarkers child={children.find((child) => child.id === stay.child_id)!} responsible={people.find((person) => person.id === stay.responsible_user_id)!} />}</i>
@@ -2163,7 +2222,7 @@ function CalendarScreen({
             <article key={`event-series-${event.recurrence_group}`}>
               <div>
                 <strong>
-                  {event.title}
+                  {event.title} {event.attachment_count > 0 && <Paperclip className="inline-attachment-icon" size={14}/>}
                 </strong>
                 <small>
                   {event.recurrence_frequency === "MONTHLY"
@@ -2480,6 +2539,9 @@ function CalendarScreen({
                       <EventSymbol eventType={event.event_type} title={event.title} className="calendar-event-icon" />
                       {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
                       {event.title}
+                      {event.attachment_count > 0 && (
+                        <Paperclip className="inline-attachment-icon" size={14} aria-label={`${event.attachment_count} Dokumente`}/>
+                      )}
                       {duplicateEventIds.has(event.id) ? " · Mögliche Dublette" : ""}
                       {!event.source_id && event.description?.trim() && <small className="event-note">{event.description.trim()}</small>}
                       {calendarEventTimeOnDay(event, day, dayEnd) && <small>{calendarEventTimeOnDay(event, day, dayEnd)}</small>}
@@ -2542,7 +2604,7 @@ function CalendarScreen({
       </section>
       {mobileDayAgenda("bottom")}
       </div>
-      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p><div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
+      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p>{readOnlyInfo.event && <EventAttachments event={readOnlyInfo.event} editable={getSessionUser()?.role !== "VIEWER"} onCountChange={(count) => setEvents((current) => current.map((item) => item.id === readOnlyInfo.event?.id ? {...item, attachment_count:count} : item))}/>}<div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
       {open && (
         <div className="modal">
           <form
@@ -2678,6 +2740,9 @@ function CalendarScreen({
                   required={false}
                   defaultValue={editingEvent?.description || stayToConvert?.note || ""}
                 />
+                {editingEvent && (
+                  <EventAttachments event={editingEvent} editable onCountChange={(count) => setEvents((current) => current.map((item) => item.id === editingEvent.id ? {...item, attachment_count:count} : item))}/>
+                )}
                 <EventColorPicker
                   key={`event-color-${editingEvent?.id || stayToConvert?.id || "new"}`}
                   initialColor={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
