@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import {
@@ -47,7 +47,11 @@ import {
   UserPlus,
   Users,
   Wrench,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   api,
   AppNotification,
@@ -1272,6 +1276,68 @@ const localDateTime = (date: Date) => {
   return shifted.toISOString().slice(0, 16);
 };
 
+function PdfAttachmentViewer({ url, title }: { url: string; title: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const [viewerSize, setViewerSize] = useState(0);
+  const [pdfError, setPdfError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    let task: PDFDocumentLoadingTask | undefined;
+    import("pdfjs-dist").then(({ getDocument, GlobalWorkerOptions }) => {
+      if (cancelled) return;
+      GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+      task = getDocument({ url, withCredentials:true });
+      task.promise.then((document) => { if (!cancelled) setPdf(document); }).catch(() => { if (!cancelled) setPdfError("Das PDF konnte nicht angezeigt werden."); });
+    });
+    return () => { cancelled = true; task?.destroy(); };
+  }, [url]);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(() => setViewerSize((value) => value + 1));
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!pdf || !canvasRef.current || !containerRef.current) return;
+    let cancelled = false;
+    let renderTask: { cancel: () => void; promise: Promise<void> } | undefined;
+    pdf.getPage(pageNumber).then((page) => {
+      if (cancelled || !canvasRef.current || !containerRef.current) return;
+      const natural = page.getViewport({ scale:1 });
+      const availableWidth = Math.max(100, containerRef.current.clientWidth - 24);
+      const availableHeight = Math.max(100, containerRef.current.clientHeight - 24);
+      const scale = Math.min(availableWidth / natural.width, availableHeight / natural.height) * zoom;
+      const viewport = page.getViewport({ scale });
+      const pixelRatio = window.devicePixelRatio || 1;
+      const canvas = canvasRef.current;
+      canvas.width = Math.floor(viewport.width * pixelRatio);
+      canvas.height = Math.floor(viewport.height * pixelRatio);
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      renderTask = page.render({ canvas, canvasContext:context, viewport, transform:pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0] });
+      renderTask.promise.catch((error: { name?: string }) => { if (error?.name !== "RenderingCancelledException") setPdfError("Die PDF-Seite konnte nicht dargestellt werden."); });
+    });
+    return () => { cancelled = true; renderTask?.cancel(); };
+  }, [pdf, pageNumber, zoom, viewerSize]);
+
+  return <div className="pdf-viewer-body">
+    <div className="pdf-controls" aria-label="PDF-Steuerung">
+      <button type="button" onClick={() => setZoom((value) => Math.max(.5, value - .25))} aria-label="Verkleinern"><ZoomOut size={19}/></button>
+      <button type="button" onClick={() => setZoom(1)}>Einpassen</button>
+      <button type="button" onClick={() => setZoom((value) => Math.min(4, value + .25))} aria-label="Vergrößern"><ZoomIn size={19}/></button>
+      {pdf && pdf.numPages > 1 && <><button type="button" disabled={pageNumber === 1} onClick={() => setPageNumber((value) => value - 1)}><ChevronLeft size={18}/></button><span>Seite {pageNumber} / {pdf.numPages}</span><button type="button" disabled={pageNumber === pdf.numPages} onClick={() => setPageNumber((value) => value + 1)}><ChevronRight size={18}/></button></>}
+    </div>
+    <div className="pdf-canvas-area" ref={containerRef}>{pdfError ? <p className="error">{pdfError}</p> : <canvas ref={canvasRef} aria-label={title}/>}</div>
+  </div>;
+}
+
 function EventAttachments({ event, editable, onCountChange }: { event: CalendarEvent; editable: boolean; onCountChange?: (count: number) => void }) {
   const [items, setItems] = useState<CalendarEventAttachment[]>([]);
   const [viewerItem, setViewerItem] = useState<CalendarEventAttachment | null>(null);
@@ -1294,11 +1360,6 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
   function closeViewer() {
     if (window.history.state?.attachmentViewer) window.history.back();
     else setViewerItem(null);
-  }
-
-  function viewerUrl(item: CalendarEventAttachment) {
-    const url = `/api/v1/calendar/${event.id}/attachments/${item.id}/file`;
-    return item.content_type === "application/pdf" ? `${url}#page=1&view=Fit&zoom=page-fit` : url;
   }
 
   async function uploadFiles(files: FileList | File[]) {
@@ -1375,7 +1436,9 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
           <button type="button" onClick={() => shareAttachment(viewerItem)} title="Dokument teilen"><Share2 size={20}/><span>Teilen</span></button>
         </nav>
       </header>
-      <iframe src={viewerUrl(viewerItem)} title={viewerItem.original_name}/>
+      {viewerItem.content_type === "application/pdf"
+        ? <PdfAttachmentViewer url={`/api/v1/calendar/${event.id}/attachments/${viewerItem.id}/file`} title={viewerItem.original_name}/>
+        : <iframe src={`/api/v1/calendar/${event.id}/attachments/${viewerItem.id}/file`} title={viewerItem.original_name}/>}
       {attachmentError && <p className="attachment-viewer-error">{attachmentError}</p>}
     </div>, document.body)}
   </section>;

@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.73 – 3. September 2026
+
+### Eigener mobiler PDF-Viewer
+
+- PDFs werden unabhängig vom eingebauten Browser-Viewer mit vollständig eingepasster Seite dargestellt.
+- Schaltflächen zum Verkleinern, Vergrößern und erneuten Einpassen ermöglichen eine kontrollierte Ansicht.
+- Mehrseitige PDFs erhalten eine Seitennavigation.
+- Zurück, Download und Teilen bleiben während der Dokumentansicht erreichbar.
+- Der PDF-Renderer wird erst beim Öffnen eines Dokuments geladen und verwendet eine Version ohne bekannte Sicherheitslücken.
+
 ## 0.1.72 – 3. September 2026
 
 ### Eingepasste und zoombare Dokumentansicht
