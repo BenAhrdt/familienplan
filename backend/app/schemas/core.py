@@ -374,6 +374,12 @@ class SectionAccessSetting(BaseModel):
     waste_collection: list[int] = []
 
 
+class WasteTypeSetting(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=300)
+    enabled: bool = True
+
+
 class WasteCalendarSetting(BaseModel):
     id: str | None = None
     name: str = Field(default="Abfallkalender", min_length=1, max_length=160)
@@ -392,6 +398,7 @@ class WasteCalendarSetting(BaseModel):
         "bio": "#795548", "yellow": "#E4B820", "residual": "#4F5963",
         "paper": "#3979B8", "hazardous": "#B33A3A", "other": "#5C8B58",
     }
+    waste_types: list[WasteTypeSetting] = []
     visible_to_user_ids: list[int] = []
     last_sync_at: str | None = None
     last_result: dict | None = None

@@ -30,6 +30,7 @@ def _default_config() -> dict:
         "city": "Hohenahr", "street": "Ahrdt", "calendar_url": "",
         "color": "#5C8B58",
         "type_colors": DEFAULT_TYPE_COLORS,
+        "waste_types": [],
         "visible_to_user_ids": [], "last_sync_at": None, "last_result": None,
         "last_error": None,
     }
@@ -144,6 +145,25 @@ def _waste_type(title: str) -> str:
     return "other"
 
 
+def _waste_type_key(title: str) -> str:
+    normalized = re.sub(r"\s+", " ", title.strip()).casefold()
+    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+
+def _merge_waste_types(configured: list[dict], titles: list[str]) -> list[dict]:
+    existing = {str(item.get("id")): item for item in configured if item.get("id")}
+    result = []
+    for title in sorted(set(titles), key=str.casefold):
+        type_id = _waste_type_key(title)
+        previous = existing.get(type_id)
+        result.append({
+            "id": type_id,
+            "label": title,
+            "enabled": bool(previous.get("enabled")) if previous else not bool(re.search(r"\b1[.,]100\b", title)),
+        })
+    return result
+
+
 async def sync_waste_calendar(db: Session, calendar_id: str | None = None) -> dict:
     # Uvicorn uses multiple workers. Serialize creation and reconciliation so
     # two startup workers cannot create the same CalendarSource concurrently.
@@ -189,11 +209,17 @@ async def sync_waste_calendar(db: Session, calendar_id: str | None = None) -> di
         source.name = config.get("name") or "Abfallkalender"
         audience = [int(item) for item in config.get("visible_to_user_ids", [])]
         type_colors = {**DEFAULT_TYPE_COLORS, **config.get("type_colors", {})}
+        parsed_events = [item for text in texts for item in _ics_events(text)]
+        waste_types = _merge_waste_types(config.get("waste_types", []), [item["SUMMARY"].strip() for item in parsed_events])
+        config["waste_types"] = waste_types
+        enabled_type_ids = {item["id"] for item in waste_types if item["enabled"]}
         imported = 0
         seen_external_ids: set[str] = set()
-        for fields in [item for text in texts for item in _ics_events(text)]:
+        for fields in parsed_events:
             starts_at = _date(fields["DTSTART"])
             title = fields["SUMMARY"].strip()
+            if _waste_type_key(title) not in enabled_type_ids:
+                continue
             external_id = fields.get("UID") or hashlib.sha256(f"{title}|{starts_at.date()}".encode()).hexdigest()
             # Some providers reuse a UID across years; date keeps the imported occurrence unique.
             external_id = f"{external_id}:{starts_at.date().isoformat()}"
@@ -224,7 +250,7 @@ async def sync_waste_calendar(db: Session, calendar_id: str | None = None) -> di
             CalendarEvent.external_id.not_in(seen_external_ids),
         )).rowcount
         now = utcnow()
-        result = {"events": imported, "removed": removed, "years": [datetime.now().year, datetime.now().year + 1]}
+        result = {"events": imported, "removed": removed, "years": [datetime.now().year, datetime.now().year + 1], "detected_types": len(waste_types)}
         source.last_sync_at, source.last_result, source.last_error = now, result, None
         config.update({"last_sync_at": now.isoformat(), "last_result": result, "last_error": None})
         save_waste_config(db, config)

@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.81 – 3. September 2026
+
+### Auswählbare Abfallarten
+
+- Jeder Abfallkalender erkennt die vom Anbieter gelieferten Abfallarten und zeigt sie einzeln in seiner Konfiguration an.
+- Erkannte Abfallarten können unabhängig voneinander für den Import aktiviert oder deaktiviert werden.
+- Große 1.100-Liter-Behälter sind bei der ersten Erkennung standardmäßig deaktiviert; normale Abfallarten bleiben aktiv.
+- Bei der nächsten Synchronisierung werden Termine deaktivierter Abfallarten automatisch aus dem Kalender entfernt.
+
 ## 0.1.80 – 3. September 2026
 
 ### Zuverlässige API-Schlüsselprüfung
