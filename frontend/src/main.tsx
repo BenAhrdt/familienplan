@@ -1308,9 +1308,9 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
   return <section className="event-attachments">
     <h3><Paperclip size={18}/> Dokumente {items.length > 0 && <span>{items.length}</span>}</h3>
     {items.length > 0 ? <ul>{items.map((item) => <li key={item.id}>
-      <button type="button" className="attachment-open" onClick={() => window.open(`/api/v1/calendar/${event.id}/attachments/${item.id}/file`, "_blank", "noopener")} title="Dokument öffnen">
+      <a className="attachment-open" href={`/api/v1/calendar/${event.id}/attachments/${item.id}/file`} title="Dokument öffnen">
         <Download size={17}/><span><strong>{item.original_name}</strong><small>{(item.size / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits:1 })} MB</small></span>
-      </button>
+      </a>
       {editable && <button type="button" className="attachment-delete" onClick={() => removeAttachment(item)} aria-label={`${item.original_name} löschen`}><Trash2 size={17}/></button>}
     </li>)}</ul> : <p className="attachment-empty">Noch keine Dokumente angehängt.</p>}
     {editable && <label className={`attachment-dropzone${dragging ? " dragging" : ""}${busy ? " busy" : ""}`}

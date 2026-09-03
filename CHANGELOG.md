@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.70 – 3. September 2026
+
+### Zurück-Navigation nach dem Öffnen von Anhängen
+
+- Dokumente öffnen auf mobilen Geräten nicht mehr in einer separaten App-/PWA-Browseransicht.
+- Die normale Zurück-Funktion führt nach der Dokumentansicht wieder zuverlässig zu FamilienPlan.
+
 ## 0.1.69 – 3. September 2026
 
 ### Dokumente an Kalendereinträgen

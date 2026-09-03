@@ -22,7 +22,7 @@
 .event-attachments h3 span { min-width:1.35rem; padding:.1rem .4rem; border-radius:99px; background:var(--sage); color:var(--green); text-align:center; font-size:.72rem; }
 .event-attachments ul { list-style:none; margin:0 0 .75rem; padding:0; display:grid; gap:.45rem; }
 .event-attachments li { display:flex; align-items:center; border:1px solid var(--line); border-radius:9px; background:#fbfcfa; }
-.attachment-open { flex:1; min-width:0; display:flex; align-items:center; gap:.65rem; padding:.65rem .75rem; background:transparent; color:var(--ink); text-align:left; }
+.attachment-open { flex:1; min-width:0; display:flex; align-items:center; gap:.65rem; padding:.65rem .75rem; background:transparent; color:var(--ink); text-align:left; text-decoration:none; }
 .attachment-open span { min-width:0; display:grid; }
 .attachment-open strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .attachment-open small,.attachment-empty,.attachment-dropzone small { color:var(--muted); font-weight:400; }
