@@ -4851,6 +4851,32 @@ function GlobalSearch({
 }
 
 function App() {
+  useEffect(() => {
+    const observed = new Map<Element, ResizeObserver>();
+    const positionButtons = () => {
+      document.querySelectorAll<HTMLElement>(".modal .panel > .close").forEach((button) => {
+        const panel = button.parentElement;
+        if (!panel) return;
+        const rect = panel.getBoundingClientRect();
+        button.style.setProperty("--modal-close-top", `${Math.max(8, rect.top - 18)}px`);
+        button.style.setProperty("--modal-close-left", `${Math.min(window.innerWidth - 52, rect.right - 22)}px`);
+        if (!observed.has(panel)) {
+          const resizeObserver = new ResizeObserver(positionButtons);
+          resizeObserver.observe(panel);
+          observed.set(panel, resizeObserver);
+        }
+      });
+    };
+    const mutationObserver = new MutationObserver(positionButtons);
+    mutationObserver.observe(document.body, { childList:true, subtree:true });
+    window.addEventListener("resize", positionButtons);
+    positionButtons();
+    return () => {
+      mutationObserver.disconnect();
+      observed.forEach((observer) => observer.disconnect());
+      window.removeEventListener("resize", positionButtons);
+    };
+  }, []);
   const [loading, setLoading] = useState(true),
     [setup, setSetup] = useState(false),
     [user, setUser] = useState<User | null>(null),

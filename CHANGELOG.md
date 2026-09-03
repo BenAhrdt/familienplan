@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.75 – 3. September 2026
+
+### Dauerhaft sichtbares Schließen-X
+
+- Auf dem Desktop schwebt das Schließen-X über der äußeren oberen rechten Dialogecke.
+- Die Position berücksichtigt automatisch unterschiedlich breite und hohe Dialoge.
+- Auf Mobilgeräten bleibt die Schaltfläche beim Scrollen fest im sichtbaren Bereich und innerhalb der Safe Area.
+- Größenänderungen und ein Wechsel der Geräteausrichtung positionieren die Schaltfläche automatisch neu.
+
 ## 0.1.74 – 3. September 2026
 
 ### Schwebende Schließen-Schaltfläche
