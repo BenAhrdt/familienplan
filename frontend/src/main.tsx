@@ -3608,6 +3608,8 @@ function PeopleScreen({
     [deleteChoice, setDeleteChoice] = useState<User | null>(null),
     [deletingPerson, setDeletingPerson] = useState(false),
     [draftRole, setDraftRole] = useState<User["role"]>("EDITOR"),
+    [personApi, setPersonApi] = useState<{active:boolean;last_used_at:string|null}>({active:false,last_used_at:null}),
+    [newPersonApiToken, setNewPersonApiToken] = useState(""),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
     [customTypes, setCustomTypes] = useState<CustomCalendarType[]>([]),
@@ -3692,6 +3694,9 @@ function PeopleScreen({
     setInvite("");
     setInviteEmail(null);
     setCopied(false);
+    setPersonApi({active:false,last_used_at:null});
+    setNewPersonApiToken("");
+    api<{active:boolean;last_used_at:string|null}>(`/people/${p.id}/api-token`, {cache:"no-store"}).then(setPersonApi).catch(() => {});
     if (p.is_pending) {
       api<{ invite_url: string; email: string | null }>(`/people/${p.id}/invitation`).then((result) => { setInvite(result.invite_url); setInviteEmail(result.email); }).catch(() => {});
     }
@@ -3897,6 +3902,22 @@ function PeopleScreen({
                   <MultiSelectPicker key={`custom-visible-${selected?.user.id}-${draftRole}`} title="Eigene Terminarten sichtbar" name="visible_custom_event_type_ids" items={customTypes.map((type)=>({id:type.id,label:type.name,color:type.color}))} values={customTypes.filter((type)=>draftRole === "ADMIN" || type.visible_to_user_ids.includes(selected!.user.id) || type.editable_by_user_ids.includes(selected!.user.id)).map((type)=>type.id)} hint="Bearbeitbare Terminarten sind automatisch ebenfalls sichtbar."/>
                   <MultiSelectPicker key={`custom-editable-${selected?.user.id}-${draftRole}`} title="Eigene Terminarten anlegen und bearbeiten" name="editable_custom_event_type_ids" items={customTypes.map((type)=>({id:type.id,label:type.name,color:type.color}))} values={customTypes.filter((type)=>draftRole === "ADMIN" || type.editable_by_user_ids.includes(selected!.user.id)).map((type)=>type.id)} hint="Löschen dürfen weiterhin nur Ersteller und Administratoren."/>
                 </>}
+                {open === "edit" && selected && !selected.user.is_pending && <fieldset className="person-api-access">
+                  <legend>API-Zugriff</legend>
+                  <p className="hint">Der Schlüssel übernimmt immer die aktuellen Rechte dieser Person. Ohne aktiven Schlüssel ist kein API-Zugriff für sie möglich.</p>
+                  {newPersonApiToken && <div className="secret-once"><code>{newPersonApiToken}</code><button type="button" onClick={() => navigator.clipboard.writeText(newPersonApiToken)}>Kopieren</button></div>}
+                  <div className="buttonrow">
+                    <button type="button" onClick={async () => {
+                      const result = await api<{token:string;active:boolean;last_used_at:null}>(`/people/${selected.user.id}/api-token`, {method:"POST"});
+                      setNewPersonApiToken(result.token); setPersonApi(result);
+                    }}>{personApi.active ? "Neuen Schlüssel erzeugen" : "API-Schlüssel erzeugen"}</button>
+                    {personApi.active && <button type="button" className="danger" onClick={async () => {
+                      await api(`/people/${selected.user.id}/api-token`, {method:"DELETE"});
+                      setPersonApi({active:false,last_used_at:null}); setNewPersonApiToken("");
+                    }}>API-Zugriff deaktivieren</button>}
+                  </div>
+                  <p className="hint">{personApi.active ? personApi.last_used_at ? `Zuletzt verwendet: ${new Date(personApi.last_used_at).toLocaleString("de-DE")}` : "Aktiv · noch nicht verwendet" : "Kein aktiver API-Schlüssel"}</p>
+                </fieldset>}
                 <div className="personform-actions">
                   <button>
                     {open === "edit"
@@ -5815,21 +5836,17 @@ function ChangelogModal({ meta, onClose }: { meta: ApplicationMeta; onClose: () 
   );
 }
 
-type IntegrationToken = { id: number; name: string; scopes: string[]; last_used_at: string | null; revoked_at: string | null };
-type Webhook = { id: number; name: string; url: string; events: string[]; is_active: boolean };
-type OutboxEntry = { id:number; channel:"email"|"webhook"; recipient:string; event_type:string; attempts:number; last_error:string|null; delivered_at:string|null; created_at:string };
+type IntegrationToken = { id: number; name: string; scopes: string[]; last_used_at: string | null; revoked_at: string | null; user_id:number; user_name:string };
+type OutboxEntry = { id:number; channel:"email"; recipient:string; event_type:string; attempts:number; last_error:string|null; delivered_at:string|null; created_at:string };
 
 function IntegrationSettings() {
   const [mail, setMail] = useState({ enabled: false, host: "", port: 587, username: "", password: "", from_address: "FamilienPlan <familienplan@example.de>", app_url: location.origin, security: "starttls", password_configured: false });
-  const [tokens, setTokens] = useState<IntegrationToken[]>([]), [tokenName, setTokenName] = useState("Home Assistant"), [newToken, setNewToken] = useState(""), [apiChildren, setApiChildren] = useState<Child[]>([]), [selectedChildren, setSelectedChildren] = useState<number[]>([]), [privateAccess, setPrivateAccess] = useState(false);
-  const [hooks, setHooks] = useState<Webhook[]>([]), [hookName, setHookName] = useState("Home Assistant"), [hookUrl, setHookUrl] = useState(""), [newSecret, setNewSecret] = useState("");
+  const [tokens, setTokens] = useState<IntegrationToken[]>([]);
   const [outbox, setOutbox] = useState<OutboxEntry[]>([]), [showOutbox, setShowOutbox] = useState(false);
   const [message, setMessage] = useState(""), [error, setError] = useState("");
   const reload = () => Promise.all([
     api<any>("/settings/mail").then((x) => setMail((old) => ({ ...old, ...x, app_url: !x.app_url || x.app_url.includes("localhost") ? location.origin : x.app_url, password: "" }))),
     api<IntegrationToken[]>("/integration-tokens").then(setTokens),
-    api<Webhook[]>("/webhooks").then(setHooks),
-    api<Child[]>("/children").then((items) => { setApiChildren(items); setSelectedChildren((old) => old.length ? old : items.map((x)=>x.id)); }),
     api<OutboxEntry[]>("/outbox").then(setOutbox),
   ]).catch((x) => setError((x as Error).message));
   useEffect(() => { void reload(); }, []);
@@ -5838,19 +5855,9 @@ function IntegrationSettings() {
     try { await api("/settings/mail", { method: "PUT", body: JSON.stringify(mail) }); setMail({ ...mail, password: "", password_configured: mail.password_configured || !!mail.password }); setMessage("Mailserver gespeichert."); }
     catch (x) { setError((x as Error).message); }
   }
-  async function createToken() {
-    setError("");
-    try { const x = await api<{token:string}>("/integration-tokens", { method:"POST", body:JSON.stringify({ name:tokenName, scopes:["read:children","read:stays","read:appointments","read:birthdays","read:holidays",...(privateAccess?["read:private"]:[])], child_ids:selectedChildren }) }); setNewToken(x.token); await reload(); }
-    catch (x) { setError((x as Error).message); }
-  }
-  async function createWebhook() {
-    setError("");
-    try { const x = await api<{secret:string}>("/webhooks", { method:"POST", body:JSON.stringify({name:hookName,url:hookUrl,events:["*"]}) }); setNewSecret(x.secret); setHookUrl(""); await reload(); }
-    catch (x) { setError((x as Error).message); }
-  }
   return <section id="settings-integrations" className="themebox integration-settings settings-card settings-wide">
     <h2>Integrationen</h2>
-    <p className="muted">REST-API, signierte Webhooks und E-Mail-Benachrichtigungen zentral verwalten. MQTT ist bewusst noch nicht enthalten.</p>
+    <p className="muted">REST-API und E-Mail-Benachrichtigungen zentral verwalten. Die Automatisierungslogik übernimmt der angebundene Adapter.</p>
     {error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}
     <div className="integration-card">
     <div className="integration-card-head"><div><h3>E-Mail-Benachrichtigungen</h3><p className="muted">Informiert eingeladene Personen und Beteiligte automatisch über neue Anfragen und Entscheidungen.</p></div><label className="switch"><input type="checkbox" checked={mail.enabled} onChange={(e)=>setMail({...mail,enabled:e.target.checked})}/><span aria-hidden="true"/><b>{mail.enabled ? "Aktiv" : "Inaktiv"}</b></label></div>
@@ -5864,23 +5871,12 @@ function IntegrationSettings() {
       <label>Verbindungssicherheit<select value={mail.security} onChange={(e)=>setMail({...mail,security:e.target.value})}><option value="ssl">SSL/TLS (meist Port 465)</option><option value="starttls">STARTTLS (meist Port 587)</option><option value="none">Unverschlüsselt</option></select></label>
     </div>
     <div className="buttonrow"><button onClick={saveMail}>Mailserver speichern</button><button className="secondary" onClick={async()=>{try{const result=await api<{recipient:string}>("/settings/mail/test",{method:"POST"});setMessage(`Testmail an ${result.recipient} wurde in die Versandwarteschlange gelegt.`);window.setTimeout(()=>void reload(),1200)}catch(x){setError((x as Error).message)}}}>Testmail an {getSessionUser()?.email || "mich"}</button><button className="quiet" onClick={()=>{setShowOutbox(!showOutbox);void reload()}}>{showOutbox?"Warteschlange ausblenden":"Versandstatus anzeigen"}</button></div>
-    {showOutbox && <div className="outbox"><header><strong>Letzte Zustellungen</strong><button className="quiet" onClick={()=>void reload()}>Aktualisieren</button></header>{outbox.length===0?<p className="muted">Noch keine Nachrichten vorhanden.</p>:outbox.map((item)=><article key={item.id}><span className={`delivery-state ${item.delivered_at?"sent":item.last_error?"failed":"waiting"}`}>{item.delivered_at?"Versendet":item.last_error?"Fehlgeschlagen":"Wartet"}</span><div><strong>{item.channel==="email"?"E-Mail":"Webhook"} · {item.event_type}</strong><small>An: {item.recipient} · {new Date(item.created_at).toLocaleString("de-DE")}{item.attempts?` · ${item.attempts} Versuche`:""}</small>{item.last_error&&<p className="delivery-error">{item.last_error}</p>}</div></article>)}</div>}
+    {showOutbox && <div className="outbox"><header><strong>Letzte Zustellungen</strong><button className="quiet" onClick={()=>void reload()}>Aktualisieren</button></header>{outbox.length===0?<p className="muted">Noch keine Nachrichten vorhanden.</p>:outbox.map((item)=><article key={item.id}><span className={`delivery-state ${item.delivered_at?"sent":item.last_error?"failed":"waiting"}`}>{item.delivered_at?"Versendet":item.last_error?"Fehlgeschlagen":"Wartet"}</span><div><strong>E-Mail · {item.event_type}</strong><small>An: {item.recipient} · {new Date(item.created_at).toLocaleString("de-DE")}{item.attempts?` · ${item.attempts} Versuche`:""}</small>{item.last_error&&<p className="delivery-error">{item.last_error}</p>}</div></article>)}</div>}
     </div>
     <div className="integration-card">
     <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen. Kalenderdaten einschließlich Betreuungszeiten: <code>/api/v1/integrations/v1/calendar</code></p></div><span className="integration-badge">Nur Lesen</span></div>
-    <p className="muted">Der Schlüssel wird nur einmal vollständig angezeigt. Basis: <code>/api/v1/integrations/v1</code></p>
-    <MultiSelectPicker title="Freigegebene Kinder" items={apiChildren.map((child)=>({id:child.id,label:child.display_name,color:child.color}))} values={selectedChildren} onChange={(values)=>setSelectedChildren(values.map(Number))}/><label className="checkline"><input type="checkbox" checked={privateAccess} onChange={(e)=>setPrivateAccess(e.target.checked)}/>Auch private Termine und Geburtstage freigeben</label>
-    <div className="buttonrow"><input value={tokenName} onChange={(e)=>setTokenName(e.target.value)} aria-label="Name des API-Schlüssels"/><button onClick={createToken}>API-Schlüssel erstellen</button></div>
-    {newToken && <div className="secret-once"><code>{newToken}</code><button onClick={()=>navigator.clipboard.writeText(newToken)}>Kopieren</button></div>}
-    {tokens.map((x)=><div className="integration-row" key={x.id}><span><strong>{x.name}</strong><small>{x.revoked_at ? "Widerrufen" : x.last_used_at ? `Zuletzt genutzt: ${new Date(x.last_used_at).toLocaleString("de-DE")}` : "Noch nicht genutzt"}</small></span>{!x.revoked_at&&<button className="danger" onClick={async()=>{await api(`/integration-tokens/${x.id}`,{method:"DELETE"});await reload()}}>Widerrufen</button>}</div>)}
-    </div>
-    <div className="integration-card">
-    <div className="integration-card-head"><div><h3>Webhooks</h3><p className="muted">Ereignisse in Echtzeit an externe Systeme senden.</p></div><span className="integration-badge">Signiert</span></div>
-    <p className="muted">POST-Nachrichten sind mit <code>X-FamilienPlan-Signature</code> (HMAC-SHA256) signiert und werden bei Fehlern erneut versucht.</p>
-    <div className="integration-grid"><label>Name<input value={hookName} onChange={(e)=>setHookName(e.target.value)}/></label><label>Empfänger-URL<input type="url" placeholder="http://homeassistant:8123/api/webhook/…" value={hookUrl} onChange={(e)=>setHookUrl(e.target.value)}/></label></div>
-    <button onClick={createWebhook}>Webhook hinzufügen</button>
-    {newSecret && <div className="secret-once"><span>Signatur-Schlüssel: </span><code>{newSecret}</code><button onClick={()=>navigator.clipboard.writeText(newSecret)}>Kopieren</button></div>}
-    {hooks.map((x)=><div className="integration-row" key={x.id}><span><strong>{x.name}</strong><small>{x.url}</small></span><div className="buttonrow"><button className="secondary" onClick={()=>api(`/webhooks/${x.id}/test`,{method:"POST"}).then(()=>setMessage("Test-Webhook eingeplant."))}>Test</button><button className="danger" onClick={async()=>{await api(`/webhooks/${x.id}`,{method:"DELETE"});await reload()}}>Löschen</button></div></div>)}
+    <p className="muted">API-Schlüssel werden direkt bei der jeweiligen Person angelegt und übernehmen jederzeit deren aktuelle Rechte. Basis: <code>/api/v1/integrations/v1</code></p>
+    {tokens.filter((x)=>!x.revoked_at).map((x)=><div className="integration-row" key={x.id}><span><strong>{x.user_name}</strong><small>{x.last_used_at ? `Zuletzt genutzt: ${new Date(x.last_used_at).toLocaleString("de-DE")}` : "Noch nicht genutzt"}</small></span><button className="danger" onClick={async()=>{await api(`/integration-tokens/${x.id}`,{method:"DELETE"});await reload()}}>Widerrufen</button></div>)}
     </div>
   </section>;
 }

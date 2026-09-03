@@ -62,7 +62,7 @@ Die Prüfung erfolgt höchstens einmal pro Stunde gegen das neueste veröffentli
 - Audit-Log ohne Secrets; PostgreSQL-Constraints und serverseitige Konfliktprüfung
 - keine Tracker, externen Fonts oder Cloud-Pflicht
 
-Das relationale Modell umfasst Benutzer, Sessions, Einladungen, Kinder und deren Berechtigungen, Kalenderquellen/-termine, Aufenthalte und Serien, Ferienperioden/-pläne/-segmente, Änderungsanfragen und Zustimmungen, Benachrichtigungen, API-Tokens, Audit-Logs sowie Systemeinstellungen. Kalenderquellen werden passend zu den tatsächlich gewählten Einrichtungen angelegt; produktive Abrufadapter und die vollständigen Planungsworkflows sind noch auszubauen.
+Das relationale Modell umfasst Benutzer, Sessions, Einladungen, Kinder und deren Berechtigungen, Kalenderquellen/-termine, Aufenthalte und Serien, Ferienperioden/-pläne/-segmente, Änderungsanfragen und Zustimmungen, Benachrichtigungen, API-Tokens, Audit-Logs sowie Systemeinstellungen. Kalenderquellen werden passend zu den tatsächlich gewählten Einrichtungen angelegt.
 
 ## PostgreSQL manuell einrichten
 
@@ -176,7 +176,7 @@ Das Skript erzeugt einen Custom-Format-Dump, eine geschützte Konfigurationskopi
 
 ## REST-API
 
-Die Weboberfläche verwendet dieselbe API unter `/api/v1/`. Vorhanden sind Health, Setup, Login/Logout/Session, Admin-Benutzerliste, Einladungen, Kinder, Kindberechtigungen, Aufenthalte und `GET /children/{id}/location/today`. Externe Clients erhalten später widerrufbare, gehashte API-Tokens mit Scopes; das Schema ist bereits vorhanden.
+Die Weboberfläche verwendet dieselbe API unter `/api/v1/`. Externe Clients verwenden widerrufbare, gehashte und benutzergebundene API-Schlüssel; ihre Zugriffe bleiben auf die aktuellen Rechte der zugeordneten Person begrenzt.
 
 ## Bekannte Einschränkungen
 

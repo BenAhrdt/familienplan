@@ -1,17 +1,16 @@
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import cast, or_, select
+from sqlalchemy import and_, cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import admin, current_user, require_csrf
 from app.core.database import get_db
 from app.core.security import new_token, token_hash, utcnow
-from app.integrations import mail_config, queue_mail, queue_webhooks
-from app.models.entities import ApiToken, ApplicationSetting, Birthday, CalendarEvent, Child, ChildUserPermission, OutboxMessage, PlanStatus, Role, Stay, User, WebhookEndpoint
+from app.integrations import mail_config, queue_mail
+from app.models.entities import ApiToken, ApplicationSetting, Birthday, CalendarEvent, Child, ChildUserPermission, OutboxMessage, PlanStatus, Role, Stay, User
 
 router = APIRouter()
 ALL_SCOPES = ["read:children", "read:stays", "read:appointments", "read:birthdays", "read:holidays", "read:private"]
@@ -21,14 +20,7 @@ class TokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     scopes: list[str] = ALL_SCOPES[:-1]
     child_ids: list[int] = []
-
-
-class HookCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=160)
-    url: str
-    events: list[str] = ["*"]
-    is_active: bool = True
-    secret: str | None = None
+    user_id: int
 
 
 class MailConfig(BaseModel):
@@ -58,11 +50,16 @@ def api_context(request: Request, db: Session = Depends(get_db)):
 
 def allowed_children(token, user, db):
     explicit = {int(scope.split(":", 1)[1]) for scope in token.scopes if scope.startswith("child:")}
-    if explicit:
-        return explicit
+    permitted = (set(db.scalars(select(Child.id).where(Child.is_active.is_(True)))) if user.role == Role.ADMIN
+                 else set(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id))))
+    return permitted & explicit if explicit else permitted
+
+
+def visible_custom_labels(db: Session, user: User) -> set[str]:
+    row = db.get(ApplicationSetting, "custom_calendar_types")
     if user.role == Role.ADMIN:
-        return set(db.scalars(select(Child.id).where(Child.is_active.is_(True))))
-    return set(db.scalars(select(ChildUserPermission.child_id).where(ChildUserPermission.user_id == user.id)))
+        return {item["name"] for item in (row.value or [])} if row else set()
+    return {item["name"] for item in (row.value or []) if user.id in item.get("visible_to_user_ids", []) or user.id in item.get("editable_by_user_ids", [])} if row else set()
 
 
 def need(token, scope):
@@ -72,18 +69,48 @@ def need(token, scope):
 
 @router.get("/integration-tokens")
 def tokens(db: Session = Depends(get_db), _: User = Depends(admin)):
-    return [{"id": x.id, "name": x.name, "scopes": x.scopes, "last_used_at": x.last_used_at, "revoked_at": x.revoked_at}
-            for x in db.scalars(select(ApiToken).order_by(ApiToken.id.desc()))]
+    rows = list(db.scalars(select(ApiToken).order_by(ApiToken.id.desc())))
+    users = {item.id:item for item in db.scalars(select(User).where(User.id.in_({row.user_id for row in rows})))}
+    return [{"id": x.id, "name": x.name, "scopes": x.scopes, "last_used_at": x.last_used_at, "revoked_at": x.revoked_at,
+             "user_id":x.user_id,"user_name":users[x.user_id].display_name if x.user_id in users else "Unbekannt"} for x in rows]
 
 
 @router.post("/integration-tokens", status_code=201, dependencies=[Depends(require_csrf)])
 def create_token(data: TokenCreate, db: Session = Depends(get_db), user: User = Depends(admin)):
     invalid = set(data.scopes) - set(ALL_SCOPES)
     if invalid: raise HTTPException(422, f"Unbekannte Rechte: {', '.join(sorted(invalid))}")
+    owner = db.get(User, data.user_id)
+    if not owner or not owner.is_active or owner.is_pending: raise HTTPException(422, "Aktive Person auswählen")
     raw = new_token()
-    row = ApiToken(user_id=user.id, name=data.name, token_hash=token_hash(raw), scopes=data.scopes + [f"child:{x}" for x in data.child_ids])
+    row = ApiToken(user_id=owner.id, name=data.name, token_hash=token_hash(raw), scopes=data.scopes + [f"child:{x}" for x in data.child_ids])
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id, "name": row.name, "token": raw, "scopes": row.scopes}
+
+
+@router.get("/people/{user_id}/api-token")
+def person_api_token(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+    person = db.get(User, user_id)
+    if not person or not person.is_active: raise HTTPException(404, "Person nicht gefunden")
+    row = db.scalar(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None)).order_by(ApiToken.id.desc()))
+    return {"active": bool(row), "id": row.id if row else None, "last_used_at": row.last_used_at if row else None}
+
+
+@router.post("/people/{user_id}/api-token", status_code=201, dependencies=[Depends(require_csrf)])
+def create_person_api_token(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+    person = db.get(User, user_id)
+    if not person or not person.is_active or person.is_pending: raise HTTPException(404, "Aktive Person nicht gefunden")
+    now = utcnow()
+    for old in db.scalars(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None))): old.revoked_at = now
+    raw = new_token()
+    row = ApiToken(user_id=user_id, name=f"API · {person.display_name}", token_hash=token_hash(raw), scopes=ALL_SCOPES)
+    db.add(row); db.commit(); db.refresh(row)
+    return {"active": True, "id": row.id, "token": raw, "last_used_at": None}
+
+
+@router.delete("/people/{user_id}/api-token", status_code=204, dependencies=[Depends(require_csrf)])
+def revoke_person_api_token(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+    for row in db.scalars(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None))): row.revoked_at = utcnow()
+    db.commit()
 
 
 @router.delete("/integration-tokens/{token_id}", status_code=204, dependencies=[Depends(require_csrf)])
@@ -131,14 +158,21 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
             | (CalendarEvent.created_by_id == user.id)
             | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
         if "read:private" not in token.scopes: query = query.where(CalendarEvent.is_private.is_(False))
+        if user.role != Role.ADMIN:
+            custom_labels = visible_custom_labels(db, user)
+            query = query.where(or_(CalendarEvent.event_type.in_(user.allowed_event_types or []),
+                                    CalendarEvent.event_type == "PRIVATE",
+                                    and_(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label.in_(custom_labels))))
+            query = query.where((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
         for x in db.scalars(query.order_by(CalendarEvent.starts_at)):
             kind = "school_holiday" if x.category == "HOLIDAY" else "school_event" if x.category == "SCHOOL" else "appointment"
             if kind == "school_holiday" and "read:holidays" not in token.scopes: continue
             if kind != "school_holiday" and "read:appointments" not in token.scopes: continue
-            result.append({"type":kind,"id":x.id,"child_id":x.child_id,"title":x.title,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
+            result.append({"type":kind,"event_type":x.event_type,"custom_type_label":x.custom_type_label,"id":x.id,"child_id":x.child_id,"title":x.title,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
     if "read:birthdays" in token.scopes:
         for x in db.scalars(select(Birthday)):
-            if x.is_private and "read:private" not in token.scopes: continue
+            if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []): continue
+            if x.is_private and ("read:private" not in token.scopes or (x.created_by_id != user.id and user.id not in (x.visible_to_user_ids or []))): continue
             for year in range(from_at.year, to_at.year + 1):
                 try: occurrence = x.birth_date.replace(year=year)
                 except ValueError: occurrence = x.birth_date.replace(year=year, day=28)
@@ -189,36 +223,6 @@ def test_mail(db: Session = Depends(get_db), user: User = Depends(admin)):
         raise HTTPException(422, "Bitte aktiviere und speichere zuerst einen SMTP-Server")
     queue_mail(db, user.id, f"mail-test:{utcnow().timestamp()}", "mail.test", "FamilienPlan Testnachricht", "Der E-Mail-Versand von FamilienPlan ist eingerichtet.")
     db.commit(); return {"queued": True, "recipient": user.email}
-
-
-@router.get("/webhooks")
-def webhooks(db: Session = Depends(get_db), _: User = Depends(admin)):
-    return [{"id":x.id,"name":x.name,"url":x.url,"events":x.events,"is_active":x.is_active,"created_at":x.created_at}
-            for x in db.scalars(select(WebhookEndpoint).order_by(WebhookEndpoint.name))]
-
-
-@router.post("/webhooks", status_code=201, dependencies=[Depends(require_csrf)])
-def create_hook(data: HookCreate, db: Session = Depends(get_db), user: User = Depends(admin)):
-    parsed = urlparse(data.url)
-    if parsed.scheme not in {"http","https"} or not parsed.netloc: raise HTTPException(422, "Nur vollständige HTTP- oder HTTPS-Adressen sind erlaubt")
-    secret = data.secret or new_token()
-    row = WebhookEndpoint(name=data.name,url=data.url,secret=secret,events=data.events,is_active=data.is_active,created_by_id=user.id)
-    db.add(row); db.commit(); db.refresh(row)
-    return {"id":row.id,"name":row.name,"url":row.url,"events":row.events,"is_active":row.is_active,"secret":secret}
-
-
-@router.delete("/webhooks/{hook_id}", status_code=204, dependencies=[Depends(require_csrf)])
-def delete_hook(hook_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
-    row=db.get(WebhookEndpoint,hook_id)
-    if not row: raise HTTPException(404,"Webhook nicht gefunden")
-    db.delete(row); db.commit()
-
-
-@router.post("/webhooks/{hook_id}/test", dependencies=[Depends(require_csrf)])
-def test_hook(hook_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
-    if not db.get(WebhookEndpoint,hook_id): raise HTTPException(404,"Webhook nicht gefunden")
-    queue_webhooks(db,f"webhook-test:{hook_id}:{utcnow().timestamp()}","system.test",{"message":"FamilienPlan Webhook funktioniert"})
-    db.commit(); return {"queued":True}
 
 
 @router.get("/outbox")

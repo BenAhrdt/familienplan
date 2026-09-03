@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.78 – 3. September 2026
+
+### Benutzergebundene API-Schlüssel ohne Webhooks
+
+- API-Schlüssel werden direkt bei der jeweiligen Person erzeugt, erneuert oder deaktiviert; ohne aktiven Schlüssel besteht kein API-Zugriff.
+- Jeder Schlüssel übernimmt bei jeder Anfrage die aktuellen Kinder-, Terminarten- und Sichtbarkeitsrechte der zugeordneten Person.
+- Ein neu erzeugter Schlüssel widerruft automatisch den vorherigen Schlüssel dieser Person.
+- Kalenderantworten enthalten zusätzlich den internen `event_type` und die optionale eigene Terminart.
+- Webhooks wurden vollständig aus Oberfläche, API, Datenmodell und Hintergrundverarbeitung entfernt. Automatisierungen und zeitliche Vor- beziehungsweise Nachläufe übernimmt künftig der angebundene Client wie ein ioBroker-Adapter.
+- Die Migration `0021` entfernt vorhandene Webhook-Konfigurationen und ausstehende Webhook-Zustellungen.
+
 ## 0.1.77 – 3. September 2026
 
 ### Sofort aktualisierte Suchergebnisse

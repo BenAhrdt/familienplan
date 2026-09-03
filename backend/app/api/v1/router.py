@@ -22,9 +22,9 @@ from app.api.dependencies import admin, assert_child_access, current_user, requi
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
-from app.integrations import queue_mail, queue_webhooks
+from app.integrations import queue_mail
 from app.version import VERSION
-from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User, WebhookEndpoint
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User
 from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
@@ -255,7 +255,6 @@ def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_
     app_url = mail_config(db).get("app_url") or settings.app_origin
     action_url = f"{app_url}/calendar?request={request_id}" if request_id else f"{app_url}/calendar"
     queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url)
-    queue_webhooks(db, event_key, "notification.created", {"notification_id": notification.id, "user_id": user_id, "kind": kind, "title": title, "body": body})
     return notification
 
 
@@ -885,7 +884,6 @@ def delete_person(user_id: int, request: Request, db: Session = Depends(get_db),
         db.scalar(select(Approval.id).where(Approval.user_id == person.id).limit(1)),
         db.scalar(select(Birthday.id).where(Birthday.created_by_id == person.id).limit(1)),
         db.scalar(select(Invitation.id).where(Invitation.created_by_id == person.id).limit(1)),
-        db.scalar(select(WebhookEndpoint.id).where(WebhookEndpoint.created_by_id == person.id).limit(1)),
     ))
     if linked_records:
         raise HTTPException(

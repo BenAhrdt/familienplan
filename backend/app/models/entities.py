@@ -314,18 +314,6 @@ class ApplicationSetting(Base):
     value: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
-class WebhookEndpoint(Base):
-    __tablename__ = "webhook_endpoints"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(160))
-    url: Mapped[str] = mapped_column(String(1000))
-    secret: Mapped[str] = mapped_column(String(256))
-    events: Mapped[list[str]] = mapped_column(JSON, default=list)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
 class OutboxMessage(Base):
     __tablename__ = "outbox_messages"
     __table_args__ = (UniqueConstraint("channel", "recipient_key", "event_key"), Index("ix_outbox_due", "delivered_at", "available_at"))
