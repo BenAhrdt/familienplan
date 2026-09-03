@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.77 – 3. September 2026
+
+### Sofort aktualisierte Suchergebnisse
+
+- Nach Änderungen an Terminen oder Betreuungsnotizen wird eine geöffnete Trefferliste unmittelbar verworfen und neu geladen.
+- Suchanfragen umgehen den Browser-Cache, damit alte Titel nicht bis zum nächsten Seitenaufruf sichtbar bleiben.
+- Eine bereits eingegebene Suche zeigt dadurch ohne manuellen Refresh den aktuellen Datenstand.
+
 ## 0.1.76 – 3. September 2026
 
 ### Aussagekräftige Feriennamen und erneut nutzbare Suche

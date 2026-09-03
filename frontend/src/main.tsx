@@ -4767,7 +4767,16 @@ function GlobalSearch({
   const [query, setQuery] = useState(""),
     [results, setResults] = useState<SearchResult[]>([]),
     [busy, setBusy] = useState(false),
-    [focused, setFocused] = useState(false);
+    [focused, setFocused] = useState(false),
+    [dataRevision, setDataRevision] = useState(0);
+  useEffect(() => {
+    const refresh = () => {
+      setResults([]);
+      setDataRevision((value) => value + 1);
+    };
+    window.addEventListener("familienplan:data-changed", refresh);
+    return () => window.removeEventListener("familienplan:data-changed", refresh);
+  }, []);
   useEffect(() => {
     const value = query.trim();
     if (value.length < 2) {
@@ -4780,6 +4789,7 @@ function GlobalSearch({
     const timer = window.setTimeout(() => {
       api<SearchResult[]>(`/search?q=${encodeURIComponent(value)}`, {
         background: true,
+        cache: "no-store",
       })
         .then((items) => active && setResults(items))
         .catch(() => active && setResults([]))
@@ -4789,7 +4799,7 @@ function GlobalSearch({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, dataRevision]);
   const showResults = focused && query.trim().length >= 2;
   return (
     <div className="globalsearch">
