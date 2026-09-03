@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.79 – 3. September 2026
+
+### Mehrere benannte API-Schlüssel pro Person
+
+- Für jede Person lassen sich mehrere API-Schlüssel mit frei wählbaren Namen wie ioBroker oder Home Assistant anlegen.
+- Name, Aktivstatus und letzte Verwendung bleiben dauerhaft sichtbar; nur der geheime Schlüsselwert wird weiterhin ausschließlich direkt nach dem Erzeugen angezeigt.
+- Schlüssel können einzeln widerrufen werden, ohne die übrigen Integrationen derselben Person zu unterbrechen.
+- Alle Schlüssel bleiben dynamisch auf die aktuellen Rechte ihrer zugeordneten Person begrenzt.
+
 ## 0.1.78 – 3. September 2026
 
 ### Benutzergebundene API-Schlüssel ohne Webhooks

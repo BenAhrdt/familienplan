@@ -23,6 +23,10 @@ class TokenCreate(BaseModel):
     user_id: int
 
 
+class PersonTokenCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+
 class MailConfig(BaseModel):
     enabled: bool = False
     host: str | None = None
@@ -87,29 +91,29 @@ def create_token(data: TokenCreate, db: Session = Depends(get_db), user: User = 
     return {"id": row.id, "name": row.name, "token": raw, "scopes": row.scopes}
 
 
-@router.get("/people/{user_id}/api-token")
-def person_api_token(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+@router.get("/people/{user_id}/api-tokens")
+def person_api_tokens(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
     person = db.get(User, user_id)
     if not person or not person.is_active: raise HTTPException(404, "Person nicht gefunden")
-    row = db.scalar(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None)).order_by(ApiToken.id.desc()))
-    return {"active": bool(row), "id": row.id if row else None, "last_used_at": row.last_used_at if row else None}
+    rows = db.scalars(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None)).order_by(ApiToken.name, ApiToken.id))
+    return [{"id":row.id,"name":row.name,"last_used_at":row.last_used_at} for row in rows]
 
 
-@router.post("/people/{user_id}/api-token", status_code=201, dependencies=[Depends(require_csrf)])
-def create_person_api_token(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+@router.post("/people/{user_id}/api-tokens", status_code=201, dependencies=[Depends(require_csrf)])
+def create_person_api_token(user_id: int, data: PersonTokenCreate, db: Session = Depends(get_db), _: User = Depends(admin)):
     person = db.get(User, user_id)
     if not person or not person.is_active or person.is_pending: raise HTTPException(404, "Aktive Person nicht gefunden")
-    now = utcnow()
-    for old in db.scalars(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None))): old.revoked_at = now
     raw = new_token()
-    row = ApiToken(user_id=user_id, name=f"API · {person.display_name}", token_hash=token_hash(raw), scopes=ALL_SCOPES)
+    row = ApiToken(user_id=user_id, name=data.name.strip(), token_hash=token_hash(raw), scopes=ALL_SCOPES)
     db.add(row); db.commit(); db.refresh(row)
-    return {"active": True, "id": row.id, "token": raw, "last_used_at": None}
+    return {"id": row.id, "name":row.name, "token": raw, "last_used_at": None}
 
 
-@router.delete("/people/{user_id}/api-token", status_code=204, dependencies=[Depends(require_csrf)])
-def revoke_person_api_token(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
-    for row in db.scalars(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None))): row.revoked_at = utcnow()
+@router.delete("/people/{user_id}/api-tokens/{token_id}", status_code=204, dependencies=[Depends(require_csrf)])
+def revoke_person_api_token(user_id: int, token_id: int, db: Session = Depends(get_db), _: User = Depends(admin)):
+    row = db.scalar(select(ApiToken).where(ApiToken.id == token_id, ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None)))
+    if not row: raise HTTPException(404, "API-Schlüssel nicht gefunden")
+    row.revoked_at = utcnow()
     db.commit()
 
 

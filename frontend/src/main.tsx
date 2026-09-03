@@ -3608,8 +3608,9 @@ function PeopleScreen({
     [deleteChoice, setDeleteChoice] = useState<User | null>(null),
     [deletingPerson, setDeletingPerson] = useState(false),
     [draftRole, setDraftRole] = useState<User["role"]>("EDITOR"),
-    [personApi, setPersonApi] = useState<{active:boolean;last_used_at:string|null}>({active:false,last_used_at:null}),
-    [newPersonApiToken, setNewPersonApiToken] = useState(""),
+    [personApiKeys, setPersonApiKeys] = useState<Array<{id:number;name:string;last_used_at:string|null}>>([]),
+    [personApiName, setPersonApiName] = useState("ioBroker"),
+    [newPersonApiToken, setNewPersonApiToken] = useState<{name:string;token:string}|null>(null),
     [error, setError] = useState(""),
     [children, setChildren] = useState<Child[]>([]),
     [customTypes, setCustomTypes] = useState<CustomCalendarType[]>([]),
@@ -3694,9 +3695,10 @@ function PeopleScreen({
     setInvite("");
     setInviteEmail(null);
     setCopied(false);
-    setPersonApi({active:false,last_used_at:null});
-    setNewPersonApiToken("");
-    api<{active:boolean;last_used_at:string|null}>(`/people/${p.id}/api-token`, {cache:"no-store"}).then(setPersonApi).catch(() => {});
+    setPersonApiKeys([]);
+    setPersonApiName("ioBroker");
+    setNewPersonApiToken(null);
+    api<Array<{id:number;name:string;last_used_at:string|null}>>(`/people/${p.id}/api-tokens`, {cache:"no-store"}).then(setPersonApiKeys).catch(() => {});
     if (p.is_pending) {
       api<{ invite_url: string; email: string | null }>(`/people/${p.id}/invitation`).then((result) => { setInvite(result.invite_url); setInviteEmail(result.email); }).catch(() => {});
     }
@@ -3904,19 +3906,15 @@ function PeopleScreen({
                 </>}
                 {open === "edit" && selected && !selected.user.is_pending && <fieldset className="person-api-access">
                   <legend>API-Zugriff</legend>
-                  <p className="hint">Der Schlüssel übernimmt immer die aktuellen Rechte dieser Person. Ohne aktiven Schlüssel ist kein API-Zugriff für sie möglich.</p>
-                  {newPersonApiToken && <div className="secret-once"><code>{newPersonApiToken}</code><button type="button" onClick={() => navigator.clipboard.writeText(newPersonApiToken)}>Kopieren</button></div>}
-                  <div className="buttonrow">
-                    <button type="button" onClick={async () => {
-                      const result = await api<{token:string;active:boolean;last_used_at:null}>(`/people/${selected.user.id}/api-token`, {method:"POST"});
-                      setNewPersonApiToken(result.token); setPersonApi(result);
-                    }}>{personApi.active ? "Neuen Schlüssel erzeugen" : "API-Schlüssel erzeugen"}</button>
-                    {personApi.active && <button type="button" className="danger" onClick={async () => {
-                      await api(`/people/${selected.user.id}/api-token`, {method:"DELETE"});
-                      setPersonApi({active:false,last_used_at:null}); setNewPersonApiToken("");
-                    }}>API-Zugriff deaktivieren</button>}
-                  </div>
-                  <p className="hint">{personApi.active ? personApi.last_used_at ? `Zuletzt verwendet: ${new Date(personApi.last_used_at).toLocaleString("de-DE")}` : "Aktiv · noch nicht verwendet" : "Kein aktiver API-Schlüssel"}</p>
+                  <p className="hint">Jeder Schlüssel übernimmt immer die aktuellen Rechte dieser Person. Der geheime Wert wird nur direkt nach dem Erzeugen angezeigt.</p>
+                  {newPersonApiToken && <div className="secret-once"><span><strong>{newPersonApiToken.name}</strong> – jetzt sicher speichern:</span><code>{newPersonApiToken.token}</code><button type="button" onClick={() => navigator.clipboard.writeText(newPersonApiToken.token)}>Kopieren</button></div>}
+                  <div className="buttonrow"><input value={personApiName} onChange={(event)=>setPersonApiName(event.target.value)} placeholder="z. B. ioBroker" aria-label="Name des API-Schlüssels"/><button type="button" disabled={!personApiName.trim()} onClick={async () => {
+                    const result = await api<{id:number;name:string;token:string;last_used_at:null}>(`/people/${selected.user.id}/api-tokens`, {method:"POST",body:JSON.stringify({name:personApiName})});
+                    setNewPersonApiToken({name:result.name,token:result.token});
+                    setPersonApiKeys((current)=>[...current,{id:result.id,name:result.name,last_used_at:null}]);
+                    setPersonApiName("");
+                  }}>API-Schlüssel erzeugen</button></div>
+                  {personApiKeys.length === 0 ? <p className="hint">Keine aktiven API-Schlüssel</p> : personApiKeys.map((key)=><div className="integration-row" key={key.id}><span><strong>{key.name}</strong><small>{key.last_used_at ? `Zuletzt verwendet: ${new Date(key.last_used_at).toLocaleString("de-DE")}` : "Noch nicht verwendet"}</small></span><button type="button" className="danger" onClick={async()=>{await api(`/people/${selected.user.id}/api-tokens/${key.id}`,{method:"DELETE"});setPersonApiKeys((current)=>current.filter((item)=>item.id!==key.id));if(newPersonApiToken?.name===key.name)setNewPersonApiToken(null)}}>Widerrufen</button></div>)}
                 </fieldset>}
                 <div className="personform-actions">
                   <button>

@@ -6,7 +6,7 @@ Administratoren verwalten SMTP unter **Einstellungen → Integrationen**. API-Sc
 
 Authentifizierung: `Authorization: Bearer <API-Schlüssel>`.
 
-Jeder Schlüssel ist genau einer Person zugeordnet und übernimmt bei jeder Anfrage deren aktuelle Kinder-, Terminart- und Sichtbarkeitsrechte. Eine spätere Rechteänderung wirkt daher sofort. Pro Person gibt es höchstens einen aktiven Schlüssel; ein neu erzeugter Schlüssel widerruft den vorherigen. Der geheime Wert wird nur einmal angezeigt.
+Jeder Schlüssel ist genau einer Person zugeordnet und übernimmt bei jeder Anfrage deren aktuelle Kinder-, Terminart- und Sichtbarkeitsrechte. Eine spätere Rechteänderung wirkt daher sofort. Pro Person können mehrere benannte Schlüssel angelegt werden, beispielsweise für ioBroker und Home Assistant. Sie lassen sich unabhängig voneinander widerrufen. Der jeweilige geheime Wert wird nur einmal angezeigt.
 
 - `GET /api/v1/integrations/v1/status`
 - `GET /api/v1/integrations/v1/children`
