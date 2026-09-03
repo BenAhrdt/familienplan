@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.80 – 3. September 2026
+
+### Zuverlässige API-Schlüsselprüfung
+
+- Neu erzeugte API-Schlüssel enthalten eine eindeutige Schlüsselkennung und werden gezielt gegen ihren gespeicherten Hash geprüft.
+- Bestehende API-Schlüssel im bisherigen Format bleiben weiterhin gültig.
+- Ein automatisierter Test stellt sicher, dass ein Schlüssel unmittelbar nach seiner Erzeugung zur API-Authentifizierung verwendet werden kann.
+
 ## 0.1.79 – 3. September 2026
 
 ### Mehrere benannte API-Schlüssel pro Person

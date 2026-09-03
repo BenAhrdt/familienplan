@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import hmac
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -42,7 +43,19 @@ def api_context(request: Request, db: Session = Depends(get_db)):
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "API-Schlüssel erforderlich")
-    token = db.scalar(select(ApiToken).where(ApiToken.token_hash == token_hash(auth[7:]), ApiToken.revoked_at.is_(None)))
+    raw = auth[7:].strip()
+    token = None
+    if raw.startswith("fp_"):
+        try:
+            token_id = int(raw.split("_", 2)[1])
+        except (IndexError, ValueError):
+            token_id = None
+        if token_id is not None:
+            candidate = db.get(ApiToken, token_id)
+            if candidate and candidate.revoked_at is None and hmac.compare_digest(candidate.token_hash, token_hash(raw)):
+                token = candidate
+    else:
+        token = db.scalar(select(ApiToken).where(ApiToken.token_hash == token_hash(raw), ApiToken.revoked_at.is_(None)))
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ungültiger API-Schlüssel")
     user = db.get(User, token.user_id)
@@ -85,9 +98,12 @@ def create_token(data: TokenCreate, db: Session = Depends(get_db), user: User = 
     if invalid: raise HTTPException(422, f"Unbekannte Rechte: {', '.join(sorted(invalid))}")
     owner = db.get(User, data.user_id)
     if not owner or not owner.is_active or owner.is_pending: raise HTTPException(422, "Aktive Person auswählen")
-    raw = new_token()
-    row = ApiToken(user_id=owner.id, name=data.name, token_hash=token_hash(raw), scopes=data.scopes + [f"child:{x}" for x in data.child_ids])
-    db.add(row); db.commit(); db.refresh(row)
+    secret = new_token()
+    row = ApiToken(user_id=owner.id, name=data.name, token_hash=token_hash(secret), scopes=data.scopes + [f"child:{x}" for x in data.child_ids])
+    db.add(row); db.flush()
+    raw = f"fp_{row.id}_{secret}"
+    row.token_hash = token_hash(raw)
+    db.commit(); db.refresh(row)
     return {"id": row.id, "name": row.name, "token": raw, "scopes": row.scopes}
 
 
@@ -103,9 +119,12 @@ def person_api_tokens(user_id: int, db: Session = Depends(get_db), _: User = Dep
 def create_person_api_token(user_id: int, data: PersonTokenCreate, db: Session = Depends(get_db), _: User = Depends(admin)):
     person = db.get(User, user_id)
     if not person or not person.is_active or person.is_pending: raise HTTPException(404, "Aktive Person nicht gefunden")
-    raw = new_token()
-    row = ApiToken(user_id=user_id, name=data.name.strip(), token_hash=token_hash(raw), scopes=ALL_SCOPES)
-    db.add(row); db.commit(); db.refresh(row)
+    secret = new_token()
+    row = ApiToken(user_id=user_id, name=data.name.strip(), token_hash=token_hash(secret), scopes=ALL_SCOPES)
+    db.add(row); db.flush()
+    raw = f"fp_{row.id}_{secret}"
+    row.token_hash = token_hash(raw)
+    db.commit(); db.refresh(row)
     return {"id": row.id, "name":row.name, "token": raw, "last_used_at": None}
 
 
