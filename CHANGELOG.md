@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.71 – 3. September 2026
+
+### Mobile Dokumentansicht, Download und Teilen
+
+- Anhänge öffnen in einer eigenen Vollbildansicht mit dauerhaft sichtbarer Zurück-Schaltfläche.
+- Die Zurück-Geste beziehungsweise Zurück-Taste des Mobilgeräts schließt die Dokumentansicht ebenfalls.
+- Dokumente lassen sich direkt herunterladen oder über den nativen Teilen-Dialog von Android und iOS als Datei weitergeben.
+- Zusätzlich können Anhänge weiterhin separat im Browser geöffnet werden.
+
 ## 0.1.70 – 3. September 2026
 
 ### Zurück-Navigation nach dem Öffnen von Anhängen

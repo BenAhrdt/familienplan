@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
+  ExternalLink,
   Clapperboard,
   Copy,
   Drama,
@@ -34,6 +35,7 @@ import {
   Plus,
   Paperclip,
   Search,
+  Share2,
   Scissors,
   ShoppingCart,
   Stethoscope,
@@ -1273,6 +1275,7 @@ const localDateTime = (date: Date) => {
 
 function EventAttachments({ event, editable, onCountChange }: { event: CalendarEvent; editable: boolean; onCountChange?: (count: number) => void }) {
   const [items, setItems] = useState<CalendarEventAttachment[]>([]);
+  const [viewerItem, setViewerItem] = useState<CalendarEventAttachment | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
@@ -1281,6 +1284,18 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
     onCountChange?.(result.length);
   }).catch((failure) => setAttachmentError((failure as Error).message));
   useEffect(() => { loadAttachments(); }, [event.id]);
+  useEffect(() => {
+    if (!viewerItem) return;
+    window.history.pushState({ attachmentViewer: true }, "");
+    const closeOnBack = () => setViewerItem(null);
+    window.addEventListener("popstate", closeOnBack);
+    return () => window.removeEventListener("popstate", closeOnBack);
+  }, [viewerItem?.id]);
+
+  function closeViewer() {
+    if (window.history.state?.attachmentViewer) window.history.back();
+    else setViewerItem(null);
+  }
 
   async function uploadFiles(files: FileList | File[]) {
     setAttachmentError("");
@@ -1305,12 +1320,37 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
     } catch (failure) { setAttachmentError((failure as Error).message); }
   }
 
+  function downloadAttachment(item: CalendarEventAttachment) {
+    const link = document.createElement("a");
+    link.href = `/api/v1/calendar/${event.id}/attachments/${item.id}/file`;
+    link.download = item.original_name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  async function shareAttachment(item: CalendarEventAttachment) {
+    setAttachmentError("");
+    try {
+      const response = await fetch(`/api/v1/calendar/${event.id}/attachments/${item.id}/file`, { credentials:"include" });
+      if (!response.ok) throw new Error("Das Dokument konnte nicht zum Teilen geladen werden.");
+      const sharedFile = new File([await response.blob()], item.original_name, { type:item.content_type });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files:[sharedFile] }))) {
+        await navigator.share({ title:item.original_name, files:[sharedFile] });
+      } else {
+        downloadAttachment(item);
+      }
+    } catch (failure) {
+      if ((failure as DOMException).name !== "AbortError") setAttachmentError((failure as Error).message);
+    }
+  }
+
   return <section className="event-attachments">
     <h3><Paperclip size={18}/> Dokumente {items.length > 0 && <span>{items.length}</span>}</h3>
     {items.length > 0 ? <ul>{items.map((item) => <li key={item.id}>
-      <a className="attachment-open" href={`/api/v1/calendar/${event.id}/attachments/${item.id}/file`} title="Dokument öffnen">
+      <button type="button" className="attachment-open" onClick={() => setViewerItem(item)} title="Dokument öffnen">
         <Download size={17}/><span><strong>{item.original_name}</strong><small>{(item.size / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits:1 })} MB</small></span>
-      </a>
+      </button>
       {editable && <button type="button" className="attachment-delete" onClick={() => removeAttachment(item)} aria-label={`${item.original_name} löschen`}><Trash2 size={17}/></button>}
     </li>)}</ul> : <p className="attachment-empty">Noch keine Dokumente angehängt.</p>}
     {editable && <label className={`attachment-dropzone${dragging ? " dragging" : ""}${busy ? " busy" : ""}`}
@@ -1322,6 +1362,19 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
       <input type="file" multiple disabled={busy} accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.odt,.txt" onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ""; }}/>
     </label>}
     {attachmentError && <p className="error">{attachmentError}</p>}
+    {viewerItem && createPortal(<div className="attachment-viewer" role="dialog" aria-modal="true" aria-label={viewerItem.original_name}>
+      <header>
+        <button type="button" onClick={closeViewer} aria-label="Zurück zum Termin"><ChevronLeft size={22}/> Zurück</button>
+        <strong>{viewerItem.original_name}</strong>
+        <nav aria-label="Dokumentaktionen">
+          <button type="button" onClick={() => downloadAttachment(viewerItem)} title="Dokument herunterladen"><Download size={20}/><span>Download</span></button>
+          <button type="button" onClick={() => shareAttachment(viewerItem)} title="Dokument teilen"><Share2 size={20}/><span>Teilen</span></button>
+          <a href={`/api/v1/calendar/${event.id}/attachments/${viewerItem.id}/file`} target="_blank" rel="noopener noreferrer" title="Separat im Browser öffnen"><ExternalLink size={20}/><span>Separat öffnen</span></a>
+        </nav>
+      </header>
+      <iframe src={`/api/v1/calendar/${event.id}/attachments/${viewerItem.id}/file`} title={viewerItem.original_name}/>
+      {attachmentError && <p className="attachment-viewer-error">{attachmentError}</p>}
+    </div>, document.body)}
   </section>;
 }
 

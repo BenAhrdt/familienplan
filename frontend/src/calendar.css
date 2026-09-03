@@ -31,6 +31,14 @@
 .attachment-dropzone.dragging { border-color:var(--green); background:var(--sage); }
 .attachment-dropzone.busy { opacity:.65; cursor:wait; }
 .attachment-dropzone input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.attachment-viewer { position:fixed; z-index:400; inset:0; display:grid; grid-template-rows:auto 1fr; background:#eef1ee; }
+.attachment-viewer header { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.8rem; padding:calc(.65rem + env(safe-area-inset-top)) .8rem .65rem; background:white; border-bottom:1px solid var(--line); }
+.attachment-viewer header strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+.attachment-viewer header nav { display:flex; align-items:center; gap:.4rem; }
+.attachment-viewer header button,.attachment-viewer header a { display:flex; align-items:center; gap:.3rem; padding:.55rem .7rem; border-radius:8px; background:var(--green); color:white; text-decoration:none; font-weight:700; }
+.attachment-viewer iframe { width:100%; height:100%; border:0; background:white; }
+.attachment-viewer-error { position:absolute; top:calc(4.5rem + env(safe-area-inset-top)); left:50%; translate:-50% 0; max-width:calc(100% - 2rem); margin:0; padding:.7rem 1rem; border-radius:8px; background:#fff0ed; color:#9a3727; box-shadow:0 4px 18px #0002; }
+@media(max-width:700px) { .attachment-viewer header nav span { display:none; } .attachment-viewer header { gap:.35rem; padding-inline:.45rem; } .attachment-viewer header button,.attachment-viewer header a { padding:.55rem; } }
 .calendar-content { display:flex; flex-direction:column; }
 .calendar-content .monthcalendar { order:1; }
 .calendar-content .calendar-type-filters { order:2; }
