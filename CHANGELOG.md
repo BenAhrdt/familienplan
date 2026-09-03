@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.82 – 3. September 2026
+
+### Einheitliches Kalenderformat der Integrations-API
+
+- Kalenderobjekte verwenden einheitlich `event_type`; das redundante und je nach Objekt unterschiedliche Feld `type` entfällt.
+- Schultermine, Schulferien, Geburtstage und Betreuungen werden als `SCHOOL`, `SCHOOL_HOLIDAY`, `BIRTHDAY` beziehungsweise `STAY` gekennzeichnet.
+- Standardbetreuungen aus „Wohnt bei“ werden in freien Zeiträumen als erzeugte Betreuungen mit `source: "default"` ausgegeben.
+- Auch Kinder- und Aufenthaltsantworten verzichten auf das durch den Endpunkt bereits eindeutig bestimmte `type`-Feld.
+
 ## 0.1.81 – 3. September 2026
 
 ### Auswählbare Abfallarten

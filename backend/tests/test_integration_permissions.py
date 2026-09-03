@@ -1,9 +1,10 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.v1.integration_router import PersonTokenCreate, allowed_children, api_context, create_person_api_token, person_api_tokens, revoke_person_api_token
+from app.api.v1.integration_router import PersonTokenCreate, allowed_children, api_context, create_person_api_token, default_stay_periods, person_api_tokens, revoke_person_api_token
 from app.core.database import Base
 from app.models.entities import Child, ChildUserPermission, Permission, Role, User
 
@@ -53,3 +54,23 @@ def test_new_person_token_authenticates_immediately():
 
         assert created["token"].startswith(f"fp_{token.id}_")
         assert authenticated_user.id == person.id
+
+
+def test_default_stays_fill_only_gaps_around_explicit_stays():
+    start = datetime(2026, 9, 1, tzinfo=UTC)
+    end = datetime(2026, 9, 4, tzinfo=UTC)
+    child = SimpleNamespace(id=7, default_responsible_user_id=11)
+    stay = SimpleNamespace(
+        child_id=7,
+        starts_at=datetime(2026, 9, 2, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 3, tzinfo=UTC),
+    )
+
+    periods = default_stay_periods(child, [stay], start, end)
+
+    assert [(item["starts_at"], item["ends_at"]) for item in periods] == [
+        (start, stay.starts_at),
+        (stay.ends_at, end),
+    ]
+    assert all(item["event_type"] == "STAY" for item in periods)
+    assert all(item["source"] == "default" and item["generated"] for item in periods)

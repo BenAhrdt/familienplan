@@ -13,8 +13,12 @@ Jeder Schlüssel ist genau einer Person zugeordnet und übernimmt bei jeder Anfr
 - `GET /api/v1/integrations/v1/events?from_at=...&to_at=...&child_id=...`
 - `GET /api/v1/integrations/v1/children/{id}/location?at=...`
 
-Jedes Kalenderobjekt enthält ein stabiles `type`-Feld: `stay`, `appointment`,
-`birthday`, `school_holiday` oder `school_event`. Der aktuelle Aufenthaltsstatus
-verwendet `location_state`. Zeitangaben sind ISO-8601-Werte mit Zeitzone.
+Jedes Kalenderobjekt enthält ein `event_type`-Feld, beispielsweise `GENERAL`,
+`STAY`, `BIRTHDAY`, `SCHOOL` oder `SCHOOL_HOLIDAY`. Das redundante `type`-Feld
+wird nicht ausgegeben. Betreuungen enthalten zusätzlich `responsible_user_id`,
+`source` (`stay` oder `default`) und `generated`. Standardbetreuungen aus
+„Wohnt bei“ werden für alle Lücken ohne explizite Betreuung als erzeugte
+`STAY`-Zeiträume ausgegeben; ihre `id` ist `null`. Zeitangaben sind
+ISO-8601-Werte mit Zeitzone.
 
 Automatisierungen, Vor- und Nachlaufzeiten sowie Benachrichtigungen werden vom angebundenen Client wie einem ioBroker-Adapter aus den abgefragten Kalenderdaten berechnet. FamilienPlan versendet keine Webhooks.

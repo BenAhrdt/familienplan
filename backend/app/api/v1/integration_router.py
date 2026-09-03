@@ -153,8 +153,36 @@ def integration_status(context=Depends(api_context)):
 def integration_children(context=Depends(api_context), db: Session = Depends(get_db)):
     token, user = context; need(token, "read:children")
     ids = allowed_children(token, user, db)
-    return [{"type": "child", "id": x.id, "name": x.display_name, "default_responsible_user_id": x.default_responsible_user_id}
+    return [{"id": x.id, "name": x.display_name, "default_responsible_user_id": x.default_responsible_user_id}
             for x in db.scalars(select(Child).where(Child.id.in_(ids)).order_by(Child.display_name))]
+
+
+def default_stay_periods(child: Child, stays: list[Stay], from_at: datetime, to_at: datetime) -> list[dict]:
+    """Represent the child's default home for every gap without an explicit stay."""
+    if child.default_responsible_user_id is None:
+        return []
+    periods = []
+    cursor = from_at
+    for stay in sorted(stays, key=lambda item: item.starts_at):
+        start, end = max(stay.starts_at, from_at), min(stay.ends_at, to_at)
+        if end <= cursor:
+            continue
+        if start > cursor:
+            periods.append({
+                "id": None, "event_type": "STAY", "child_id": child.id,
+                "responsible_user_id": child.default_responsible_user_id,
+                "starts_at": cursor, "ends_at": start, "title": None,
+                "source": "default", "generated": True,
+            })
+        cursor = max(cursor, end)
+    if cursor < to_at:
+        periods.append({
+            "id": None, "event_type": "STAY", "child_id": child.id,
+            "responsible_user_id": child.default_responsible_user_id,
+            "starts_at": cursor, "ends_at": to_at, "title": None,
+            "source": "default", "generated": True,
+        })
+    return periods
 
 
 @router.get("/integrations/v1/events", include_in_schema=False)
@@ -169,11 +197,13 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
         ids = {child_id}
     result = []
     if "read:stays" in token.scopes:
-        rows = db.scalars(select(Stay).where(Stay.child_id.in_(ids), Stay.status == PlanStatus.CONFIRMED,
-            Stay.starts_at < to_at, Stay.ends_at > from_at).order_by(Stay.starts_at))
+        rows = list(db.scalars(select(Stay).where(Stay.child_id.in_(ids), Stay.status == PlanStatus.CONFIRMED,
+            Stay.starts_at < to_at, Stay.ends_at > from_at).order_by(Stay.starts_at)))
         for x in rows:
-            result.append({"type":"stay","id":x.id,"child_id":x.child_id,"responsible_user_id":x.responsible_user_id,
-                           "starts_at":x.starts_at,"ends_at":x.ends_at,"title":x.note})
+            result.append({"event_type":"STAY","id":x.id,"child_id":x.child_id,"responsible_user_id":x.responsible_user_id,
+                           "starts_at":x.starts_at,"ends_at":x.ends_at,"title":x.note,"source":"stay","generated":False})
+        for child in db.scalars(select(Child).where(Child.id.in_(ids))):
+            result.extend(default_stay_periods(child, [row for row in rows if row.child_id == child.id], from_at, to_at))
     if "read:appointments" in token.scopes or "read:holidays" in token.scopes:
         query = select(CalendarEvent).where(or_(CalendarEvent.child_id.is_(None), CalendarEvent.child_id.in_(ids)),
             CalendarEvent.starts_at < to_at, CalendarEvent.ends_at > from_at,
@@ -188,10 +218,11 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
                                     and_(CalendarEvent.event_type == "OTHER", CalendarEvent.custom_type_label.in_(custom_labels))))
             query = query.where((CalendarEvent.is_private.is_(False)) | (CalendarEvent.created_by_id == user.id) | cast(CalendarEvent.visible_to_user_ids, JSONB).contains([user.id]))
         for x in db.scalars(query.order_by(CalendarEvent.starts_at)):
-            kind = "school_holiday" if x.category == "HOLIDAY" else "school_event" if x.category == "SCHOOL" else "appointment"
-            if kind == "school_holiday" and "read:holidays" not in token.scopes: continue
-            if kind != "school_holiday" and "read:appointments" not in token.scopes: continue
-            result.append({"type":kind,"event_type":x.event_type,"custom_type_label":x.custom_type_label,"id":x.id,"child_id":x.child_id,"title":x.title,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
+            is_holiday = x.category == "HOLIDAY"
+            if is_holiday and "read:holidays" not in token.scopes: continue
+            if not is_holiday and "read:appointments" not in token.scopes: continue
+            event_type = "SCHOOL_HOLIDAY" if is_holiday else "SCHOOL" if x.category == "SCHOOL" else x.event_type
+            result.append({"event_type":event_type,"custom_type_label":x.custom_type_label,"id":x.id,"child_id":x.child_id,"title":x.title,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
     if "read:birthdays" in token.scopes:
         for x in db.scalars(select(Birthday)):
             if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []): continue
@@ -201,7 +232,7 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
                 except ValueError: occurrence = x.birth_date.replace(year=year, day=28)
                 start = datetime.combine(occurrence, datetime.min.time(), tzinfo=from_at.tzinfo)
                 if from_at <= start < to_at:
-                    result.append({"type":"birthday","id":x.id,"title":x.display_name,"starts_at":start,
+                    result.append({"event_type":"BIRTHDAY","id":x.id,"title":x.display_name,"starts_at":start,
                                    "ends_at":start+timedelta(days=1),"age":year-x.birth_date.year})
     return sorted(result, key=lambda x: x["starts_at"])
 
@@ -217,7 +248,7 @@ def child_location(child_id: int, at: datetime | None = None, context=Depends(ap
     person = db.get(User, person_id) if person_id else None
     next_row = db.scalar(select(Stay).where(Stay.child_id == child_id, Stay.status == PlanStatus.CONFIRMED,
         Stay.starts_at > at).order_by(Stay.starts_at))
-    return {"type":"location_state","child_id":child_id,"at":at,"responsible_user_id":person_id,
+    return {"child_id":child_id,"at":at,"responsible_user_id":person_id,
             "responsible_name":person.display_name if person else None,"source":"stay" if stay else "default",
             "current_until":stay.ends_at if stay else None,"next_change_at":next_row.starts_at if next_row else None}
 
