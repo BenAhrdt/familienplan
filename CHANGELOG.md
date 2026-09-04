@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.90 – 4. September 2026
+
+### Eindeutige Uhrzeiten für Ganztagstermine
+
+- Beim Aktivieren von „Ganztägig“ wird der Termin automatisch auf 00:00 Uhr bis 00:00 Uhr des Folgetags gesetzt.
+- Beginn und Ende lassen sich bei einem Ganztagstermin nicht versehentlich verstellen und werden nach dem Abwählen wieder bearbeitbar.
+- Auch beim Speichern werden Ganztagstermine zuverlässig auf die korrekten Tagesgrenzen normalisiert.
+
 ## 0.1.89 – 4. September 2026
 
 ### Funktionierende Links aus Pushnachrichten

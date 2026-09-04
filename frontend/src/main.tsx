@@ -261,12 +261,14 @@ function Field({
   type = "text",
   required = true,
   defaultValue,
+  readOnly = false,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   defaultValue?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label>
@@ -276,6 +278,7 @@ function Field({
         type={type}
         required={required}
         defaultValue={defaultValue}
+        readOnly={readOnly}
       />
     </label>
   );
@@ -1278,6 +1281,10 @@ const localDateTime = (date: Date) => {
   const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return shifted.toISOString().slice(0, 16);
 };
+const localDayStart = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const nextLocalDay = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 
 function PdfAttachmentViewer({ url, title }: { url: string; title: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1696,6 +1703,12 @@ function CalendarScreen({
   async function eventSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    let startsAt = new Date(String(f.get("starts_at")));
+    let endsAt = new Date(String(f.get("ends_at")));
+    if (eventAllDay) {
+      startsAt = localDayStart(startsAt);
+      endsAt = nextLocalDay(startsAt);
+    }
     const eventInterval =
       eventRepeatKind === "once"
         ? null
@@ -1716,8 +1729,8 @@ function CalendarScreen({
         body: JSON.stringify({
           title: f.get("title"),
           description: f.get("description") || null,
-          starts_at: new Date(String(f.get("starts_at"))).toISOString(),
-          ends_at: new Date(String(f.get("ends_at"))).toISOString(),
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
           all_day: eventAllDay,
           category: "FAMILY",
           event_type: eventType,
@@ -2872,16 +2885,36 @@ function CalendarScreen({
                     </select>
                   </label>}
                 <label className="check event-all-day">
-                  <input type="checkbox" checked={eventAllDay} onChange={(event) => setEventAllDay(event.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={eventAllDay}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      if (checked) {
+                        const form = event.currentTarget.form;
+                        const startInput = form?.elements.namedItem("starts_at") as HTMLInputElement | null;
+                        const endInput = form?.elements.namedItem("ends_at") as HTMLInputElement | null;
+                        const start = startInput?.value ? new Date(startInput.value) : null;
+                        if (start && !Number.isNaN(start.getTime()) && startInput && endInput) {
+                          const dayStart = localDayStart(start);
+                          const nextDay = nextLocalDay(dayStart);
+                          startInput.value = localDateTime(dayStart);
+                          endInput.value = localDateTime(nextDay);
+                        }
+                      }
+                      setEventAllDay(checked);
+                    }}
+                  />
                   Ganztägig
                 </label>
                 <div className="grid2">
                   <Field
-                    key={`event-start-${editingEvent?.id || stayToConvert?.id || "new"}-${eventAllDay}`}
+                    key={`event-start-${editingEvent?.id || stayToConvert?.id || "new"}`}
                     label="Beginn"
                     name="starts_at"
                     type="datetime-local"
-                    defaultValue={localDateTime(
+                    readOnly={eventAllDay}
+                    defaultValue={localDateTime(eventAllDay ? localDayStart(
                       editingEvent
                         ? new Date(editingEvent.starts_at)
                         : stayToConvert
@@ -2891,23 +2924,37 @@ function CalendarScreen({
                             (selectedDay || now).getMonth(),
                             (selectedDay || now).getDate(),
                           ),
-                    )}
+                    ) : editingEvent
+                      ? new Date(editingEvent.starts_at)
+                      : stayToConvert
+                        ? new Date(stayToConvert.starts_at)
+                        : new Date(
+                            (selectedDay || now).getFullYear(),
+                            (selectedDay || now).getMonth(),
+                            (selectedDay || now).getDate(),
+                          ))}
                   />
                   <Field
-                    key={`event-end-${editingEvent?.id || stayToConvert?.id || "new"}-${eventAllDay}`}
+                    key={`event-end-${editingEvent?.id || stayToConvert?.id || "new"}`}
                     label="Ende"
                     name="ends_at"
                     type="datetime-local"
-                    defaultValue={localDateTime(
+                    readOnly={eventAllDay}
+                    defaultValue={localDateTime(eventAllDay ? nextLocalDay(localDayStart(
                       editingEvent
+                        ? new Date(editingEvent.starts_at)
+                        : stayToConvert
+                          ? new Date(stayToConvert.starts_at)
+                          : selectedDay || now,
+                    )) : editingEvent
                         ? new Date(editingEvent.ends_at)
                         : stayToConvert
                           ? new Date(stayToConvert.ends_at)
                         : new Date(
                             (selectedDay || now).getFullYear(),
                             (selectedDay || now).getMonth(),
-                            (selectedDay || now).getDate() + (eventAllDay ? 1 : 0),
-                            eventAllDay ? 0 : 1,
+                            (selectedDay || now).getDate(),
+                            1,
                           ),
                     )}
                   />
