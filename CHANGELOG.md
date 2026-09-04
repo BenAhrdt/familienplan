@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.83 – 4. September 2026
+
+### Mobile Ansicht und Dialogbedienung
+
+- Kalender und Übersicht bleiben auf Mobilgeräten in der vorgesehenen Größe und können nicht versehentlich per Seitengeste vergrößert werden.
+- Beim Betrachten angehängter Dokumente bleibt Zoomen weiterhin möglich.
+- Dialoge schließen beim Ziehen einer Textmarkierung über den Rand hinaus nicht mehr; dazu müssen sowohl das Drücken als auch das Loslassen außerhalb des Dialogs erfolgen.
+- Anhänge werden in der mobilen Tagesübersicht mit einem klar ausgerichteten, runden Büroklammer-Badge dargestellt.
+
 ## 0.1.82 – 3. September 2026
 
 ### Einheitliches Kalenderformat der Integrations-API

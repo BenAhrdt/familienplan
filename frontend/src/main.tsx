@@ -1357,6 +1357,16 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
     window.addEventListener("popstate", closeOnBack);
     return () => window.removeEventListener("popstate", closeOnBack);
   }, [viewerItem?.id]);
+  useEffect(() => {
+    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (!viewport) return;
+    viewport.content = viewerItem
+      ? "width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes,viewport-fit=cover"
+      : "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover";
+    return () => {
+      viewport.content = "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover";
+    };
+  }, [viewerItem]);
 
   function closeViewer() {
     if (window.history.state?.attachmentViewer) window.history.back();
@@ -2154,7 +2164,9 @@ function CalendarScreen({
       {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
-        <span><strong>{event.title} {event.attachment_count > 0 && <Paperclip className="inline-attachment-icon" size={14}/>}</strong><small>{calendarEventTiming(event)}</small></span><ChevronRight />
+        <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span>
+        {event.attachment_count > 0 && <i className="agenda-attachment-badge" aria-label={event.attachment_count === 1 ? "Ein Dokument angehängt" : `${event.attachment_count} Dokumente angehängt`}><Paperclip/></i>}
+        <ChevronRight />
       </button>)}
       {mobileDayStays.map((stay) => <button key={`${position}-mobile-stay-${stay.id}`} onClick={() => openDay(mobileSelectedDay, mobileDayStays, stay)} style={{"--entry-color":people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)"} as React.CSSProperties}>
         <i className="agenda-entry-icon care" aria-hidden="true">{children.find((child) => child.id === stay.child_id) && people.find((person) => person.id === stay.responsible_user_id) && <CareMarkers child={children.find((child) => child.id === stay.child_id)!} responsible={people.find((person) => person.id === stay.responsible_user_id)!} />}</i>
@@ -4967,14 +4979,28 @@ function App() {
         .sort((left, right) => left.layer - right.layer || left.order - right.order);
       modals.at(-1)?.modal.querySelector<HTMLButtonElement>(".panel > .close")?.click();
     };
-    const clickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (target.classList.contains("modal")) closeTopModal();
+    let pressedBackdrop: HTMLElement | null = null;
+    const pointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      pressedBackdrop = target instanceof HTMLElement && target.classList.contains("modal") ? target : null;
     };
+    const pointerUp = (event: PointerEvent) => {
+      const target = event.target;
+      if (pressedBackdrop && target === pressedBackdrop) closeTopModal();
+      pressedBackdrop = null;
+    };
+    const pointerCancel = () => { pressedBackdrop = null; };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") closeTopModal(); };
-    document.addEventListener("click", clickOutside);
+    document.addEventListener("pointerdown", pointerDown);
+    document.addEventListener("pointerup", pointerUp);
+    document.addEventListener("pointercancel", pointerCancel);
     document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("click", clickOutside); document.removeEventListener("keydown", escape); };
+    return () => {
+      document.removeEventListener("pointerdown", pointerDown);
+      document.removeEventListener("pointerup", pointerUp);
+      document.removeEventListener("pointercancel", pointerCancel);
+      document.removeEventListener("keydown", escape);
+    };
   }, []);
   const loadChildren = () =>
       api<Child[]>("/children")

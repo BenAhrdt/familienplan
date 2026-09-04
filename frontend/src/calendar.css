@@ -633,6 +633,8 @@
   .mobile-day-agenda button svg { width:18px; flex:0 0 auto; }
   .mobile-day-agenda .agenda-entry-icon { display:grid; place-items:center; width:24px; height:24px; flex:0 0 24px; color:var(--entry-color); font-style:normal; }
   .mobile-day-agenda .agenda-entry-icon > svg { width:21px; height:21px; }
+  .mobile-day-agenda .agenda-attachment-badge { display:grid; place-items:center; width:28px; height:28px; flex:0 0 28px; border:1px solid color-mix(in srgb,var(--entry-color) 28%,white); border-radius:50%; background:color-mix(in srgb,var(--entry-color) 12%,white); color:color-mix(in srgb,var(--entry-color) 72%,#172d27); font-style:normal; }
+  .mobile-day-agenda .agenda-attachment-badge > svg { width:15px; height:15px; }
   .mobile-day-agenda .agenda-color-dot { display:block; width:13px; height:13px; border-radius:50%; background:var(--entry-color); }
   .mobile-day-agenda .agenda-entry-icon.care { width:48px; flex-basis:48px; }
   .mobile-day-agenda .agenda-entry-icon .care-markers { position:relative; display:inline-flex; width:44px; height:20px; margin:0; padding:0 !important; overflow:visible !important; }
