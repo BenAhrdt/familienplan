@@ -1,5 +1,8 @@
 import base64
 
+from cryptography.hazmat.primitives import serialization
+from py_vapid import Vapid
+
 from app.models.entities import ApplicationSetting, PushSubscription
 from app.push import queue_push, vapid_config
 
@@ -34,7 +37,18 @@ def test_vapid_key_is_valid_and_reused():
     encoded = first["public_key"] + "=" * ((4 - len(first["public_key"]) % 4) % 4)
     assert len(base64.urlsafe_b64decode(encoded)) == 65
     assert first == second
-    assert "PRIVATE KEY" in first["private_key"]
+    assert Vapid.from_string(first["private_key"]).private_key is not None
+
+
+def test_existing_pem_vapid_key_is_migrated_to_supported_raw_format():
+    db = FakeDb()
+    generated = vapid_config(db)
+    key = Vapid.from_string(generated["private_key"]).private_key
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+    db.setting.value = {**generated, "private_key": pem}
+    migrated = vapid_config(db)
+    assert not migrated["private_key"].startswith("-----BEGIN")
+    assert Vapid.from_string(migrated["private_key"]).private_key is not None
 
 
 def test_push_is_queued_for_each_registered_device():

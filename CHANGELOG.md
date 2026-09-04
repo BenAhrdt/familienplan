@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.88 – 4. September 2026
+
+### Korrigierter Pushversand
+
+- Automatisch erzeugte VAPID-Schlüssel werden im von der Versandbibliothek erwarteten Rohformat gespeichert.
+- Bereits mit Version 0.1.87 erzeugte Schlüssel werden automatisch und ohne erneute Geräteanmeldung umgewandelt.
+- Pushnachrichten bleiben bis zu 24 Stunden zustellbar, wenn ein Gerät vorübergehend nicht erreichbar ist.
+
 ## 0.1.87 – 4. September 2026
 
 ### Pushnachrichten für installierte Web-Apps

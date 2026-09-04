@@ -13,18 +13,21 @@ from app.models.entities import ApplicationSetting, OutboxMessage, PushSubscript
 def vapid_config(db) -> dict[str, str]:
     row = db.get(ApplicationSetting, "web_push_vapid")
     if row and row.value.get("private_key") and row.value.get("public_key"):
-        return dict(row.value)
+        value = dict(row.value)
+        if value["private_key"].startswith("-----BEGIN"):
+            legacy_key = serialization.load_pem_private_key(value["private_key"].encode(), password=None)
+            raw_private = legacy_key.private_numbers().private_value.to_bytes(32, "big")
+            value["private_key"] = base64.urlsafe_b64encode(raw_private).rstrip(b"=").decode()
+            row.value = value
+            db.flush()
+        return value
     private_key = ec.generate_private_key(ec.SECP256R1())
-    private_pem = private_key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode()
+    raw_private = private_key.private_numbers().private_value.to_bytes(32, "big")
     public_bytes = private_key.public_key().public_bytes(
         serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
     )
     value = {
-        "private_key": private_pem,
+        "private_key": base64.urlsafe_b64encode(raw_private).rstrip(b"=").decode(),
         "public_key": base64.urlsafe_b64encode(public_bytes).rstrip(b"=").decode(),
     }
     if row:
@@ -57,6 +60,7 @@ def deliver_push(db, item: OutboxMessage, app_origin: str):
             vapid_private_key=vapid["private_key"],
             vapid_claims={"sub": app_origin},
             timeout=15,
+            ttl=86400,
         )
         subscription.last_used_at = utcnow()
         item.delivered_at = utcnow()
