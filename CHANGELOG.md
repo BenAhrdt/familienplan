@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.86 – 4. September 2026
+
+### Termindetails direkt in der Übersicht
+
+- Ein Klick auf einen Eintrag unter „Als Nächstes“ öffnet den gewohnten Kalenderdialog direkt über der Familienübersicht.
+- Die App wechselt dabei nicht mehr in den Kalender; nur „Zum Kalender“ führt weiterhin zur Kalenderübersicht.
+
 ## 0.1.85 – 4. September 2026
 
 ### Direkte Terminansicht und klare mobile Markierungen

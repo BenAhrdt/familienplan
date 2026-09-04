@@ -11,6 +11,10 @@
   min-width: 0;
 }
 
+.dashboard-calendar-dialog-host > :not(.modal) {
+  display: none !important;
+}
+
 .dashboardconflicts {
   padding: 1.25rem 1.4rem;
   border: 1px solid #e8b4aa;

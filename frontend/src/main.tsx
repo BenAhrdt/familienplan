@@ -654,10 +654,12 @@ function Dashboard({
   children,
   people,
   openCalendar,
+  openCalendarItem,
 }: {
   children: Child[];
   people: User[];
   openCalendar: (target?: CalendarTarget) => void;
+  openCalendarItem: (target: CalendarTarget) => void;
 }) {
   const now = new Date();
   const [items, setItems] = useState<DashboardItem[]>([]),
@@ -865,7 +867,7 @@ function Dashboard({
                   className="dashboarditem"
                   key={item.id}
                   onClick={() =>
-                    openCalendar({
+                    openCalendarItem({
                       kind: item.id.startsWith("event-")
                         ? "event"
                         : item.id.startsWith("birthday-")
@@ -1461,12 +1463,16 @@ function CalendarScreen({
   holidayDraft,
   holidayDraftConsumed,
   target,
+  targetMode = "calendar",
+  onTargetViewClose,
 }: {
   children: Child[];
   people: User[];
   holidayDraft?: HolidayPlanningDraft | null;
   holidayDraftConsumed?: () => void;
   target?: CalendarTarget | null;
+  targetMode?: "calendar" | "dialog";
+  onTargetViewClose?: () => void;
 }) {
   const [events, setEvents] = useState<CalendarEvent[]>([]),
     [eventSeries, setEventSeries] = useState<CalendarEvent[]>([]),
@@ -1645,7 +1651,7 @@ function CalendarScreen({
     return () => window.removeEventListener("familienplan:data-changed", refresh);
   }, [children.length, month.getFullYear(), month.getMonth()]);
   useEffect(() => {
-    if (!target) return;
+    if (!target || targetMode === "dialog") return;
     const targetDate = new Date(target.startsAt);
     if (
       targetDate.getFullYear() !== month.getFullYear() ||
@@ -1653,9 +1659,9 @@ function CalendarScreen({
     ) {
       setMonth(new Date(targetDate.getFullYear(), targetDate.getMonth(), 1));
     }
-  }, [target]);
+  }, [target, targetMode]);
   useEffect(() => {
-    if (!target) return;
+    if (!target || targetMode === "dialog") return;
     const element = document.querySelector<HTMLElement>(
       `[data-calendar-target="${target.kind}-${target.id}"]`,
     );
@@ -1665,7 +1671,7 @@ function CalendarScreen({
         80,
       );
     }
-  }, [target, events, stays]);
+  }, [target, events, stays, targetMode]);
   useEffect(() => {
     if (!holidayDraft) return;
     const child = children.find((item) => item.id === holidayDraft.child_id);
@@ -2775,7 +2781,7 @@ function CalendarScreen({
       </section>
       {mobileDayAgenda("bottom")}
       </div>
-      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => setReadOnlyInfo(null)} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p>{readOnlyInfo.event && <EventAttachments event={readOnlyInfo.event} editable={getSessionUser()?.role !== "VIEWER"} onCountChange={(count) => setEvents((current) => current.map((item) => item.id === readOnlyInfo.event?.id ? {...item, attachment_count:count} : item))}/>}<div className="modalactions"><button type="button" onClick={() => setReadOnlyInfo(null)}>Verstanden</button></div></section></div>}
+      {readOnlyInfo && <div className="modal confirmmodal" role="dialog" aria-modal="true"><section className="panel"><button type="button" className="close" onClick={() => { setReadOnlyInfo(null); onTargetViewClose?.(); }} aria-label="Schließen">×</button><h2>{readOnlyInfo.title}</h2><p className="readonly-details">{readOnlyInfo.message}</p>{readOnlyInfo.event && <EventAttachments event={readOnlyInfo.event} editable={getSessionUser()?.role !== "VIEWER"} onCountChange={(count) => setEvents((current) => current.map((item) => item.id === readOnlyInfo.event?.id ? {...item, attachment_count:count} : item))}/>}<div className="modalactions"><button type="button" onClick={() => { setReadOnlyInfo(null); onTargetViewClose?.(); }}>Verstanden</button></div></section></div>}
       {open && (
         <div className="modal">
           <form
@@ -2792,6 +2798,7 @@ function CalendarScreen({
                 setEditingStaySource(null);
                 setSelectedDay(null);
                 setCounterRequest(null);
+                onTargetViewClose?.();
               }}
             >
               ×
@@ -4987,6 +4994,7 @@ function App() {
     [showChangelog, setShowChangelog] = useState(false),
     [markingNotificationsRead, setMarkingNotificationsRead] = useState(false),
     [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(null),
+    [dashboardCalendarView, setDashboardCalendarView] = useState<{ target: CalendarTarget; key: number } | null>(null),
     [holidayDraft, setHolidayDraft] =
       useState<HolidayPlanningDraft | null>(null),
     [planningItems, setPlanningItems] = useState<PlanningItem[]>(() => {
@@ -5215,7 +5223,12 @@ function App() {
     return true;
   });
   let content: React.ReactNode = (
-    <Dashboard children={children} people={people} openCalendar={openCalendar} />
+    <Dashboard
+      children={children}
+      people={people}
+      openCalendar={openCalendar}
+      openCalendarItem={(target) => setDashboardCalendarView({ target, key: Date.now() })}
+    />
   );
   if (screen === "calendar")
     content = (
@@ -5455,6 +5468,18 @@ function App() {
         )}
         {content}
       </main>
+      {dashboardCalendarView && (
+        <div className="dashboard-calendar-dialog-host">
+          <CalendarScreen
+            key={dashboardCalendarView.key}
+            children={children}
+            people={people}
+            target={dashboardCalendarView.target}
+            targetMode="dialog"
+            onTargetViewClose={() => setDashboardCalendarView(null)}
+          />
+        </div>
+      )}
       <nav className="bottom">
         {nav.filter(([id]) => id === "home" || id === "calendar").map(([id, Icon]) => (
           <button
