@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.93 – 4. September 2026
+
+### Betreuungszeiten wieder löschbar
+
+- Administratoren können einzelne Betreuungszeiten wieder sofort löschen, ohne dass ein interner Serverfehler auftritt.
+- Ein automatisierter Regressionstest sichert den vollständigen Löschvorgang ab.
+
 ## 0.1.92 – 4. September 2026
 
 ### Optionale Pushnachrichten für fremde Logbuchaktivitäten

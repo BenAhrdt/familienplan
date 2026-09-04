@@ -1865,8 +1865,6 @@ def delete_stay(stay_id: int, scope: str, request: Request, db: Session = Depend
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Betreuungszeit nicht gefunden")
     targets = stay_scope_targets(db, stay, scope)
     for target in targets:
-        for attachment in target.attachments:
-            (settings.upload_dir.resolve() / "calendar-attachments" / attachment.storage_name).unlink(missing_ok=True)
         db.delete(target)
     audit(db, request, "STAY_DELETED", user.id, ("stay", str(stay_id)), {"scope": scope, "affected": len(targets)})
     db.commit()
