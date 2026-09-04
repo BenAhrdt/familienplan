@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.89 – 4. September 2026
+
+### Funktionierende Links aus Pushnachrichten
+
+- Der direkte Kalenderpfad liefert nun ausdrücklich die Web-App aus, statt bei einem Aufruf aus einer Pushnachricht mit „Not Found“ zu antworten.
+- Links mit einer Anfragekennung öffnen FamilienPlan und führen anschließend zur zugehörigen Abstimmung.
+
 ## 0.1.88 – 4. September 2026
 
 ### Korrigierter Pushversand

@@ -102,6 +102,12 @@ class SPAStaticFiles(StaticFiles):
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if frontend_dist.is_dir():
+    @app.get("/calendar", include_in_schema=False)
+    async def calendar_page():
+        response = FileResponse(frontend_dist / "index.html", media_type="text/html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+
     @app.get("/invite/{token}", include_in_schema=False)
     async def invitation_page(token: str):
         response = FileResponse(frontend_dist / "index.html", media_type="text/html")
