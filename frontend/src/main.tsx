@@ -4953,7 +4953,7 @@ function App() {
     [updateStarting, setUpdateStarting] = useState(false),
     [updateDialog, setUpdateDialog] = useState<"confirm" | "progress" | "timeout" | "error" | null>(null),
     [updateError, setUpdateError] = useState(""),
-    [updateSeconds, setUpdateSeconds] = useState(30),
+    [updateElapsedSeconds, setUpdateElapsedSeconds] = useState(0),
     [showChangelog, setShowChangelog] = useState(false),
     [markingNotificationsRead, setMarkingNotificationsRead] = useState(false),
     [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(null),
@@ -5083,25 +5083,17 @@ function App() {
   async function installUpdate() {
     if (!meta?.update_available || updateStarting) return;
     setUpdateDialog("progress");
-    setUpdateSeconds(30);
+    setUpdateElapsedSeconds(0);
     setUpdateStarting(true);
     try {
       await api("/system/update", { method: "POST" });
-      const countdown = window.setInterval(() => {
-        setUpdateSeconds((current) => {
-          if (current <= 1) {
-            window.clearInterval(countdown);
-            location.reload();
-            return 0;
-          }
-          return current - 1;
-        });
-      }, 1000);
+      const elapsedTimer = window.setInterval(() => setUpdateElapsedSeconds((current) => current + 1), 1000);
       const previousVersion = meta.version;
-      const deadline = Date.now() + 5 * 60_000;
+      const deadline = Date.now() + 15 * 60_000;
       const poll = window.setInterval(async () => {
         if (Date.now() > deadline) {
           window.clearInterval(poll);
+          window.clearInterval(elapsedTimer);
           setUpdateStarting(false);
           setUpdateDialog("timeout");
           return;
@@ -5110,6 +5102,7 @@ function App() {
           const current = await api<ApplicationMeta>("/meta", { background: true });
           if (current.version !== previousVersion) {
             window.clearInterval(poll);
+            window.clearInterval(elapsedTimer);
             location.reload();
           }
         } catch {
@@ -5313,7 +5306,7 @@ function App() {
             {updateDialog === "confirm" ? (
               <p>FamilienPlan {meta?.latest_version} jetzt installieren? Vorher wird automatisch ein Backup erstellt.</p>
             ) : updateDialog === "progress" ? (
-              <><p>Backup, Aktualisierung und Neustart laufen. FamilienPlan lädt anschließend automatisch neu.</p><div className="update-countdown"><strong>{updateSeconds}</strong><span>Sekunden bis zum Neuladen</span></div></>
+              <><p>Backup, Aktualisierung und Neustart laufen. Das kann bei langsamen Paketservern mehrere Minuten dauern. Diese Seite lädt anschließend automatisch neu.</p><div className="update-countdown"><strong>{Math.floor(updateElapsedSeconds / 60)}:{String(updateElapsedSeconds % 60).padStart(2, "0")}</strong><span>Update läuft</span></div></>
             ) : updateDialog === "timeout" ? (
               <p>Das Update dauert länger als erwartet. Prüfe auf dem Server den Status mit <code>systemctl status familienplan-update.service</code>.</p>
             ) : (

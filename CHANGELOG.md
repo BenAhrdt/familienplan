@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.84 – 4. September 2026
+
+### Verlässliche Updateanzeige
+
+- Die Updateanzeige lädt nicht mehr irreführend nach 30 Sekunden neu, während die Installation noch läuft.
+- Statt eines Countdowns zeigt sie die tatsächlich verstrichene Laufzeit und weist auf mögliche Wartezeiten bei langsamen Paketservern hin.
+- FamilienPlan prüft den Versionswechsel bis zu 15 Minuten lang und lädt erst nach dem erfolgreichen Neustart automatisch neu.
+
 ## 0.1.83 – 4. September 2026
 
 ### Mobile Ansicht und Dialogbedienung
