@@ -1543,6 +1543,7 @@ function CalendarScreen({
       const initial = target ? new Date(target.startsAt) : new Date();
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
     });
+  const openedTargetRef = useRef("");
   const now = new Date(),
     canWriteCalendar = getSessionUser()?.role !== "VIEWER" || customEventTypes.some((type) => type.can_create),
     availableEventTypes = getSessionUser()?.role === "ADMIN"
@@ -1908,6 +1909,35 @@ function CalendarScreen({
       });
     } else openCalendarEvent(event);
   }
+  useEffect(() => {
+    if (!target) {
+      openedTargetRef.current = "";
+      return;
+    }
+    const targetKey = `${target.kind}-${target.id}-${target.startsAt}`;
+    if (openedTargetRef.current === targetKey) return;
+    if (target.kind === "event") {
+      const event = events.find((item) => item.id === target.id);
+      if (!event) return;
+      openedTargetRef.current = targetKey;
+      showCalendarEvent(event);
+      return;
+    }
+    if (target.kind === "stay") {
+      const stay = stays.find((item) => item.id === target.id);
+      if (!stay) return;
+      openedTargetRef.current = targetKey;
+      openDay(new Date(target.startsAt), [stay], stay);
+      return;
+    }
+    const birthday = customBirthdays.find((item) => item.id === target.id);
+    if (!birthday) return;
+    openedTargetRef.current = targetKey;
+    setReadOnlyInfo({
+      title: `Geburtstag von ${birthday.display_name}`,
+      message: "Dieser Geburtstag wird automatisch aus den Personendaten erzeugt und kann deshalb nicht direkt im Kalender bearbeitet werden. Ändere ihn in der Rubrik Geburtstage.",
+    });
+  }, [target, events, stays, customBirthdays, customEventTypes]);
   function childrenForHoliday(holiday: Holiday & { state: string }) {
     return children.filter((child) => child.school_state_code === holiday.state);
   }

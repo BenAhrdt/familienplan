@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.85 – 4. September 2026
+
+### Direkte Terminansicht und klare mobile Markierungen
+
+- Ein Klick auf einen Eintrag unter „Als Nächstes“ öffnet im Kalender unmittelbar dieselbe Detail- oder Bearbeitungsansicht wie ein Klick auf den Kalendereintrag.
+- Der separate Link „Zum Kalender“ bleibt für den direkten Wechsel in die reine Kalenderübersicht erhalten.
+- Die kleinen Markierungen im mobilen Monatskalender verwenden einheitliche Farbpunkte ohne gequetschte Symbole; die aussagekräftigen Symbole bleiben in der Tagesansicht sichtbar.
+
 ## 0.1.84 – 4. September 2026
 
 ### Verlässliche Updateanzeige
