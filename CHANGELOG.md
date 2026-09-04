@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.92 – 4. September 2026
+
+### Optionale Pushnachrichten für fremde Logbuchaktivitäten
+
+- Administratoren können im Logbuch persönlich aktivieren, dass Aktivitäten anderer Personen als Pushnachricht gesendet werden.
+- Eigene Aktivitäten sowie An- und Abmeldungen werden nicht gesendet.
+- Anfragen, Entscheidungen und daraus übernommene Änderungen bleiben ausgenommen, wenn dafür bereits die reguläre Benachrichtigung versendet wird.
+- Die Einstellung gilt pro Administratorkonto; die Nachricht wird an dessen aktivierte Push-Geräte zugestellt.
+
 ## 0.1.91 – 4. September 2026
 
 ### Korrigierte Ganztagsumschaltung

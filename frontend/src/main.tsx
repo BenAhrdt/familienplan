@@ -5708,12 +5708,13 @@ const auditActionLabels: Record<string,string> = {
   SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", CALENDAR_EVENT_TYPES_CHANGED:"hat Terminarten und deren Freigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", PERSONAL_CALENDAR_DISPLAY_CHANGED:"hat die persönliche Kalenderanzeige geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
   SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender eingerichtet",
   SYSTEM_UPDATE_REQUESTED:"hat ein Systemupdate gestartet", IMPERSONATION_STARTED:"hat die Ansicht einer Person übernommen", IMPERSONATION_STOPPED:"hat die übernommene Ansicht beendet",
+  AUDIT_PUSH_CHANGED:"hat Logbuch-Pushnachrichten eingestellt",
 };
 const auditTargetLabels:Record<string,string>={user:"Person",child:"Kind",stay:"Betreuungszeit",recurrence_rule:"Betreuungsserie",calendar_event:"Termin",calendar_event_series:"Terminserie",birthday:"Geburtstag",invitation:"Einladung",change_request:"Anfrage",calendar_source:"Kalenderquelle",setting:"Einstellung",system:"System",username:"Benutzername"};
 const auditDetailLabels:Record<string,string>={title:"Titel",name:"Name",display_name:"Anzeigename",event_type:"Terminart",starts_at:"Beginn",ends_at:"Ende",birth_date:"Geburtsdatum",description:"Beschreibung",note:"Notiz",scope:"Umfang",affected:"Betroffene Einträge",occurrences:"Einträge",children:"Freigegebene Kinder",role:"Rolle",email:"E-Mail-Adresse",user_id:"Person",responsible_user_id:"Zuständige Person",child_id:"Kind",from_version:"Ausgangsversion",removed:"Entfernt",events:"Termine",visibility:"Sichtbar für",changed_values:"Geänderte Werte"};
 
 function AuditLogSettings({ people }: { people: User[] }) {
-  const [items,setItems] = useState<AuditEntry[]>([]), [userFilter,setUserFilter] = useState(""), [actionFilter,setActionFilter] = useState(""), [offset,setOffset] = useState(0), [hasMore,setHasMore] = useState(false), [busy,setBusy] = useState(false), [error,setError] = useState("");
+  const [items,setItems] = useState<AuditEntry[]>([]), [userFilter,setUserFilter] = useState(""), [actionFilter,setActionFilter] = useState(""), [offset,setOffset] = useState(0), [hasMore,setHasMore] = useState(false), [busy,setBusy] = useState(false), [pushBusy,setPushBusy] = useState(false), [pushEnabled,setPushEnabled] = useState(false), [message,setMessage] = useState(""), [error,setError] = useState("");
   async function load(nextOffset=0, append=false) {
     setBusy(true); setError("");
     const query = new URLSearchParams({ limit:"100", offset:String(nextOffset) });
@@ -5724,9 +5725,18 @@ function AuditLogSettings({ people }: { people: User[] }) {
     finally { setBusy(false); }
   }
   useEffect(()=>{ void load(); },[userFilter,actionFilter]);
+  useEffect(()=>{ api<{enabled:boolean}>("/settings/audit-push").then((value)=>setPushEnabled(value.enabled)).catch((x)=>setError((x as Error).message)); },[]);
+  async function togglePush() {
+    setPushBusy(true); setError(""); setMessage("");
+    try { const value=await api<{enabled:boolean}>("/settings/audit-push",{method:"PUT",body:JSON.stringify({enabled:!pushEnabled})}); setPushEnabled(value.enabled); setMessage(value.enabled?"Pushnachrichten für fremde Logbucheinträge sind aktiviert.":"Pushnachrichten für fremde Logbucheinträge sind deaktiviert."); }
+    catch(x){ setError((x as Error).message); }
+    finally { setPushBusy(false); }
+  }
   const actions = [...new Set(items.map((item)=>item.action))].sort();
   return <section id="settings-audit" className="themebox settings-card settings-wide audit-log">
     <div className="audit-heading"><div><h2>Logbuch</h2><p className="muted">Sicherheits- und Änderungsverlauf aller Personen. Geheimnisse und Passwörter werden nicht protokolliert.</p></div><button type="button" className="secondary" onClick={()=>load()} disabled={busy}>{busy?"Lädt …":"Neu laden"}</button></div>
+    <div className="audit-push-setting"><div><strong>Fremde Logbucheinträge als Pushnachricht</strong><p className="muted">Informiert dich über Aktivitäten anderer Personen. Eigene Aktionen, An- und Abmeldungen sowie Anfragen und Entscheidungen mit eigener Benachrichtigung werden ausgelassen.</p></div><button type="button" className={pushEnabled?"secondary":""} onClick={togglePush} disabled={pushBusy}>{pushBusy?"Wird gespeichert …":pushEnabled?"Deaktivieren":"Aktivieren"}</button></div>
+    {message&&<p className="success">{message}</p>}
     <div className="audit-filters"><label>Person<select value={userFilter} onChange={(e)=>setUserFilter(e.target.value)}><option value="">Alle Personen</option>{people.map((person)=><option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label><label>Aktivität<select value={actionFilter} onChange={(e)=>setActionFilter(e.target.value)}><option value="">Alle Aktivitäten</option>{actions.map((action)=><option key={action} value={action}>{auditActionLabels[action]||action}</option>)}</select></label></div>
     {error&&<p className="error">{error}</p>}
     <div className="audit-list">{items.map((item)=><article key={item.id}><div className="audit-time"><strong>{new Date(item.created_at).toLocaleDateString("de-DE")}</strong><span>{new Date(item.created_at).toLocaleTimeString("de-DE")}</span></div><div className="audit-event"><p><strong>{item.user_name}</strong> {auditActionLabels[item.action]||item.action.toLocaleLowerCase("de-DE").replaceAll("_"," ")}.</p><small>{item.target_type ? `${auditTargetLabels[item.target_type]||item.target_type} ${item.target_id||""}` : "System"}{item.ip_address?` · IP ${item.ip_address}`:""}</small>{Object.keys(item.details||{}).length>0&&<details><summary>Details anzeigen</summary><dl>{Object.entries(item.details).map(([key,value])=><div key={key}><dt>{auditDetailLabels[key]||key.replaceAll("_"," ")}</dt><dd>{typeof value==="object"?JSON.stringify(value):String(value)}</dd></div>)}</dl></details>}</div></article>)}</div>

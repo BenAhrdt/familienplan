@@ -26,7 +26,7 @@ from app.integrations import queue_mail
 from app.push import queue_push, vapid_config
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -238,13 +238,58 @@ def recurrence_dates(data: StayCreate) -> list[tuple[datetime, datetime]]:
     return occurrences
 
 
+AUDIT_PUSH_EXCLUDED_ACTIONS = {
+    "LOGIN", "LOGOUT", "LOGIN_FAILED",
+    "NEW_STAY_PROPOSED", "STAY_CHANGE_PROPOSED", "STAY_DELETE_PROPOSED", "GROUP_PLAN_PROPOSED",
+    "AUDIT_PUSH_CHANGED",
+}
+AUDIT_PUSH_ACTION_LABELS = {
+    "PASSWORD_CHANGED": "hat das eigene Passwort geändert", "PASSWORD_RESET_REQUESTED": "hat einen Passwort-Reset angefordert", "PASSWORD_RESET_COMPLETED": "hat das Passwort zurückgesetzt",
+    "INITIAL_ADMIN_CREATED": "hat FamilienPlan eingerichtet",
+    "PERSON_ACCESS_CHANGED": "hat die Rechte einer Person geändert",
+    "PERSON_DELETED": "hat eine Person gelöscht",
+    "INVITATION_CREATED": "hat eine Einladung erstellt", "INVITATION_RENEWED": "hat einen Einladungslink erneuert", "INVITATION_SENT": "hat eine Einladung versendet", "INVITATION_ACCEPTED": "hat eine Einladung angenommen",
+    "CHILD_CREATED": "hat ein Kind angelegt", "CHILD_CHANGED": "hat ein Kind geändert", "CHILD_PERMISSION_CHANGED": "hat Kinderrechte geändert",
+    "STAY_CREATED": "hat eine Betreuungszeit angelegt", "STAY_CHANGED": "hat eine Betreuungszeit geändert", "STAY_DELETED": "hat eine Betreuungszeit gelöscht",
+    "STAY_SERIES_CREATED": "hat eine Betreuungsserie angelegt", "STAY_SERIES_CHANGED": "hat eine Betreuungsserie geändert", "STAY_SERIES_EXTENDED": "hat eine Betreuungsserie verlängert",
+    "CALENDAR_EVENT_CREATED": "hat einen Termin angelegt", "CALENDAR_EVENT_CHANGED": "hat einen Termin geändert", "CALENDAR_EVENT_DELETED": "hat einen Termin gelöscht",
+    "CALENDAR_EVENT_SERIES_CREATED": "hat eine Terminserie angelegt", "CALENDAR_EVENT_SERIES_CHANGED": "hat eine Terminserie geändert", "CALENDAR_EVENT_SERIES_DELETED": "hat eine Terminserie gelöscht",
+    "CALENDAR_EVENT_ATTACHMENT_ADDED": "hat einem Termin einen Anhang hinzugefügt", "CALENDAR_EVENT_ATTACHMENT_DELETED": "hat einen Terminanhang gelöscht",
+    "BIRTHDAY_CREATED": "hat einen Geburtstag angelegt", "BIRTHDAY_CHANGED": "hat einen Geburtstag geändert", "BIRTHDAY_DELETED": "hat einen Geburtstag gelöscht",
+    "SECTION_ACCESS_CHANGED": "hat Rubrikenfreigaben geändert", "CALENDAR_EVENT_TYPES_CHANGED": "hat Terminarten und Freigaben geändert", "THEME_CHANGED": "hat die globale Darstellung geändert",
+    "PERSONAL_CALENDAR_COLORS_CHANGED": "hat persönliche Kalenderfarben geändert", "PERSONAL_CALENDAR_DISPLAY_CHANGED": "hat die persönliche Kalenderanzeige geändert", "OWN_PROFILE_CHANGED": "hat das eigene Profil geändert",
+    "SCHOOL_CALENDAR_SYNCED": "hat einen Schulkalender synchronisiert", "WASTE_CALENDAR_SYNCED": "hat einen Abfallkalender synchronisiert", "CALENDAR_SOURCE_SYNCED": "hat einen externen Kalender synchronisiert",
+    "WASTE_CALENDAR_CREATED": "hat einen Abfallkalender angelegt", "WASTE_CALENDAR_SETTINGS_CHANGED": "hat einen Abfallkalender geändert", "WASTE_CALENDAR_DELETED": "hat einen Abfallkalender gelöscht",
+    "SYSTEM_UPDATE_REQUESTED": "hat ein Systemupdate gestartet", "IMPERSONATION_STARTED": "hat die Ansicht einer Person übernommen", "IMPERSONATION_STOPPED": "hat die übernommene Ansicht beendet",
+}
+
+
+def audit_push_enabled(db: Session, user_id: int) -> bool:
+    row = db.get(ApplicationSetting, f"audit_push_{user_id}")
+    return bool(row and (row.value or {}).get("enabled"))
+
+
+def queue_audit_pushes(db: Session, request: Request, entry: AuditLog, actor: User | None) -> None:
+    if not actor or entry.action in AUDIT_PUSH_EXCLUDED_ACTIONS or getattr(request.state, "approved_change", False):
+        return
+    app_url = settings.app_origin.rstrip("/")
+    label = AUDIT_PUSH_ACTION_LABELS.get(entry.action, entry.action.lower().replace("_", " "))
+    for recipient in db.scalars(select(User).where(User.role == Role.ADMIN, User.is_active.is_(True), User.id != actor.id)):
+        if audit_push_enabled(db, recipient.id):
+            queue_push(db, recipient.id, f"audit:{entry.id}", f"Logbuch: {actor.display_name}", f"{actor.display_name} {label}.", app_url)
+
+
 def audit(db: Session, request: Request, action: str, user_id: int | None = None, target: tuple[str, str] | None = None, metadata: dict | None = None):
     details = dict(metadata or {})
+    actor = None
     if user_id:
         actor = db.get(User, user_id)
         if actor:
             details.setdefault("_actor_name", actor.display_name)
-    db.add(AuditLog(user_id=user_id, action=action, target_type=target[0] if target else None, target_id=target[1] if target else None, metadata_json=details or None, ip_address=request.client.host if request.client else None))
+    entry = AuditLog(user_id=user_id, action=action, target_type=target[0] if target else None, target_id=target[1] if target else None, metadata_json=details or None, ip_address=request.client.host if request.client else None)
+    db.add(entry)
+    db.flush()
+    queue_audit_pushes(db, request, entry, actor)
 
 
 def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None):
@@ -615,6 +660,19 @@ def get_audit_log(user_id: int | None = None, action: str | None = None, limit: 
         "has_more": len(rows) > limit,
         "next_offset": offset + min(len(rows), limit),
     }
+
+
+@router.get("/settings/audit-push", response_model=AuditPushSetting)
+def get_audit_push_setting(db: Session = Depends(get_db), user: User = Depends(admin)):
+    return AuditPushSetting(enabled=audit_push_enabled(db, user.id))
+
+
+@router.put("/settings/audit-push", response_model=AuditPushSetting, dependencies=[Depends(require_csrf)])
+def update_audit_push_setting(data: AuditPushSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    upsert_application_setting(db, f"audit_push_{user.id}", data.model_dump())
+    audit(db, request, "AUDIT_PUSH_CHANGED", user.id, ("setting", "audit_push"), data.model_dump())
+    db.commit()
+    return data
 
 
 @router.put("/settings/sections", response_model=SectionAccessSetting, dependencies=[Depends(require_csrf)])
