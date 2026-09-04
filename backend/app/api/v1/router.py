@@ -23,9 +23,10 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
 from app.integrations import queue_mail
+from app.push import queue_push, vapid_config
 from app.version import VERSION
-from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
+from app.schemas import BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -255,6 +256,7 @@ def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_
     app_url = mail_config(db).get("app_url") or settings.app_origin
     action_url = f"{app_url}/calendar?request={request_id}" if request_id else f"{app_url}/calendar"
     queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url)
+    queue_push(db, user_id, event_key, title, body, action_url)
     return notification
 
 
@@ -2157,6 +2159,36 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
 @router.get("/notifications", response_model=list[NotificationOut])
 def notifications(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return list(db.scalars(select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc()).limit(50)))
+
+
+@router.get("/push/config")
+def push_config(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    public_key = vapid_config(db)["public_key"]
+    db.commit()
+    return {"public_key": public_key, "subscriptions": db.scalar(select(func.count(PushSubscription.id)).where(PushSubscription.user_id == user.id)) or 0}
+
+
+@router.post("/push/subscriptions", status_code=201, dependencies=[Depends(require_csrf)])
+def save_push_subscription(data: PushSubscriptionCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == data.endpoint))
+    if item and item.user_id != user.id:
+        item.user_id = user.id
+    if not item:
+        item = PushSubscription(user_id=user.id, endpoint=data.endpoint, p256dh=data.keys.p256dh, auth=data.keys.auth)
+        db.add(item)
+    item.p256dh, item.auth = data.keys.p256dh, data.keys.auth
+    item.user_agent = (request.headers.get("user-agent") or "")[:500]
+    db.commit()
+    return {"enabled": True}
+
+
+@router.delete("/push/subscriptions", status_code=204, dependencies=[Depends(require_csrf)])
+def remove_push_subscription(endpoint: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == endpoint, PushSubscription.user_id == user.id))
+    if item:
+        db.delete(item)
+        db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/notifications/read-all", status_code=204, dependencies=[Depends(require_csrf)])

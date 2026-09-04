@@ -83,12 +83,17 @@ def _send_mail(config: dict, recipient: str, payload: dict):
 async def deliver_outbox_once():
     with SessionLocal() as db:
         due = list(db.scalars(select(OutboxMessage).where(
-            OutboxMessage.channel == "email",
+            OutboxMessage.channel.in_(["email", "push"]),
             OutboxMessage.delivered_at.is_(None), OutboxMessage.available_at <= utcnow(),
             OutboxMessage.attempts < 8).order_by(OutboxMessage.id).limit(20).with_for_update(skip_locked=True)))
         config = mail_config(db)
         for item in due:
             try:
+                if item.channel == "push":
+                    from app.push import deliver_push
+                    import asyncio
+                    await asyncio.to_thread(deliver_push, db, item, get_settings().app_origin)
+                    continue
                 if not config["host"]:
                     raise RuntimeError("Kein SMTP-Server konfiguriert")
                 import asyncio

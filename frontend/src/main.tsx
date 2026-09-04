@@ -4946,6 +4946,9 @@ function GlobalSearch({
 
 function App() {
   useEffect(() => {
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  }, []);
+  useEffect(() => {
     const observed = new Map<Element, ResizeObserver>();
     const positionButtons = () => {
       document.querySelectorAll<HTMLElement>(".modal .panel > .close").forEach((button) => {
@@ -5169,6 +5172,18 @@ function App() {
     );
   if (!user) return <Login done={setUser} />;
   async function logout() {
+    if ("serviceWorker" in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await api(`/push/subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`, { method:"DELETE" });
+          await subscription.unsubscribe();
+        }
+      } catch {
+        // Die Abmeldung darf nicht an einer bereits ungültigen Push-Registrierung scheitern.
+      }
+    }
     await api("/auth/logout", { method: "POST" });
     setUser(null);
   }
@@ -5665,6 +5680,57 @@ function AuditLogSettings({ people }: { people: User[] }) {
   </section>;
 }
 
+function base64UrlBytes(value: string) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const binary = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function PushNotificationSettings() {
+  const [state, setState] = useState<"checking" | "unsupported" | "off" | "on">("checking"),
+    [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  useEffect(() => {
+    if (!supported) { setState("unsupported"); return; }
+    navigator.serviceWorker.register("/service-worker.js").then((registration) => registration.pushManager.getSubscription()).then((subscription) => setState(subscription ? "on" : "off")).catch(() => setState("unsupported"));
+  }, []);
+  async function enable() {
+    setBusy(true); setMessage("");
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("Pushnachrichten wurden nicht erlaubt. Du kannst die Berechtigung in den Geräteeinstellungen ändern.");
+      const registration = await navigator.serviceWorker.ready;
+      const config = await api<{public_key:string}>("/push/config");
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:base64UrlBytes(config.public_key) });
+      await api("/push/subscriptions", { method:"POST", body:JSON.stringify(subscription.toJSON()) });
+      setState("on"); setMessage("Pushnachrichten sind auf diesem Gerät aktiviert.");
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function disable() {
+    setBusy(true); setMessage("");
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await api(`/push/subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`, { method:"DELETE" });
+        await subscription.unsubscribe();
+      }
+      setState("off"); setMessage("Pushnachrichten sind auf diesem Gerät deaktiviert.");
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <section className="password-settings push-settings">
+    <h2>Pushnachrichten</h2>
+    <p className="muted">Erhalte Anfragen und Entscheidungen zusätzlich zur E-Mail direkt auf diesem Gerät.</p>
+    {!standalone && /iPhone|iPad|iPod/.test(navigator.userAgent) && <p className="hint">Auf iPhone und iPad musst du FamilienPlan zuerst über „Teilen“ → „Zum Home-Bildschirm“ installieren und von dort öffnen.</p>}
+    {state === "unsupported" && <p className="hint">Dieser Browser unterstützt Web Push in dieser Ansicht nicht.</p>}
+    {message && <p className={state === "on" ? "success" : "hint"}>{message}</p>}
+    {state === "on" ? <button type="button" className="secondary" disabled={busy} onClick={disable}>{busy ? "Wird deaktiviert …" : "Auf diesem Gerät deaktivieren"}</button> : state === "off" ? <button type="button" disabled={busy} onClick={enable}>{busy ? "Wird aktiviert …" : "Auf diesem Gerät aktivieren"}</button> : null}
+  </section>;
+}
+
 function SettingsScreen({
   user,
   people,
@@ -5847,6 +5913,7 @@ function SettingsScreen({
           <Field label="Neues Passwort bestätigen" name="password_confirm" type="password" />
           <button>Passwort ändern</button>
         </form>
+        <PushNotificationSettings />
       </section>}
       {settingsSection === "calendar" && <section id="settings-calendar" className="themebox settings-card">
         <h2>Meine Kalenderfarben</h2>
@@ -5912,7 +5979,7 @@ function ChangelogModal({ meta, onClose }: { meta: ApplicationMeta; onClose: () 
 }
 
 type IntegrationToken = { id: number; name: string; scopes: string[]; last_used_at: string | null; revoked_at: string | null; user_id:number; user_name:string };
-type OutboxEntry = { id:number; channel:"email"; recipient:string; event_type:string; attempts:number; last_error:string|null; delivered_at:string|null; created_at:string };
+type OutboxEntry = { id:number; channel:"email"|"push"; recipient:string; event_type:string; attempts:number; last_error:string|null; delivered_at:string|null; created_at:string };
 
 function IntegrationSettings() {
   const [mail, setMail] = useState({ enabled: false, host: "", port: 587, username: "", password: "", from_address: "FamilienPlan <familienplan@example.de>", app_url: location.origin, security: "starttls", password_configured: false });
@@ -5946,7 +6013,7 @@ function IntegrationSettings() {
       <label>Verbindungssicherheit<select value={mail.security} onChange={(e)=>setMail({...mail,security:e.target.value})}><option value="ssl">SSL/TLS (meist Port 465)</option><option value="starttls">STARTTLS (meist Port 587)</option><option value="none">Unverschlüsselt</option></select></label>
     </div>
     <div className="buttonrow"><button onClick={saveMail}>Mailserver speichern</button><button className="secondary" onClick={async()=>{try{const result=await api<{recipient:string}>("/settings/mail/test",{method:"POST"});setMessage(`Testmail an ${result.recipient} wurde in die Versandwarteschlange gelegt.`);window.setTimeout(()=>void reload(),1200)}catch(x){setError((x as Error).message)}}}>Testmail an {getSessionUser()?.email || "mich"}</button><button className="quiet" onClick={()=>{setShowOutbox(!showOutbox);void reload()}}>{showOutbox?"Warteschlange ausblenden":"Versandstatus anzeigen"}</button></div>
-    {showOutbox && <div className="outbox"><header><strong>Letzte Zustellungen</strong><button className="quiet" onClick={()=>void reload()}>Aktualisieren</button></header>{outbox.length===0?<p className="muted">Noch keine Nachrichten vorhanden.</p>:outbox.map((item)=><article key={item.id}><span className={`delivery-state ${item.delivered_at?"sent":item.last_error?"failed":"waiting"}`}>{item.delivered_at?"Versendet":item.last_error?"Fehlgeschlagen":"Wartet"}</span><div><strong>E-Mail · {item.event_type}</strong><small>An: {item.recipient} · {new Date(item.created_at).toLocaleString("de-DE")}{item.attempts?` · ${item.attempts} Versuche`:""}</small>{item.last_error&&<p className="delivery-error">{item.last_error}</p>}</div></article>)}</div>}
+    {showOutbox && <div className="outbox"><header><strong>Letzte Zustellungen</strong><button className="quiet" onClick={()=>void reload()}>Aktualisieren</button></header>{outbox.length===0?<p className="muted">Noch keine Nachrichten vorhanden.</p>:outbox.map((item)=><article key={item.id}><span className={`delivery-state ${item.delivered_at?"sent":item.last_error?"failed":"waiting"}`}>{item.delivered_at?"Versendet":item.last_error?"Fehlgeschlagen":"Wartet"}</span><div><strong>{item.channel === "push" ? "Push" : "E-Mail"} · {item.event_type}</strong><small>{item.channel === "push" ? `Gerät ${item.recipient}` : `An: ${item.recipient}`} · {new Date(item.created_at).toLocaleString("de-DE")}{item.attempts?` · ${item.attempts} Versuche`:""}</small>{item.last_error&&<p className="delivery-error">{item.last_error}</p>}</div></article>)}</div>}
     </div>
     <div className="integration-card">
     <div className="integration-card-head"><div><h3>REST-API-Schlüssel</h3><p className="muted">Für ioBroker, Home Assistant und weitere lokale Integrationen. Kalenderdaten einschließlich Betreuungszeiten: <code>/api/v1/integrations/v1/calendar</code></p></div><span className="integration-badge">Nur Lesen</span></div>

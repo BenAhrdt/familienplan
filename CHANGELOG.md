@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.87 – 4. September 2026
+
+### Pushnachrichten für installierte Web-Apps
+
+- FamilienPlan lässt sich mit App-Manifest und Service Worker als Web-App auf dem Homebildschirm verwenden.
+- Jede Person kann Pushnachrichten pro Gerät unter „Einstellungen → Profil“ aktivieren und wieder deaktivieren.
+- Neue Anfragen und Entscheidungen werden zusätzlich zur bisherigen E-Mail als verschlüsselte Web-Push-Nachricht zugestellt, auch wenn FamilienPlan geschlossen ist.
+- Ein Klick auf die Pushnachricht öffnet direkt die zugehörige Anfrage; beim Abmelden wird das Push-Abo des Geräts entfernt.
+- Die notwendigen VAPID-Schlüssel erzeugt FamilienPlan automatisch und speichert sie in der eigenen Datenbank.
+
 ## 0.1.86 – 4. September 2026
 
 ### Termindetails direkt in der Übersicht

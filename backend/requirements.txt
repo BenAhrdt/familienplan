@@ -10,4 +10,4 @@ python-multipart==0.0.20
 httpx==0.28.1
 itsdangerous==2.2.0
 pytest==8.4.1
-
+pywebpush==2.5.0

@@ -274,6 +274,16 @@ class NotificationOut(BaseModel):
     created_at: datetime
 
 
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str = Field(min_length=20, max_length=200)
+    auth: str = Field(min_length=8, max_length=100)
+
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=4000)
+    keys: PushSubscriptionKeys
+
+
 class BirthdayCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
