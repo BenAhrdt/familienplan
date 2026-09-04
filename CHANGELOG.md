@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.91 – 4. September 2026
+
+### Korrigierte Ganztagsumschaltung
+
+- Die Uhrzeiten werden beim Aktivieren von „Ganztägig“ nun auch bei vom Browser ungewöhnlich formatierten Datumswerten zuverlässig auf 00:00 Uhr gesetzt.
+- Das Ende springt weiterhin automatisch auf 00:00 Uhr des Folgetags.
+
 ## 0.1.90 – 4. September 2026
 
 ### Eindeutige Uhrzeiten für Ganztagstermine

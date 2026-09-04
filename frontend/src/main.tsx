@@ -1285,6 +1285,15 @@ const localDayStart = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const nextLocalDay = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+const nextDateInputDay = (dateValue: string) => {
+  const match = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(dateValue);
+  if (!match) return null;
+  const date = new Date(0);
+  date.setUTCHours(12, 0, 0, 0);
+  date.setUTCFullYear(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+};
 
 function PdfAttachmentViewer({ url, title }: { url: string; title: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2894,12 +2903,11 @@ function CalendarScreen({
                         const form = event.currentTarget.form;
                         const startInput = form?.elements.namedItem("starts_at") as HTMLInputElement | null;
                         const endInput = form?.elements.namedItem("ends_at") as HTMLInputElement | null;
-                        const start = startInput?.value ? new Date(startInput.value) : null;
-                        if (start && !Number.isNaN(start.getTime()) && startInput && endInput) {
-                          const dayStart = localDayStart(start);
-                          const nextDay = nextLocalDay(dayStart);
-                          startInput.value = localDateTime(dayStart);
-                          endInput.value = localDateTime(nextDay);
+                        const startDate = startInput?.value.split("T")[0] || "";
+                        const endDate = nextDateInputDay(startDate);
+                        if (startDate && endDate && startInput && endInput) {
+                          startInput.value = `${startDate}T00:00`;
+                          endInput.value = `${endDate}T00:00`;
                         }
                       }
                       setEventAllDay(checked);
