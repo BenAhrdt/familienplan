@@ -153,7 +153,8 @@ def integration_status(context=Depends(api_context)):
 def integration_children(context=Depends(api_context), db: Session = Depends(get_db)):
     token, user = context; need(token, "read:children")
     ids = allowed_children(token, user, db)
-    return [{"id": x.id, "name": x.display_name, "default_responsible_user_id": x.default_responsible_user_id}
+    return [{"id": x.id, "name": x.display_name, "birth_date": x.birth_date,
+             "default_responsible_user_id": x.default_responsible_user_id}
             for x in db.scalars(select(Child).where(Child.id.in_(ids)).order_by(Child.display_name))]
 
 
@@ -228,17 +229,26 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
             if not is_holiday and "read:appointments" not in token.scopes: continue
             event_type = "SCHOOL_HOLIDAY" if is_holiday else "SCHOOL" if x.category == "SCHOOL" else x.event_type
             result.append({"event_type":event_type,"custom_type_label":x.custom_type_label,"id":x.id,"child_id":x.child_id,"title":x.title,"description":x.description,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
-    if "read:birthdays" in token.scopes:
+    if "read:birthdays" in token.scopes and (user.role == Role.ADMIN or "BIRTHDAY" in (user.allowed_event_types or [])):
+        birthday_sources = []
         for x in db.scalars(select(Birthday)):
-            if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []): continue
             if x.is_private and ("read:private" not in token.scopes or (x.created_by_id != user.id and user.id not in (x.visible_to_user_ids or []))): continue
+            birthday_sources.append((x, {"id": x.id, "source": "birthday"}))
+        for x in db.scalars(select(Child).where(Child.id.in_(ids), Child.is_active.is_(True), Child.birth_date.is_not(None))):
+            birthday_sources.append((x, {"id": f"child:{x.id}", "source": "child", "child_id": x.id}))
+        people_query = select(User).where(User.is_active.is_(True), User.birth_date.is_not(None))
+        if user.role != Role.ADMIN:
+            people_query = people_query.where(User.id.in_({user.id, *(user.allowed_person_color_ids or [])}))
+        for x in db.scalars(people_query):
+            birthday_sources.append((x, {"id": f"person:{x.id}", "source": "person", "user_id": x.id}))
+        for x, identity in birthday_sources:
             for year in range(from_at.year, to_at.year + 1):
                 try: occurrence = x.birth_date.replace(year=year)
                 except ValueError: occurrence = x.birth_date.replace(year=year, day=28)
                 start = datetime.combine(occurrence, datetime.min.time(), tzinfo=from_at.tzinfo)
-                if from_at <= start < to_at:
-                    result.append({"event_type":"BIRTHDAY","id":x.id,"title":x.display_name,"starts_at":start,
-                                   "ends_at":start+timedelta(days=1),"age":year-x.birth_date.year})
+                if start < to_at and start + timedelta(days=1) > from_at:
+                    result.append({"event_type":"BIRTHDAY", **identity,"title":x.display_name,"starts_at":start,
+                                   "ends_at":start+timedelta(days=1),"all_day":True,"age":year-x.birth_date.year})
     return sorted(result, key=lambda x: x["starts_at"])
 
 

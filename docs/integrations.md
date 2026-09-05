@@ -34,3 +34,24 @@ und werden nicht mehr als Titel ausgegeben. Clients, die bisher die Notiz aus
 
 Erzeugte Standardbetreuungen haben beispielsweise `title: "(Standard) Emma bei Papa"`
 und `description: null`. Der bisherige Pfad `/events` bleibt als Alias verfügbar.
+
+## Geburtstage
+
+`/children` liefert mit `read:children` zusätzlich das Feld `birth_date` je
+freigegebenem Kind: das Geburtsdatum als `YYYY-MM-DD` oder `null`, wenn keines
+hinterlegt ist.
+
+Mit `read:birthdays` liefert `/calendar` (ebenso `/events`) sowohl separat erfasste
+Geburtstage als auch die Geburtsdaten aktiver, freigegebener Kinder und sichtbarer
+aktiver Personen. Alle erscheinen als ganztägige Kalendereinträge mit
+`event_type: "BIRTHDAY"`, `all_day: true` und `age` (Alter am Geburtstag).
+Die Terminart muss für die Person freigeschaltet sein; private Geburtstage
+benötigen zusätzlich `read:private` und die entsprechende Sichtbarkeit.
+
+`source` unterscheidet `birthday`, `child` und `person`. Separat erfasste
+Geburtstage behalten ihre numerische `id`; erzeugte Einträge verwenden
+`child:<ID>` beziehungsweise `person:<ID>`, damit sich die IDs nicht überschneiden.
+Zusätzlich enthalten sie `child_id` beziehungsweise `user_id`.
+Ein `child_id`-Filter schränkt Kindergeburtstage ein; sichtbare Personen und
+separat erfasste Geburtstage bleiben wie sonstige kinderunabhängige Termine enthalten.
+Am 29. Februar Geborene erscheinen in Nicht-Schaltjahren am 28. Februar.

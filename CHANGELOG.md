@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.99 – 5. September 2026
+
+### Vollständige Geburtstage in der Integrations-API
+
+- Die Kinderabfrage liefert `birth_date` als Datum oder `null`.
+- Der Integrationskalender liefert auch Geburtstage aktiver, freigegebener Kinder und sichtbarer Personen als ganztägige `BIRTHDAY`-Einträge inklusive Alter.
+- Quellen und eindeutige IDs unterscheiden separat erfasste Geburtstage, Kinder und Personen. Bestehende Sichtbarkeitsrechte bleiben wirksam.
+- Geburtstage werden auch bei Abfragen ab einem Zeitpunkt innerhalb des Geburtstagstages berücksichtigt.
+
+Validierung: Sieben Integrationstests erfolgreich.
+
 ## 0.1.98 – 5. September 2026
 
 ### Kinderfarben in der Farbauswahl
