@@ -1701,7 +1701,7 @@ function CalendarScreen({
         child?.default_responsible_user_id || getSessionUser()?.id,
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
-      note: `Ferien: ${holidayDraft.name}`,
+      title: `Ferien: ${holidayDraft.name}`,
     });
     setSelectedDay(startsAt);
     setEditingStay(null);
@@ -3383,7 +3383,7 @@ function CalendarScreen({
                         getSessionUser()?.id,
                       starts_at: startsAt.toISOString(),
                       ends_at: endsAt.toISOString(),
-                      note: `Ferien: ${holiday.name}`,
+                      title: `Ferien: ${holiday.name}`,
                     });
                     setSelectedDay(startsAt);
                     setDayCreateChoice(null);
@@ -4478,7 +4478,7 @@ function HolidaysScreen({
         inclusiveEnd = new Date(new Date(stay.ends_at).getTime() - 1),
         endsOn = localDateTime(inclusiveEnd).slice(0, 10);
       return (
-        stay.note === entry.name &&
+        (stay.title || stay.note) === entry.name &&
         startsOn === entry.startsOn &&
         endsOn === entry.endsOn
       );

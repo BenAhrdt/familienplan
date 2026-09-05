@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.96 – 5. September 2026
+
+### Planungsbezeichnungen als Betreuungstitel
+
+- Die Bezeichnung eines Planungsabschnitts wird beim direkten Übernehmen, bei Anfragen und bei Gegenvorschlägen als Betreuungstitel gespeichert.
+- Ferienvorlagen befüllen ebenfalls den Titel statt der Notizen.
+- Bereits geplante Zeiträume werden anhand des Titels erkannt; bei älteren Einträgen ohne Titel werden weiterhin die Notizen berücksichtigt.
+- Bestehende Einträge werden nicht automatisch umgeschrieben.
+
+Validierung: 39 Backend-Tests erfolgreich, Frontend-Build erfolgreich.
+
 ## 0.1.95 – 5. September 2026
 
 ### Betreuungstitel oben im Formular
