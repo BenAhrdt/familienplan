@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.98 – 5. September 2026
+
+### Kinderfarben in der Farbauswahl
+
+- Die Farben freigegebener Kinder werden beim Anlegen und Bearbeiten von Terminen mit dem Kindernamen als Farbvorlagen angeboten.
+- Vorlagen mit unterschiedlichen Namen bleiben auch bei identischem Farbwert sichtbar.
+
+Validierung: Frontend-Build erfolgreich.
+
 ## 0.1.97 – 5. September 2026
 
 ### Planungsnotizen und Kind-Markierungen auf Mobilgeräten

@@ -288,10 +288,12 @@ function Field({
 function EventColorPicker({
   initialColor,
   people,
+  children,
   allowedEventTypes,
 }: {
   initialColor: string;
   people: User[];
+  children: Child[];
   allowedEventTypes: EventType[];
 }) {
   const [value, setValue] = useState(initialColor);
@@ -315,12 +317,13 @@ function EventColorPicker({
   const candidates: Array<[string, string]> = [
     ["Meine Farbe", sessionUser?.color || ""],
     ...allowedPeople.map((person): [string, string] => [person.display_name, person.color]),
+    ...children.map((child): [string, string] => [child.display_name, child.color]),
     ...sortedEventTypes(allowedEventTypes).map((type): [string, string] => [eventTypeLabels[type], typeColors[type] || ""]),
   ];
   const presets = candidates.filter(
-    ([, color], index) =>
+    ([label, color], index) =>
       /^#[0-9a-f]{6}$/i.test(color) &&
-      candidates.findIndex(([, candidate]) => candidate.toLowerCase() === color.toLowerCase()) === index,
+      candidates.findIndex(([candidateLabel, candidate]) => candidateLabel === label && candidate.toLowerCase() === color.toLowerCase()) === index,
   );
   return (
     <fieldset className="event-color-picker">
@@ -2989,6 +2992,7 @@ function CalendarScreen({
                   key={`event-color-${editingEvent?.id || stayToConvert?.id || "new"}`}
                   initialColor={editingEvent?.color || people.find((person) => person.id === stayToConvert?.responsible_user_id)?.color || getSessionUser()?.color || "#8B6CC1"}
                   people={people}
+                  children={children}
                   allowedEventTypes={availableEventTypes}
                 />
                 {(!editingEvent || editingEvent.recurrence_group) && <label>
