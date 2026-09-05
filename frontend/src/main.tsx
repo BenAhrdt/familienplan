@@ -95,6 +95,7 @@ type PlanningItem = HolidayPlanningDraft & {
   responsible_user_id: number | null;
   starts_time?: string;
   ends_time?: string;
+  note?: string | null;
 };
 type SectionAccess = { birthdays: number[]; waste_collection: number[] };
 type WasteCalendarSetting = {
@@ -2226,6 +2227,7 @@ function CalendarScreen({
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
         <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span>
+        {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
         {event.attachment_count > 0 && <i className="agenda-attachment-badge" aria-label={event.attachment_count === 1 ? "Ein Dokument angehängt" : `${event.attachment_count} Dokumente angehängt`}><Paperclip/></i>}
         <ChevronRight />
       </button>)}
@@ -3645,6 +3647,7 @@ function CalendarScreen({
                       <label>Bis<input disabled={!canEdit} type="date" value={dateValue(endDate)} onChange={(e) => updateGroupReview(index, { ends_at: toIso(e.target.value, endTime, true) })} /></label>
                       <label>Bis Uhr<input disabled={!canEdit} type="time" value={endTime} onChange={(e) => updateGroupReview(index, { ends_at: toIso(dateValue(endDate), e.target.value, true) })} placeholder="ganztägig" /></label>
                     </div>
+                    <label>Informationen / Notizen (optional)<textarea disabled={!canEdit} value={item.note || ""} onChange={(e) => updateGroupReview(index, { note: e.target.value })} rows={2} /></label>
                     <label>Kommentar zu diesem Abschnitt<textarea disabled={!canEdit} value={item.comment || ""} onChange={(e) => updateGroupReview(index, { comment: e.target.value })} placeholder="Optional bei Bestätigung oder Gegenvorschlag; bei Ablehnung ist eine Begründung erforderlich." maxLength={1000} /></label>
                   </article>
                 );
@@ -4698,6 +4701,7 @@ function PlanningScreen({
       {
         id: clientId(),
         name: String(form.get("name")) || "Freier Planungszeitraum",
+        note: String(form.get("note") || "").trim() || null,
         starts_on,
         ends_on,
         child_id: Number(form.get("child_id")) || null,
@@ -4783,6 +4787,7 @@ function PlanningScreen({
             starts_at: dateTime(item.starts_on, item.starts_time || ""),
             ends_at: dateTime(item.ends_on, item.ends_time || "", !item.ends_time),
             name: item.name,
+            note: item.note?.trim() || null,
             kind: item.kind,
           })),
         }),
@@ -4836,6 +4841,7 @@ function PlanningScreen({
           <Field label="Uhrzeit von (optional)" name="starts_time" type="time" required={false} />
           <Field label="Bis" name="ends_on" type="date" />
           <Field label="Uhrzeit bis (optional)" name="ends_time" type="time" required={false} />
+          <label className="planningnotes">Informationen / Notizen (optional)<textarea name="note" rows={2} placeholder="Zum Beispiel Treffpunkt oder mitzubringende Sachen" /></label>
           <button><Plus size={18} /> Zum Entwurf</button>
         </form>
       </section>
@@ -4869,6 +4875,7 @@ function PlanningScreen({
               {item.starts_on !== item.ends_on && <button className="secondary" onClick={() => beginSplit(item)}>Aufteilen</button>}
               <button className="danger secondary" onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}>Entfernen</button>
             </div>
+            <label className="planningnotes">Informationen / Notizen (optional)<textarea rows={2} value={item.note || ""} onChange={(e) => update(item.id, { note: e.target.value })} /></label>
             {splitId === item.id && (
               <div className="spliteditor">
                 <div><strong>Exakte Übergabe festlegen</strong><small>Der erste Teil endet und der zweite beginnt zum selben Zeitpunkt.</small></div>

@@ -110,6 +110,7 @@ export type ChangeRequest = {
       ends_at: string;
       name: string;
       kind: string;
+      note?: string | null;
       comment?: string | null;
     }>;
     starts_at?: string;

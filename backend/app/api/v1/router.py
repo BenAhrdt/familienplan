@@ -1984,7 +1984,7 @@ def create_planning_group(data: GroupPlanningCreate, request: Request, mode: str
             starts_at=entry.starts_at,
             ends_at=entry.ends_at,
             status=PlanStatus.CONFIRMED if mode == "direct" else PlanStatus.DRAFT,
-            title=entry.name,
+            title=entry.name, note=entry.note,
             created_by_id=user.id,
         )
         db.add(stay)
@@ -2205,7 +2205,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                 entry = GroupPlanningItem.model_validate(raw_entry)
                 assert_child_access(db, user, entry.child_id, edit=True)
                 assert_person_visible(db, user, entry.responsible_user_id)
-                stay = Stay(child_id=entry.child_id, responsible_user_id=entry.responsible_user_id, starts_at=entry.starts_at, ends_at=entry.ends_at, status=PlanStatus.DRAFT, title=entry.name, created_by_id=user.id)
+                stay = Stay(child_id=entry.child_id, responsible_user_id=entry.responsible_user_id, starts_at=entry.starts_at, ends_at=entry.ends_at, status=PlanStatus.DRAFT, title=entry.name, note=entry.note, created_by_id=user.id)
                 db.add(stay)
                 db.flush()
                 new_stay_ids.append(stay.id)

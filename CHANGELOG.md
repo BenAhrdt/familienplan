@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.97 – 5. September 2026
+
+### Planungsnotizen und Kind-Markierungen auf Mobilgeräten
+
+- Planungszeiträume unterstützen optionale Informationen / Notizen beim Hinzufügen, im Entwurf und bei Gegenvorschlägen.
+- Die Notizen werden in die Betreuung übernommen und von der Integrations-API als `description` ausgegeben. Beim Aufteilen bleiben sie in beiden Abschnitten erhalten.
+- Kind-Sternchen erscheinen bei Terminen jetzt auch im mobilen Monatsraster neben dem Terminpunkt sowie in der mobilen Tagesliste.
+
+Validierung: 41 Backend-Tests erfolgreich, Frontend-Build erfolgreich.
+
 ## 0.1.96 – 5. September 2026
 
 ### Planungsbezeichnungen als Betreuungstitel

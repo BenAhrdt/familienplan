@@ -220,6 +220,7 @@ class GroupPlanningItem(BaseModel):
     starts_at: datetime
     ends_at: datetime
     name: str = Field(min_length=1, max_length=300)
+    note: str | None = None
     kind: str = Field(pattern="^(FERIEN|FEIERTAG|BRUECKENTAG|FREI)$")
 
     @model_validator(mode="after")

@@ -611,7 +611,10 @@
   .dayentries span small { display:none; }
   .dayentries > .dayevent,.dayentries > .daybirthday { width:12px; height:12px; min-width:12px; max-width:12px; min-height:12px; max-height:12px; flex-basis:12px; background:var(--event-color,var(--birthday)) !important; overflow:hidden; }
   .dayentries > .dayevent > .calendar-event-icon,.dayentries > .daybirthday > .calendar-birthday-icon { display:none; }
-  .dayentries > .dayevent .care-child-star { display:none; }
+  .dayentries > .dayevent.has-child-marker { position:relative; width:36px; min-width:36px; max-width:36px; height:20px; min-height:20px; max-height:20px; flex-basis:36px; border-radius:0; background:transparent !important; }
+  .dayentries > .dayevent.has-child-marker::before { content:""; position:absolute; left:0; top:4px; width:12px; height:12px; border-radius:50%; background:var(--event-color); }
+  .dayentries > .dayevent.has-child-marker .care-child-star { display:block; top:0; right:0; width:20px; height:20px; }
+  .dayentries > .dayevent.has-child-marker > .inline-attachment-icon { display:none; }
   .dayentries > .daystay { position:relative; display:block; width:44px; height:20px; min-width:44px; max-width:44px; min-height:20px; max-height:20px; flex-basis:44px; padding:0 !important; background:transparent !important; overflow:visible; }
   .dayentries > .daystay .care-markers { position:relative; display:inline-flex; width:44px; height:20px; margin:0; padding:0 !important; overflow:visible !important; }
   .dayentries > .daystay .care-person-marker { width:20px; height:20px; font-size:.62rem; }
@@ -630,6 +633,7 @@
   .mobile-day-agenda button span { display:grid; gap:.18rem; min-width:0; flex:1; }
   .mobile-day-agenda button small { color:var(--muted); }
   .mobile-day-agenda button svg { width:18px; flex:0 0 auto; }
+  .mobile-day-agenda button > .care-child-star { position:static; display:block; width:24px; height:24px; flex:0 0 24px; }
   .mobile-day-agenda .agenda-entry-icon { display:grid; place-items:center; width:24px; height:24px; flex:0 0 24px; color:var(--entry-color); font-style:normal; }
   .mobile-day-agenda .agenda-entry-icon > svg { width:21px; height:21px; }
   .mobile-day-agenda .agenda-attachment-badge { display:grid; place-items:center; width:28px; height:28px; flex:0 0 28px; border:1px solid color-mix(in srgb,var(--entry-color) 28%,white); border-radius:50%; background:color-mix(in srgb,var(--entry-color) 12%,white); color:color-mix(in srgb,var(--entry-color) 72%,#172d27); font-style:normal; }
@@ -655,3 +659,6 @@
 .event-color-presets button { display: flex; align-items: center; gap: .38rem; padding: .42rem .55rem; border: 1px solid var(--line); border-radius: 99px; background: white; color: var(--ink); font-size: .76rem; }
 .event-color-presets button i { width: 16px; height: 16px; border: 1px solid #0002; border-radius: 50%; }
 .event-color-presets button.active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+
+.planningnotes { grid-column: 1 / -1; }
+.planningnotes textarea { width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: .78rem; background: #fbfcfa; color: var(--ink); font: inherit; font-weight: 400; }

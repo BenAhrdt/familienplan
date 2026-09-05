@@ -11,7 +11,8 @@ from app.schemas import GroupPlanningCreate, GroupPlanningItem, ChangeDecision
 
 
 @pytest.mark.parametrize("mode", ["direct", "proposal"])
-def test_planning_uses_title_including_counter_proposal(mode):
+@pytest.mark.parametrize("note", [None, "Sportsachen mitgeben"])
+def test_planning_uses_title_including_counter_proposal(mode, note):
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     request = Request({"type": "http", "method": "POST", "path": "/planning-groups", "headers": [], "client": ("test", 1)})
@@ -22,23 +23,24 @@ def test_planning_uses_title_including_counter_proposal(mode):
         db.add_all([admin, other, child]); db.flush()
         entry = GroupPlanningItem(child_id=child.id, responsible_user_id=admin.id,
                                   starts_at=datetime(2026, 10, 5), ends_at=datetime(2026, 10, 10),
-                                  name="Herbstferien", kind="FERIEN")
+                                  name="Herbstferien", kind="FERIEN", note=note)
         result = create_planning_group(GroupPlanningCreate(affected_user_id=other.id, items=[entry]),
                                        request, mode, db, admin)
         stay = db.scalar(select(Stay))
         assert stay.title == "Herbstferien"
-        assert stay.note is None
+        assert stay.note == note
         if mode == "proposal":
             counter_entry = entry.model_dump(mode="json")
             counter_entry["name"] = "Herbstferien bei Papa"
+            counter_entry["note"] = "Treffpunkt Bahnhof"
             decide_change_request(result["request_id"], ChangeDecision(decision="COUNTER",
                 counter_proposal={"action": "GROUP_CREATE", "items": [counter_entry]}),
                 request, db, other)
             stay = db.scalar(select(Stay))
             assert stay.title == "Herbstferien bei Papa"
-            assert stay.note is None
+            assert stay.note == "Treffpunkt Bahnhof"
             decide_change_request(result["request_id"], ChangeDecision(decision="APPROVE"),
                                   request, db, admin)
             assert stay.status == PlanStatus.CONFIRMED
             assert stay.title == "Herbstferien bei Papa"
-            assert stay.note is None
+            assert stay.note == "Treffpunkt Bahnhof"
