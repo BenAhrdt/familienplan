@@ -328,6 +328,7 @@ class ChangeRequestOut(BaseModel):
     status: PlanStatus
     proposed_data: dict
     before_data: dict
+    calendar_previews: list[dict] = []
     child_id: int | None = None
     child_name: str | None = None
     created_at: datetime

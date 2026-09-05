@@ -246,9 +246,13 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
                 try: occurrence = x.birth_date.replace(year=year)
                 except ValueError: occurrence = x.birth_date.replace(year=year, day=28)
                 start = datetime.combine(occurrence, datetime.min.time(), tzinfo=from_at.tzinfo)
-                if start < to_at and start + timedelta(days=1) > from_at:
+                if year >= x.birth_date.year and start < to_at and start + timedelta(days=1) > from_at:
                     result.append({"event_type":"BIRTHDAY", **identity,"title":x.display_name,"starts_at":start,
-                                   "ends_at":start+timedelta(days=1),"all_day":True,"age":year-x.birth_date.year})
+                                   "ends_at":start+timedelta(days=1),"all_day":True,"age":year-x.birth_date.year,
+                                   "first_name":x.first_name or "", "last_name":x.last_name or "",
+                                   "display_name":x.display_name,
+                                   "full_name":" ".join(part.strip() for part in (x.first_name, x.last_name) if part and part.strip()) or x.display_name,
+                                   "birth_date":x.birth_date})
     return sorted(result, key=lambda x: x["starts_at"])
 
 

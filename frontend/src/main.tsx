@@ -1,3 +1,4 @@
+import { birthdayOccursOnDay } from "./birthdays";
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
@@ -14,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Clock,
   Download,
   Clapperboard,
   Copy,
@@ -1499,8 +1501,11 @@ function CalendarScreen({
     [stays, setStays] = useState<Stay[]>([]),
     [series, setSeries] = useState<Stay[]>([]),
     [requests, setRequests] = useState<ChangeRequest[]>([]),
+    [requestHistory, setRequestHistory] = useState<ChangeRequest[] | null>(null),
     [holidays, setHolidays] = useState<Array<Holiday & { state: string }>>([]),
     [customBirthdays, setCustomBirthdays] = useState<Birthday[]>([]),
+    [birthdayDialog, setBirthdayDialog] = useState<{ birthday: Birthday | null; legacyEvent?: CalendarEvent } | null>(null),
+    [pendingPreview, setPendingPreview] = useState<{ request: ChangeRequest; entry: NonNullable<ChangeRequest["calendar_previews"]>[number] } | null>(null),
     [customEventTypes, setCustomEventTypes] = useState<CustomCalendarType[]>([]),
     [selectedCustomTypeId, setSelectedCustomTypeId] = useState(""),
     [open, setOpen] = useState<"event" | "stay" | null>(null),
@@ -1605,13 +1610,37 @@ function CalendarScreen({
       new Date(`${holiday.ends_on}T23:59:59`) >= mobileSelectedDay,
     ),
     mobileDayBirthdays = !availableEventTypes.includes("BIRTHDAY") || hiddenEventTypes.includes("BIRTHDAY") ? [] : [
-      ...children.filter((child) => child.birth_date).map((child) => ({ name:child.display_name, birthDate:child.birth_date! })),
-      ...people.filter((person) => person.birth_date).map((person) => ({ name:person.display_name, birthDate:person.birth_date! })),
-      ...customBirthdays.map((birthday) => ({ name:birthday.display_name, birthDate:birthday.birth_date })),
+      ...children.filter((child) => child.birth_date).map((child) => ({ name:child.display_name, birthDate:child.birth_date!, birthday:undefined as Birthday | undefined })),
+      ...people.filter((person) => person.birth_date).map((person) => ({ name:person.display_name, birthDate:person.birth_date!, birthday:undefined as Birthday | undefined })),
+      ...customBirthdays.map((birthday) => ({ name:birthday.display_name, birthDate:birthday.birth_date, birthday })),
     ].filter((birthday) => {
-      const date = new Date(`${birthday.birthDate}T00:00:00`);
-      return date.getMonth() === mobileSelectedDay.getMonth() && date.getDate() === mobileSelectedDay.getDate();
+      return birthdayOccursOnDay(birthday.birthDate, mobileSelectedDay);
     }).map((birthday) => ({ ...birthday, age:mobileSelectedDay.getFullYear() - new Date(`${birthday.birthDate}T00:00:00`).getFullYear() }));
+  function showBirthday(birthday?: Birthday) {
+    if (birthday && (getSessionUser()?.role === "ADMIN" || birthday.created_by_id === getSessionUser()?.id)) {
+      setBirthdayDialog({ birthday });
+    } else {
+      setReadOnlyInfo({ title: birthday ? `Geburtstag von ${birthday.display_name}` : "Geburtstag",
+        message: birthday ? "Dieser Geburtstag ist für dich freigegeben. Änderungen nimmt die Person vor, die ihn angelegt hat." : "Dieser Geburtstag stammt aus den Personendaten. Änderungen erfolgen beim Kind oder bei der Person." });
+    }
+  }
+  useEffect(() => {
+    setPendingPreview((current) => {
+      if (!current) return null;
+      const request = requests.find((item) => item.id === current.request.id);
+      const entry = request?.calendar_previews?.find((item) => item.id === current.entry.id);
+      return request && entry ? {request, entry} : null;
+    });
+  }, [requests]);
+  const pendingEntries = requests.flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
+  const pendingOnDay = (day: Date, end: Date) => availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY")
+    ? pendingEntries.filter(({entry}) => new Date(entry.starts_at) < end && new Date(entry.ends_at) > day) : [];
+  useEffect(() => {
+    if (open === "event" && eventType === "BIRTHDAY" && !editingEvent) {
+      setOpen(null);
+      setBirthdayDialog({birthday:null});
+    }
+  }, [open, eventType, editingEvent]);
   function load() {
     api<CalendarEvent[]>(
       `/calendar?from_at=${from.toISOString()}&to_at=${to.toISOString()}`,
@@ -1908,6 +1937,10 @@ function CalendarScreen({
       setReadOnlyInfo({ title:event.title, message:`${start.toLocaleString("de-DE")} – ${end.toLocaleString("de-DE")}${event.description ? `\n\n${event.description}` : ""}\n\nDu besitzt Leserechte und kannst diesen Termin deshalb nicht bearbeiten.`, event });
       return;
     }
+    if (event.event_type === "BIRTHDAY" && !event.source_id && (getSessionUser()?.role === "ADMIN" || event.created_by_id === getSessionUser()?.id)) {
+      setBirthdayDialog({birthday:null, legacyEvent:event});
+      return;
+    }
     const interval = event.recurrence_interval || 1;
     setEventRepeatKind(
       event.recurrence_frequency === "MONTHLY"
@@ -1967,10 +2000,7 @@ function CalendarScreen({
     const birthday = customBirthdays.find((item) => item.id === target.id);
     if (!birthday) return;
     openedTargetRef.current = targetKey;
-    setReadOnlyInfo({
-      title: `Geburtstag von ${birthday.display_name}`,
-      message: "Dieser Geburtstag wird automatisch aus den Personendaten erzeugt und kann deshalb nicht direkt im Kalender bearbeitet werden. Ändere ihn in der Rubrik Geburtstage.",
-    });
+    showBirthday(birthday);
   }, [target, events, stays, customBirthdays, customEventTypes]);
   function childrenForHoliday(holiday: Holiday & { state: string }) {
     return children.filter((child) => child.school_state_code === holiday.state);
@@ -2226,7 +2256,10 @@ function CalendarScreen({
   function mobileDayAgenda(position: "top" | "bottom") {
     return <section className={`mobile-day-agenda mobile-agenda-${position}`} aria-live={position === "top" ? "polite" : "off"}>
       <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
-      {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && <p>Keine Einträge an diesem Tag.</p>}
+      {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && pendingOnDay(mobileSelectedDay, mobileSelectedDayEnd).length === 0 && <p>Keine Einträge an diesem Tag.</p>}
+      {pendingOnDay(mobileSelectedDay, mobileSelectedDayEnd).map((preview) => <button className="pending-agenda" key={`${position}-${preview.entry.id}`} onClick={() => { setError(""); setPendingPreview(preview); }}>
+        <i className="agenda-entry-icon"><Clock/></i><span><strong>{preview.entry.title}</strong><small>{preview.entry.action === "DELETE" ? "Löschung angefragt" : "Bestätigung ausstehend"}</small></span><ChevronRight/>
+      </button>)}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
         <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span>
@@ -2238,7 +2271,7 @@ function CalendarScreen({
         <i className="agenda-entry-icon care" aria-hidden="true">{children.find((child) => child.id === stay.child_id) && people.find((person) => person.id === stay.responsible_user_id) && <CareMarkers child={children.find((child) => child.id === stay.child_id)!} responsible={people.find((person) => person.id === stay.responsible_user_id)!} />}</i>
         <span><strong>{children.find((child) => child.id === stay.child_id)?.display_name || "Betreuung"} bei {stay.responsible_display_name || people.find((person) => person.id === stay.responsible_user_id)?.display_name || "Person"}</strong><small>{calendarEventTiming({starts_at:stay.starts_at,ends_at:stay.ends_at,all_day:false} as CalendarEvent)}</small></span><ChevronRight />
       </button>)}
-      {mobileDayBirthdays.map((birthday) => <button key={`${position}-mobile-birthday-${birthday.name}-${birthday.birthDate}`} onClick={() => setReadOnlyInfo({title:`Geburtstag von ${birthday.name}`,message:"Dieser Geburtstag wird automatisch aus den Personendaten erzeugt."})} style={{"--entry-color":"var(--birthday)"} as React.CSSProperties}>
+      {mobileDayBirthdays.map((birthday) => <button key={`${position}-mobile-birthday-${birthday.name}-${birthday.birthDate}`} onClick={() => showBirthday(birthday.birthday)} style={{"--entry-color":"var(--birthday)"} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><Cake /></i><span><strong>{birthday.name} wird {birthday.age}</strong><small>Geburtstag</small></span><ChevronRight />
       </button>)}
       {mobileDayHolidays.map((holiday) => <button key={`${position}-mobile-holiday-${holiday.state}-${holiday.name}`} onClick={() => setReadOnlyInfo({title:holiday.name,message:holidayDetails(holiday)})} style={{"--entry-color":"var(--holiday)"} as React.CSSProperties}>
@@ -2399,6 +2432,23 @@ function CalendarScreen({
           })}
         </section>
       )}
+      <button type="button" className="secondary" onClick={async () => {
+        try { setRequestHistory(await api<ChangeRequest[]>("/change-requests?include_closed=true")); }
+        catch (x) { setError((x as Error).message); }
+      }}>Anfrageverlauf</button>
+      {requestHistory && <div className="modal"><section className="panel">
+        <button type="button" className="close" onClick={() => setRequestHistory(null)} aria-label="Schließen">×</button>
+        <h2>Anfrageverlauf</h2><p>Die letzten 100 Anfragen einschließlich abgeschlossener Anfragen.</p>
+        {requestHistory.length === 0 && <p>Noch keine Anfragen.</p>}
+        {requestHistory.map((item) => <article key={item.id}>
+          <h3>{item.proposed_data.title || item.child_name || "Betreuungsanfrage"}</h3>
+          <p>{item.requested_by_name} → {item.affected_user_name} · {new Date(item.created_at).toLocaleDateString("de-DE")}</p>
+          <p>{item.status === "CONFIRMED" ? "Bestätigt" : item.status === "REJECTED" ? "Abgelehnt" : item.status === "CANCELLED" ? "Zurückgezogen" : "Bestätigung ausstehend"}</p>
+          <p>{item.proposed_data.action === "DELETE" ? "Löschung" : item.proposed_data.action === "GROUP_CREATE" ? "Gruppenplanung" : item.proposed_data.action === "CREATE" ? "Neue Betreuung" : "Änderung"}
+            {(item.proposed_data.starts_at || item.before_data.starts_at) && ` · ${new Date((item.proposed_data.starts_at || item.before_data.starts_at)!).toLocaleString("de-DE")} – ${new Date((item.proposed_data.ends_at || item.before_data.ends_at)!).toLocaleString("de-DE")}`}</p>
+          {item.proposed_data.items?.map((entry, index) => <p key={index}>{entry.name} · {new Date(entry.starts_at).toLocaleDateString("de-DE")} – {new Date(entry.ends_at).toLocaleDateString("de-DE")}</p>)}
+        </article>)}
+      </section></div>}
       <div className="calendar-content">
       {(series.length > 0 || eventSeries.length > 0) && (
         <details className="series-list calendar-collapsible">
@@ -2581,12 +2631,7 @@ function CalendarScreen({
               })),
             ]
               .filter((birthday) => {
-                const birthDate = new Date(`${birthday.birthDate}T00:00:00`);
-                return (
-                  day.getFullYear() >= birthDate.getFullYear() &&
-                  birthDate.getMonth() === day.getMonth() &&
-                  birthDate.getDate() === day.getDate()
-                );
+                return birthdayOccursOnDay(birthday.birthDate, day);
               })
               .map((birthday) => ({
                 ...birthday,
@@ -2621,6 +2666,11 @@ function CalendarScreen({
               >
                 <time dateTime={localDateTime(day).slice(0, 10)}>{day.getDate()}</time>
                 <div className="dayentries">
+                  {pendingOnDay(day, dayEnd).map((preview) => <button type="button" className="daypending" key={preview.entry.id}
+                    title={`${preview.entry.title} · Bestätigung von ${preview.request.affected_user_name} ausstehend`}
+                    onClick={(event) => { event.stopPropagation(); setError(""); setPendingPreview(preview); }}>
+                    <Clock size={14}/><span>{preview.entry.title}</span><small>{preview.entry.action === "DELETE" ? "Löschung angefragt" : "Bestätigung ausstehend"}</small>
+                  </button>)}
                   {availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY") && children.map((child) => {
                     const childStays = dayStays
                       .filter((item) => item.child_id === child.id)
@@ -2776,7 +2826,7 @@ function CalendarScreen({
                       title="Automatisch erzeugter Termin · Geburtstag"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setReadOnlyInfo({ title: `Geburtstag von ${birthday.name}`, message: "Dieser Geburtstag wird automatisch aus den Personendaten erzeugt und kann deshalb nicht direkt im Kalender bearbeitet werden. Ändere ihn in der jeweiligen Person, beim Kind oder in der Rubrik Geburtstage." });
+                        showBirthday(customBirthdays.find((item) => `birthday-${item.id}` === birthday.id));
                       }}
                     >
                       <Cake className="calendar-birthday-icon" aria-hidden="true" /> {birthday.name} wird {birthday.age}
@@ -2859,6 +2909,11 @@ function CalendarScreen({
                       }
                       const type = e.target.value as EventType;
                       setSelectedCustomTypeId("");
+                      if (type === "BIRTHDAY") {
+                        setOpen(null);
+                        setBirthdayDialog({birthday:null, legacyEvent:editingEvent || undefined});
+                        return;
+                      }
                       if (type === "STAY") {
                         setEditingStay(null);
                         setEditingStaySource(null);
@@ -3336,6 +3391,26 @@ function CalendarScreen({
           </form>
         </div>
       )}
+      {birthdayDialog && <BirthdayEditor editing={birthdayDialog.birthday} legacyEvent={birthdayDialog.legacyEvent} people={people}
+        onClose={() => { setBirthdayDialog(null); onTargetViewClose?.(); }}
+        onSaved={() => { setBirthdayDialog(null); setEditingEvent(null); setOpen(null); load(); }} />}
+      {pendingPreview && <div className="modal"><section className="panel">
+        <button type="button" className="close" onClick={() => setPendingPreview(null)} aria-label="Schließen">×</button>
+        <h2><Clock size={24}/> Bestätigung ausstehend</h2>
+        <h3>{pendingPreview.entry.title}</h3>
+        <p>{pendingPreview.entry.action === "DELETE" ? "Löschung angefragt" : pendingPreview.entry.action === "UPDATE" ? "Änderung angefragt" : "Neue Betreuung angefragt"}</p>
+        <p>{new Date(pendingPreview.entry.starts_at).toLocaleString("de-DE")} – {new Date(pendingPreview.entry.ends_at).toLocaleString("de-DE")}</p>
+        <p>Von {pendingPreview.request.requested_by_name} · Wartet auf {pendingPreview.request.affected_user_name}</p>
+        {pendingPreview.entry.note && <p>{pendingPreview.entry.note}</p>}
+        <div className="modalactions">
+          <button onClick={() => { const id = pendingPreview.request.id; setPendingPreview(null); document.getElementById(`planning-request-${id}`)?.scrollIntoView({behavior:"smooth", block:"center"}); }}>Anfrage ansehen</button>
+          {pendingPreview.request.requested_by_id === getSessionUser()?.id && <button className="secondary" onClick={async () => {
+            try { await api(`/change-requests/${pendingPreview.request.id}/withdraw`, {method:"POST"}); setPendingPreview(null); load(); }
+            catch (x) { setError((x as Error).message); }
+          }}>Anfrage zurückziehen</button>}
+        </div>
+        {error && <p className="error">{error}</p>}
+      </section></div>}
       {dayCreateChoice && (
         <div className="modal decision-modal">
           <div className="panel">
@@ -4067,18 +4142,11 @@ function PeopleScreen({
   );
 }
 
-function BirthdaysScreen() {
-  const [items, setItems] = useState<Birthday[]>([]),
-    [people, setPeople] = useState<User[]>([]),
-    [editing, setEditing] = useState<Birthday | null | undefined>(undefined),
-    [deleting, setDeleting] = useState<Birthday | null>(null),
+function BirthdayEditor({ editing, legacyEvent, people, onClose, onSaved }: {
+  editing: Birthday | null; legacyEvent?: CalendarEvent; people: User[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [deleting, setDeleting] = useState<Birthday | null>(null),
     [error, setError] = useState("");
-  const user = getSessionUser();
-  function load() {
-    api<Birthday[]>("/birthdays").then(setItems).catch((x) => setError((x as Error).message));
-    api<User[]>("/people").then(setPeople).catch(() => {});
-  }
-  useEffect(() => { void load(); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget),
@@ -4092,12 +4160,11 @@ function BirthdaysScreen() {
       };
     setError("");
     try {
-      await api(editing ? `/birthdays/${editing.id}` : "/birthdays", {
-        method: editing ? "PUT" : "POST",
+      await api(legacyEvent ? `/calendar/${legacyEvent.id}/birthday` : editing ? `/birthdays/${editing.id}` : "/birthdays", {
+        method: editing && !legacyEvent ? "PUT" : "POST",
         body: JSON.stringify(payload),
       });
-      setEditing(undefined);
-      load();
+      onSaved();
     } catch (x) {
       setError((x as Error).message);
     }
@@ -4107,12 +4174,65 @@ function BirthdaysScreen() {
     try {
       await api(`/birthdays/${deleting.id}`, { method: "DELETE" });
       setDeleting(null);
-      setEditing(undefined);
-      load();
+      onSaved();
     } catch (x) {
       setError((x as Error).message);
     }
   }
+  return <>
+        <div className="modal">
+          <form className="panel birthdayform" onSubmit={submit}>
+            <button type="button" className="close" onClick={() => onClose()}>×</button>
+            <h2>{legacyEvent ? "In Geburtstag umwandeln" : editing ? "Geburtstag bearbeiten" : "Geburtstag anlegen"}</h2>
+            {error && <p className="error">{error}</p>}
+            <p className="hint">Wird jedes Jahr ganztägig mit dem jeweiligen Alter im Kalender angezeigt.</p>
+            {legacyEvent && <p className="hint">Bitte das tatsächliche Geburtsdatum einschließlich Geburtsjahr ergänzen. Der bisherige Termin{legacyEvent.recurrence_group ? " einschließlich seiner Serie" : ""} wird ersetzt. Bisherige Notizen bleiben im Änderungsverlauf erhalten.</p>}
+            {legacyEvent?.description && <p>Bisherige Notizen: {legacyEvent.description}</p>}
+            {legacyEvent && legacyEvent.attachment_count > 0 && <EventAttachments event={legacyEvent} editable/>}
+            <div className="grid2">
+              <Field label="Vorname" name="first_name" defaultValue={editing?.first_name || ""} />
+              <Field label="Nachname" name="last_name" defaultValue={editing?.last_name || ""} />
+            </div>
+            <Field label="Anzeigename" name="display_name" defaultValue={editing?.display_name || legacyEvent?.title || ""} />
+            <Field label="Geburtsdatum" name="birth_date" type="date" defaultValue={editing?.birth_date || ""} />
+            <AudiencePicker
+              key={`birthday-audience-${editing?.id || "new"}`}
+              people={people}
+              initialValues={editing ? editing.visible_to_user_ids : legacyEvent?.visible_to_user_ids}
+            />
+            <div className="modalactions">
+              <button>{legacyEvent ? "In jährlichen Geburtstag umwandeln" : editing ? "Speichern" : "Anlegen"}</button>
+              {editing && <button type="button" className="danger secondary" onClick={() => setDeleting(editing)}>Löschen</button>}
+            </div>
+          </form>
+        </div>
+      {deleting && (
+        <div className="modal confirmmodal">
+          <section className="panel">
+            <button type="button" className="close" onClick={() => setDeleting(null)} aria-label="Schließen">×</button>
+            <h2>Geburtstag löschen?</h2>
+            <p>„{deleting.display_name}“ wird dauerhaft aus dem Kalender entfernt.</p>
+            <div className="modalactions">
+              <button className="danger" onClick={remove}>Löschen</button>
+              <button className="secondary" onClick={() => setDeleting(null)}>Abbrechen</button>
+            </div>
+          </section>
+        </div>
+      )}
+  </>;
+}
+
+function BirthdaysScreen() {
+  const [items, setItems] = useState<Birthday[]>([]),
+    [people, setPeople] = useState<User[]>([]),
+    [editing, setEditing] = useState<Birthday | null | undefined>(undefined),
+    [error, setError] = useState("");
+  const user = getSessionUser();
+  function load() {
+    api<Birthday[]>("/birthdays").then(setItems).catch((x) => setError((x as Error).message));
+    api<User[]>("/people").then(setPeople).catch(() => {});
+  }
+  useEffect(() => { void load(); }, []);
   return (
     <>
       <header className="pagehead">
@@ -4146,43 +4266,8 @@ function BirthdaysScreen() {
           );
         })}
       </div>
-      {editing !== undefined && (
-        <div className="modal">
-          <form className="panel birthdayform" onSubmit={submit}>
-            <button type="button" className="close" onClick={() => setEditing(undefined)}>×</button>
-            <h2>{editing ? "Geburtstag bearbeiten" : "Geburtstag anlegen"}</h2>
-            {error && <p className="error">{error}</p>}
-            <div className="grid2">
-              <Field label="Vorname" name="first_name" defaultValue={editing?.first_name || ""} />
-              <Field label="Nachname" name="last_name" defaultValue={editing?.last_name || ""} />
-            </div>
-            <Field label="Anzeigename" name="display_name" defaultValue={editing?.display_name || ""} />
-            <Field label="Geburtsdatum" name="birth_date" type="date" defaultValue={editing?.birth_date || ""} />
-            <AudiencePicker
-              key={`birthday-audience-${editing?.id || "new"}`}
-              people={people}
-              initialValues={editing?.visible_to_user_ids}
-            />
-            <div className="modalactions">
-              <button>{editing ? "Speichern" : "Anlegen"}</button>
-              {editing && <button type="button" className="danger secondary" onClick={() => setDeleting(editing)}>Löschen</button>}
-            </div>
-          </form>
-        </div>
-      )}
-      {deleting && (
-        <div className="modal confirmmodal">
-          <section className="panel">
-            <button type="button" className="close" onClick={() => setDeleting(null)} aria-label="Schließen">×</button>
-            <h2>Geburtstag löschen?</h2>
-            <p>„{deleting.display_name}“ wird dauerhaft aus dem Kalender entfernt.</p>
-            <div className="modalactions">
-              <button className="danger" onClick={remove}>Löschen</button>
-              <button className="secondary" onClick={() => setDeleting(null)}>Abbrechen</button>
-            </div>
-          </section>
-        </div>
-      )}
+      {editing !== undefined && <BirthdayEditor editing={editing} people={people}
+        onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); load(); }} />}
     </>
   );
 }

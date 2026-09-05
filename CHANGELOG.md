@@ -2,6 +2,20 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.100 – 5. September 2026
+
+### Einheitliche Geburtstage und offene Anfragen im Kalender
+
+- Kalender und Geburtstagsmenü verwenden dasselbe Formular mit Vorname, Nachname, Anzeigename, Geburtsdatum und Sichtbarkeit. Geburtstage erscheinen jährlich ganztägig mit dem jeweiligen Alter und lassen sich über beide Wege bearbeiten.
+- Bestehende Geburtstagstermine lassen sich mit dem tatsächlichen Geburtsdatum in einen jährlich wiederkehrenden Geburtstag umwandeln. Alte Notizen bleiben im Änderungsverlauf erhalten; angehängte Dokumente müssen vor der Umwandlung gesichert und entfernt werden.
+- Die Integrations-API liefert bei erzeugten Geburtstagen zusätzlich `first_name`, `last_name`, `display_name`, `full_name` und `birth_date`. Der `title` bleibt der Anzeigename.
+- Offene Einzel-, Serien-, Änderungs-, Löschungs- und Gruppenanfragen erscheinen für die beteiligten Personen als gestrichelte Kalendervorschau mit Uhrsymbol, auch mobil. Bestätigte Betreuungen bleiben bis zur Entscheidung unverändert.
+- Anfragen können über die Vorschau zurückgezogen werden. Der Anfrageverlauf zeigt auch bestätigte, abgelehnte und zurückgezogene Anfragen.
+- Gegenvorschläge für neue Betreuungen aktualisieren die vorläufigen Zeiträume; erst nach Bestätigung werden diese über die Integrations-API ausgegeben.
+- Die Integrations-API und Aufenthaltsabfrage liefern weiterhin ausschließlich bestätigte Betreuungen, keine Anfragevorschauen.
+
+Validierung: 54 Backend-Tests, zwei Frontend-Datumstests und Frontend-Build erfolgreich.
+
 ## 0.1.99 – 5. September 2026
 
 ### Vollständige Geburtstage in der Integrations-API

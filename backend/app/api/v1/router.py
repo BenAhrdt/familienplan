@@ -467,9 +467,43 @@ def birthdays(db: Session = Depends(get_db), user: User = Depends(current_user))
     return list(db.scalars(query.order_by(Birthday.birth_date, Birthday.display_name)))
 
 
+def require_birthday_write(db: Session, user: User) -> None:
+    if user.role == Role.ADMIN or (user.role != Role.VIEWER and "BIRTHDAY" in (user.allowed_event_types or [])):
+        return
+    require_section_access(db, user, "birthdays")
+
+
+@router.post("/calendar/{event_id}/birthday", response_model=BirthdayOut, dependencies=[Depends(require_csrf)])
+def convert_calendar_birthday(event_id: int, data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    require_birthday_write(db, user)
+    event = require_event_view(db, user, event_id)
+    if event.source_id:
+        raise HTTPException(422, "Nur selbst angelegte Termine können umgewandelt werden")
+    if user.role != Role.ADMIN and event.created_by_id != user.id:
+        raise HTTPException(403, "Du darfst diesen Termin nicht umwandeln")
+    targets = list(db.scalars(select(CalendarEvent).where(CalendarEvent.recurrence_group == event.recurrence_group))) if event.recurrence_group else [event]
+    if db.scalar(select(CalendarEventAttachment.id).where(CalendarEventAttachment.event_id.in_([x.id for x in targets])).limit(1)):
+        raise HTTPException(422, "Bitte sichere und entferne zuerst die Dokumente der bisherigen Geburtstagstermine.")
+    values = data.model_dump()
+    audience = normalized_audience(db, event.created_by_id, values.pop("visible_to_user_ids"))
+    values["is_private"] = audience is not None
+    birthday = Birthday(**values, visible_to_user_ids=audience, created_by_id=event.created_by_id)
+    db.add(birthday)
+    db.flush()
+    audit(db, request, "BIRTHDAY_CREATED", user.id, ("birthday", str(birthday.id)), {
+        "name": birthday.display_name, "birth_date": birthday.birth_date.isoformat(),
+        "previous_events": [{"id": x.id, "title": x.title, "description": x.description, "starts_at": x.starts_at.isoformat()} for x in targets],
+    })
+    for target in targets:
+        db.delete(target)
+    db.commit()
+    db.refresh(birthday)
+    return birthday
+
+
 @router.post("/birthdays", response_model=BirthdayOut, status_code=201, dependencies=[Depends(require_csrf)])
 def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    require_section_access(db, user, "birthdays")
+    require_birthday_write(db, user)
     values = data.model_dump()
     audience = normalized_audience(db, user.id, values.pop("visible_to_user_ids"))
     values["is_private"] = audience is not None
@@ -484,7 +518,7 @@ def create_birthday(data: BirthdayCreate, request: Request, db: Session = Depend
 
 @router.put("/birthdays/{birthday_id}", response_model=BirthdayOut, dependencies=[Depends(require_csrf)])
 def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    require_section_access(db, user, "birthdays")
+    require_birthday_write(db, user)
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
@@ -502,7 +536,7 @@ def update_birthday(birthday_id: int, data: BirthdayCreate, request: Request, db
 
 @router.delete("/birthdays/{birthday_id}", status_code=204, dependencies=[Depends(require_csrf)])
 def delete_birthday(birthday_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    require_section_access(db, user, "birthdays")
+    require_birthday_write(db, user)
     birthday = db.get(Birthday, birthday_id)
     if not birthday or (user.role != Role.ADMIN and birthday.created_by_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Geburtstag nicht gefunden")
@@ -1901,6 +1935,44 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
     return change_request_payload(db, item, user)
 
 
+def request_calendar_previews(db: Session, item: ChangeRequest, viewer: User) -> list[dict]:
+    """Separate visual proposals from confirmed stays; never used by integrations."""
+    if item.status not in {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED} or viewer.id not in {item.requested_by_id, item.affected_user_id}:
+        return []
+    if item.object_type not in {"stay", "group_plan"}:
+        return []
+    data = item.proposed_data or {}
+    action = data.get("action", "UPDATE")
+    stay = db.get(Stay, item.object_id)
+    if not stay:
+        return []
+    entries = []
+    if action in {"CREATE", "GROUP_CREATE"}:
+        for target in db.scalars(select(Stay).where(Stay.id.in_(data.get("stay_ids", [item.object_id]))).order_by(Stay.starts_at, Stay.id)):
+            entries.append((target, target.starts_at, target.ends_at, target.responsible_user_id, target.title, target.note))
+    else:
+        targets = stay_scope_targets(db, stay, data.get("scope", "occurrence"))
+        if action == "DELETE":
+            entries = [(x, x.starts_at, x.ends_at, x.responsible_user_id, x.title, x.note) for x in targets]
+        else:
+            update = StayUpdate.model_validate(data)
+            if update.scope == "series" and update.recurrence_interval_weeks:
+                template = StayCreate(child_id=stay.child_id, **{**update.model_dump(exclude={"scope", "preserve_remainder"}), "recurrence_frequency": update.recurrence_frequency or "WEEKLY"})
+                excluded = set(db.scalars(select(Stay.recurrence_original_start).where(Stay.recurrence_exception_rule_id == stay.recurrence_rule_id)))
+                entries = [(stay, start, end, update.responsible_user_id, data.get("title", stay.title), update.note) for start, end in recurrence_dates(template) if start not in excluded]
+            else:
+                delta_start, delta_end = update.starts_at - stay.starts_at, update.ends_at - stay.ends_at
+                entries = [(x, x.starts_at + delta_start, x.ends_at + delta_end, update.responsible_user_id, data.get("title", x.title), update.note) for x in targets]
+    result = []
+    for index, (target, start, end, person_id, title, note) in enumerate(entries):
+        child = db.get(Child, target.child_id)
+        person = db.get(User, person_id)
+        result.append({"id": f"request:{item.id}:{index}", "starts_at": start, "ends_at": end,
+                       "child_id": target.child_id, "title": title or f"{child.display_name if child else 'Kind'} bei {person.display_name if person else 'Person'}",
+                       "note": note, "action": action})
+    return result
+
+
 def change_request_payload(db: Session, item: ChangeRequest, viewer: User) -> ChangeRequestOut:
     requester, affected = db.get(User, item.requested_by_id), db.get(User, item.affected_user_id)
     stay = db.get(Stay, item.object_id) if item.object_type == "stay" else None
@@ -1924,7 +1996,7 @@ def change_request_payload(db: Session, item: ChangeRequest, viewer: User) -> Ch
             proposed_data.setdefault("recurrence_interval_weeks", int(match.group(1)) if match else 1)
             proposed_data.setdefault("recurrence_until", rule.until_at.isoformat() if rule.until_at else None)
     affected_name = affected.display_name if viewer_may_see_all or affected.id in visible_ids else "Andere Betreuungsperson"
-    return ChangeRequestOut(id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
+    return ChangeRequestOut(calendar_previews=request_calendar_previews(db, item, viewer), id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
 
 
 def change_request_details(db: Session, item: ChangeRequest) -> str:
@@ -2057,7 +2129,7 @@ def calendar_series(db: Session = Depends(get_db), user: User = Depends(current_
 
 
 @router.get("/change-requests", response_model=list[ChangeRequestOut])
-def change_requests(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def change_requests(db: Session = Depends(get_db), user: User = Depends(current_user), include_closed: bool = False):
     # Repair open requests created by the former recipient logic, which could
     # accidentally address a proposal to its requester instead of the other
     # parent/person involved in the existing stay.
@@ -2081,10 +2153,15 @@ def change_requests(db: Session = Depends(get_db), user: User = Depends(current_
             repaired = True
     if repaired:
         db.commit()
-    query = select(ChangeRequest).where(ChangeRequest.status.in_([PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED]))
+    query = select(ChangeRequest)
+    if not include_closed:
+        query = query.where(ChangeRequest.status.in_([PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED]))
     if user.role != Role.ADMIN:
         query = query.where((ChangeRequest.affected_user_id == user.id) | (ChangeRequest.requested_by_id == user.id))
-    return [change_request_payload(db, item, user) for item in db.scalars(query.order_by(ChangeRequest.created_at.desc()))]
+    query = query.order_by(ChangeRequest.created_at.desc())
+    if include_closed:
+        query = query.limit(100)
+    return [change_request_payload(db, item, user) for item in db.scalars(query)]
 
 
 @router.post("/stays/{stay_id}/proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
@@ -2117,9 +2194,33 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
     return change_request_payload(db, item, user)
 
 
+@router.post("/change-requests/{change_id}/withdraw", status_code=204, dependencies=[Depends(require_csrf)])
+def withdraw_change_request(change_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
+    if not item or item.status not in {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED}:
+        raise HTTPException(404, "Offene Anfrage nicht gefunden")
+    if item.requested_by_id != user.id:
+        raise HTTPException(403, "Nur die anfragende Person kann diese Anfrage zurückziehen")
+    rule_ids = set()
+    for stay in db.scalars(select(Stay).where(Stay.id.in_(item.proposed_data.get("stay_ids", [item.object_id])), Stay.status.in_([PlanStatus.DRAFT, PlanStatus.PROPOSED]))):
+        if stay.recurrence_rule_id:
+            rule_ids.add(stay.recurrence_rule_id)
+        db.delete(stay)
+    db.flush()
+    for rule_id in rule_ids:
+        if not db.scalar(select(Stay.id).where(or_(Stay.recurrence_rule_id == rule_id, Stay.recurrence_exception_rule_id == rule_id)).limit(1)):
+            rule = db.get(RecurrenceRule, rule_id)
+            if rule:
+                db.delete(rule)
+    item.status = PlanStatus.CANCELLED
+    audit(db, request, "STAY_REQUEST_WITHDRAWN", user.id, ("change_request", str(item.id)), {})
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.post("/change-requests/{change_id}/decision", response_model=ChangeRequestOut, dependencies=[Depends(require_csrf)])
 def decide_change_request(change_id: int, data: ChangeDecision, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    item = db.get(ChangeRequest, change_id)
+    item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
     if not item or item.status not in {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Offene Anfrage nicht gefunden")
     if item.affected_user_id != user.id:
@@ -2212,6 +2313,43 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                 new_items.append({**entry.model_dump(mode="json"), "stay_id": stay.id, "comment": raw_entry.get("comment")})
             item.object_id = new_stay_ids[0]
             item.proposed_data = {"action": "GROUP_CREATE", "title": counter.get("title") or item.proposed_data.get("title"), "stay_ids": new_stay_ids, "items": new_items}
+        elif item.proposed_data.get("action") == "CREATE":
+            counter = StayUpdate.model_validate(data.counter_proposal)
+            original = db.get(Stay, item.object_id)
+            if not original:
+                raise HTTPException(409, "Die vorgeschlagene Betreuung ist nicht mehr verfügbar")
+            assert_child_access(db, user, original.child_id, edit=True)
+            assert_person_visible(db, user, counter.responsible_user_id)
+            template = StayCreate(child_id=original.child_id,
+                **{**counter.model_dump(exclude={"scope", "preserve_remainder"}), "recurrence_frequency": counter.recurrence_frequency or "WEEKLY"})
+            old_ids = item.proposed_data.get("stay_ids", [item.object_id])
+            for old in db.scalars(select(Stay).where(Stay.id.in_(old_ids), Stay.id != original.id, Stay.status != PlanStatus.CONFIRMED)):
+                db.delete(old)
+            rule = db.get(RecurrenceRule, original.recurrence_rule_id) if original.recurrence_rule_id else None
+            if counter.recurrence_interval_weeks:
+                if not rule:
+                    rule = RecurrenceRule(child_id=original.child_id)
+                    db.add(rule)
+                rule.responsible_user_id = counter.responsible_user_id
+                rule.starts_at, rule.until_at = counter.starts_at, counter.recurrence_until
+                rule.duration_minutes = int((counter.ends_at - counter.starts_at).total_seconds() / 60)
+                rule.rrule = f"FREQ={template.recurrence_frequency};INTERVAL={counter.recurrence_interval_weeks};BYMONTHDAY={counter.recurrence_day_of_month or counter.starts_at.day}"
+                db.flush()
+            new_ids = []
+            for index, (start, end) in enumerate(recurrence_dates(template)):
+                target = original if index == 0 else Stay(child_id=original.child_id, created_by_id=original.created_by_id)
+                target.starts_at, target.ends_at = start, end
+                target.responsible_user_id, target.title, target.note = counter.responsible_user_id, template.title, counter.note
+                target.status = PlanStatus.PROPOSED
+                target.recurrence_rule_id = rule.id if rule and counter.recurrence_interval_weeks else None
+                db.add(target)
+                db.flush()
+                new_ids.append(target.id)
+            if rule and not counter.recurrence_interval_weeks and not db.scalar(select(Stay.id).where(
+                or_(Stay.recurrence_rule_id == rule.id, Stay.recurrence_exception_rule_id == rule.id)
+            ).limit(1)):
+                db.delete(rule)
+            item.proposed_data = {**counter.model_dump(mode="json"), "action": "CREATE", "stay_ids": new_ids}
         else:
             item.proposed_data = data.counter_proposal.model_dump(mode="json") if hasattr(data.counter_proposal, "model_dump") else data.counter_proposal
         item.status = PlanStatus.CHANGE_PROPOSED
@@ -2631,6 +2769,8 @@ def delete_calendar_event_attachment(event_id: int, attachment_id: int, request:
 
 @router.post("/calendar", response_model=CalendarEventOut, status_code=201, dependencies=[Depends(require_csrf)])
 def create_calendar_event(data: CalendarEventCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if data.event_type == "BIRTHDAY":
+        raise HTTPException(422, "Bitte Geburtstage mit Namen und Geburtsdatum über /birthdays anlegen")
     waste_section_allowed = data.event_type == "WASTE" and user.id in section_access(db)["waste_collection"]
     custom_type = custom_calendar_type_for_label(db, data.custom_type_label) if data.event_type == "OTHER" else None
     custom_type_allowed = bool(custom_type and (user.role == Role.ADMIN or user.id in custom_type.get("editable_by_user_ids", [])))

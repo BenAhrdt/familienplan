@@ -662,3 +662,16 @@
 
 .planningnotes { grid-column: 1 / -1; }
 .planningnotes textarea { width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: .78rem; background: #fbfcfa; color: var(--ink); font: inherit; font-weight: 400; }
+
+.daypending, .mobile-day-agenda > button.pending-agenda {
+  border: 1px dashed #9a7949;
+  background: #fbf6eb;
+  color: #695330;
+}
+.daypending { display:flex; flex-wrap:wrap; align-items:center; gap:4px; width:100%; padding:5px; text-align:left; font-size:.75rem; border-radius:5px; }
+.daypending small { display:block; width:100%; font-size:.65rem; }
+.daypending svg { flex-shrink:0; }
+@media (max-width:900px) {
+  .dayentries > .daypending { width:22px; height:22px; min-width:22px; flex-basis:22px; padding:3px; }
+  .dayentries > .daypending span, .dayentries > .daypending small { display:none; }
+}

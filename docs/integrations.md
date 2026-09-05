@@ -55,3 +55,53 @@ Zusätzlich enthalten sie `child_id` beziehungsweise `user_id`.
 Ein `child_id`-Filter schränkt Kindergeburtstage ein; sichtbare Personen und
 separat erfasste Geburtstage bleiben wie sonstige kinderunabhängige Termine enthalten.
 Am 29. Februar Geborene erscheinen in Nicht-Schaltjahren am 28. Februar.
+
+### Namen und Geburtsdatum
+
+Automatisch erzeugte `BIRTHDAY`-Einträge aller drei Quellen liefern zusätzlich
+`first_name`, `last_name`, `display_name`, `full_name` und `birth_date`.
+`title` bleibt der Anzeigename. `full_name` kombiniert Vor- und Nachnamen und
+fällt bei fehlenden Namensbestandteilen auf den Anzeigenamen zurück.
+`birth_date` enthält das tatsächliche Geburtsdatum im Format `YYYY-MM-DD`,
+während `starts_at` den jeweiligen jährlichen Geburtstag bezeichnet.
+
+Beispiel (weitere Kalenderfelder ausgelassen):
+
+```json
+{
+  "event_type": "BIRTHDAY",
+  "source": "birthday",
+  "id": 3,
+  "title": "Tom",
+  "display_name": "Tom",
+  "first_name": "Tom",
+  "last_name": "Grywnow",
+  "full_name": "Tom Grywnow",
+  "birth_date": "2011-09-11",
+  "all_day": true,
+  "age": 15
+}
+```
+
+Bestehende, noch nicht umgewandelte gewöhnliche Kalendertermine mit
+`event_type: "BIRTHDAY"` können weiterhin ohne diese Zusatzfelder vorkommen.
+Sie enthalten kein verlässlich ableitbares Geburtsjahr. Clients müssen fehlende
+Felder tolerieren und dürfen das Geburtsjahr nicht aus `starts_at` schätzen.
+
+Neue Geburtstage werden in der Weboberfläche über ein gemeinsames Formular im
+Kalender und im Geburtstagsmenü angelegt und jährlich wiederholt. Bestehende
+Kalendertermine lassen sich nach Eingabe des echten Geburtsdatums umwandeln;
+dabei wird auch eine bestehende Terminserie durch einen Geburtstag ersetzt.
+Für schreibende Clients mit Sitzung gilt: neue Geburtstage über `/birthdays`
+anlegen. `POST /calendar` akzeptiert keine neuen gewöhnlichen `BIRTHDAY`-Termine.
+Die Integrations-API bleibt lesend.
+
+### Offene Anfragen
+
+Die Weboberfläche zeigt offene Betreuungs-, Änderungs-, Löschungs- und
+Gruppenanfragen für Antragsteller und Empfänger als vorläufige Einträge mit
+Uhrsymbol. Bestätigte Betreuungen bleiben bis zur Entscheidung unverändert.
+Diese Vorschauen sind ausschließlich über die interne, sitzungsgebundene
+Anfragenverwaltung verfügbar und werden **nicht** über die Integrations-API
+oder die Aufenthaltsabfrage ausgegeben. Im Adapter sind hierfür weder ein neuer
+Abruf noch neue Datenpunkte erforderlich.

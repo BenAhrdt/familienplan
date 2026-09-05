@@ -92,6 +92,7 @@ export type Stay = {
 };
 export type Holiday = { name: string; starts_on: string; ends_on: string };
 export type ChangeRequest = {
+  calendar_previews?: Array<{id:string; starts_at:string; ends_at:string; child_id:number; title:string; note:string | null; action:string}>;
   id: number;
   object_type: string;
   object_id: number;
@@ -99,7 +100,7 @@ export type ChangeRequest = {
   requested_by_name: string;
   affected_user_id: number;
   affected_user_name: string;
-  status: "PROPOSED" | "CHANGE_PROPOSED";
+  status: "PROPOSED" | "CHANGE_PROPOSED" | "CONFIRMED" | "REJECTED" | "CANCELLED";
   proposed_data: {
     action?: "DELETE" | "CREATE" | "GROUP_CREATE";
     items?: Array<{
