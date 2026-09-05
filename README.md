@@ -2,7 +2,7 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.94** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.95** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 

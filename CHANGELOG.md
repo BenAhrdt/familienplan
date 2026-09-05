@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.95 – 5. September 2026
+
+### Betreuungstitel oben im Formular
+
+- Beim Anlegen und Bearbeiten einer Betreuung steht das Titelfeld jetzt ganz oben vor der Terminart, wie bei anderen Terminen.
+
+Validierung: Frontend-Build erfolgreich.
+
 ## 0.1.94 – 5. September 2026
 
 ### Titel und Notizen für Betreuungen

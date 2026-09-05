@@ -3061,6 +3061,12 @@ function CalendarScreen({
               </>
             ) : (
               <>
+                <Field
+                  label="Titel"
+                  name="title"
+                  required={false}
+                  defaultValue={editingStay?.title || String(createDraft?.title || "")}
+                />
                 <label>
                   Terminart
                   <select
@@ -3268,12 +3274,6 @@ function CalendarScreen({
                     </select>
                   </label>
                 )}
-                <Field
-                  label="Titel"
-                  name="title"
-                  required={false}
-                  defaultValue={editingStay?.title || String(createDraft?.title || "")}
-                />
                 <Field
                   label="Notizen"
                   name="note"
