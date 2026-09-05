@@ -82,6 +82,7 @@ export type Stay = {
   starts_at: string;
   ends_at: string;
   status: string;
+  title: string | null;
   note: string | null;
   recurrence_rule_id: number | null;
   recurrence_interval_weeks: number | null;
@@ -101,7 +102,6 @@ export type ChangeRequest = {
   status: "PROPOSED" | "CHANGE_PROPOSED";
   proposed_data: {
     action?: "DELETE" | "CREATE" | "GROUP_CREATE";
-    title?: string;
     items?: Array<{
       stay_id: number;
       child_id: number;
@@ -116,6 +116,7 @@ export type ChangeRequest = {
     ends_at?: string;
     responsible_user_id?: number;
     responsible_user_name?: string;
+    title?: string | null;
     note?: string | null;
     scope: "occurrence" | "future" | "series";
     recurrence_interval_weeks?: number | null;
@@ -126,6 +127,7 @@ export type ChangeRequest = {
     ends_at?: string;
     responsible_user_id?: number;
     responsible_user_name?: string;
+    title?: string | null;
     note?: string | null;
   };
   child_id: number | null;

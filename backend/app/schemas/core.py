@@ -187,11 +187,17 @@ class StayCreate(BaseModel):
     starts_at: datetime
     ends_at: datetime
     status: PlanStatus = PlanStatus.DRAFT
+    title: str | None = Field(default=None, max_length=300)
     note: str | None = None
     recurrence_interval_weeks: int | None = Field(default=None, ge=1, le=52)
     recurrence_frequency: str = Field(default="WEEKLY", pattern="^(WEEKLY|MONTHLY)$")
     recurrence_day_of_month: int | None = Field(default=None, ge=1, le=31)
     recurrence_until: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value):
+        return (value.strip() or None) if value is not None else None
 
     @model_validator(mode="after")
     def valid_range(self):
@@ -233,6 +239,7 @@ class StayUpdate(BaseModel):
     starts_at: datetime
     ends_at: datetime
     responsible_user_id: int
+    title: str | None = Field(default=None, max_length=300)
     note: str | None = None
     recurrence_interval_weeks: int | None = Field(default=None, ge=1, le=52)
     recurrence_frequency: str | None = Field(default=None, pattern="^(WEEKLY|MONTHLY)$")
@@ -240,6 +247,11 @@ class StayUpdate(BaseModel):
     recurrence_until: datetime | None = None
     scope: str = Field(pattern="^(occurrence|future|series)$")
     preserve_remainder: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value):
+        return (value.strip() or None) if value is not None else None
 
     @model_validator(mode="after")
     def valid_range(self):

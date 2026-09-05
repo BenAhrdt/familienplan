@@ -157,10 +157,11 @@ def integration_children(context=Depends(api_context), db: Session = Depends(get
             for x in db.scalars(select(Child).where(Child.id.in_(ids)).order_by(Child.display_name))]
 
 
-def default_stay_periods(child: Child, stays: list[Stay], from_at: datetime, to_at: datetime) -> list[dict]:
+def default_stay_periods(child: Child, stays: list[Stay], from_at: datetime, to_at: datetime, responsible_name: str = "Person") -> list[dict]:
     """Represent the child's default home for every gap without an explicit stay."""
     if child.default_responsible_user_id is None:
         return []
+    title = f"(Standard) {child.display_name} bei {responsible_name}"
     periods = []
     cursor = from_at
     for stay in sorted(stays, key=lambda item: item.starts_at):
@@ -171,7 +172,7 @@ def default_stay_periods(child: Child, stays: list[Stay], from_at: datetime, to_
             periods.append({
                 "id": None, "event_type": "STAY", "child_id": child.id,
                 "responsible_user_id": child.default_responsible_user_id,
-                "starts_at": cursor, "ends_at": start, "title": None,
+                "starts_at": cursor, "ends_at": start, "title": title, "description": None,
                 "source": "default", "generated": True,
             })
         cursor = max(cursor, end)
@@ -179,7 +180,7 @@ def default_stay_periods(child: Child, stays: list[Stay], from_at: datetime, to_
         periods.append({
             "id": None, "event_type": "STAY", "child_id": child.id,
             "responsible_user_id": child.default_responsible_user_id,
-            "starts_at": cursor, "ends_at": to_at, "title": None,
+            "starts_at": cursor, "ends_at": to_at, "title": title, "description": None,
             "source": "default", "generated": True,
         })
     return periods
@@ -199,11 +200,15 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
     if "read:stays" in token.scopes:
         rows = list(db.scalars(select(Stay).where(Stay.child_id.in_(ids), Stay.status == PlanStatus.CONFIRMED,
             Stay.starts_at < to_at, Stay.ends_at > from_at).order_by(Stay.starts_at)))
+        children = {child.id: child for child in db.scalars(select(Child).where(Child.id.in_(ids)))}
+        person_ids = {x.responsible_user_id for x in rows} | {child.default_responsible_user_id for child in children.values() if child.default_responsible_user_id}
+        people = {person.id: person.display_name for person in db.scalars(select(User).where(User.id.in_(person_ids)))}
         for x in rows:
+            title = (x.title or "").strip() or f"{children[x.child_id].display_name} bei {people.get(x.responsible_user_id, 'Person')}"
             result.append({"event_type":"STAY","id":x.id,"child_id":x.child_id,"responsible_user_id":x.responsible_user_id,
-                           "starts_at":x.starts_at,"ends_at":x.ends_at,"title":x.note,"source":"stay","generated":False})
-        for child in db.scalars(select(Child).where(Child.id.in_(ids))):
-            result.extend(default_stay_periods(child, [row for row in rows if row.child_id == child.id], from_at, to_at))
+                           "starts_at":x.starts_at,"ends_at":x.ends_at,"title":title,"description":x.note,"source":"stay","generated":False})
+        for child in children.values():
+            result.extend(default_stay_periods(child, [row for row in rows if row.child_id == child.id], from_at, to_at, people.get(child.default_responsible_user_id, "Person")))
     if "read:appointments" in token.scopes or "read:holidays" in token.scopes:
         query = select(CalendarEvent).where(or_(CalendarEvent.child_id.is_(None), CalendarEvent.child_id.in_(ids)),
             CalendarEvent.starts_at < to_at, CalendarEvent.ends_at > from_at,
@@ -222,7 +227,7 @@ def integration_events(from_at: datetime, to_at: datetime, child_id: int | None 
             if is_holiday and "read:holidays" not in token.scopes: continue
             if not is_holiday and "read:appointments" not in token.scopes: continue
             event_type = "SCHOOL_HOLIDAY" if is_holiday else "SCHOOL" if x.category == "SCHOOL" else x.event_type
-            result.append({"event_type":event_type,"custom_type_label":x.custom_type_label,"id":x.id,"child_id":x.child_id,"title":x.title,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
+            result.append({"event_type":event_type,"custom_type_label":x.custom_type_label,"id":x.id,"child_id":x.child_id,"title":x.title,"description":x.description,"starts_at":x.starts_at,"ends_at":x.ends_at,"all_day":x.all_day})
     if "read:birthdays" in token.scopes:
         for x in db.scalars(select(Birthday)):
             if user.role != Role.ADMIN and "BIRTHDAY" not in (user.allowed_event_types or []): continue

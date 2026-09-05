@@ -2,6 +2,18 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.94 – 5. September 2026
+
+### Titel und Notizen für Betreuungen
+
+- Betreuungstermine unterstützen einen eigenen optionalen Titel in der Oberfläche, auch für Serien und Änderungsanfragen.
+- Die Integrations-API liefert Titel und Notizen getrennt als `title` und `description`, auch bei regulären Kalenderterminen.
+- Ohne eigenen Betreuungstitel wird „Emma bei Papa“ aus den Namen gebildet. Standardbetreuungen heißen beispielsweise „(Standard) Emma bei Papa“.
+- Bestehende Notizen bleiben erhalten. API-Anbindungen müssen Notizen künftig aus `description` statt aus `title` lesen.
+- Die Datenbankmigration 0023 ergänzt das Titelfeld und wird durch den normalen Update-Ablauf automatisch ausgeführt.
+
+Validierung: 37 Backend-Tests erfolgreich, Frontend-Build erfolgreich; Migrations-SQL geprüft.
+
 ## 0.1.93 – 4. September 2026
 
 ### Betreuungszeiten wieder löschbar

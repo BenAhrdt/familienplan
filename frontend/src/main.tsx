@@ -727,7 +727,7 @@ function Dashboard({
           })),
           ...staysByChild.flat().map((stay) => ({
             id: `stay-${stay.id}`,
-            title: `${childNames.get(stay.child_id) || "Kind"} bei ${stay.responsible_display_name || "–"}`,
+            title: stay.title || `${childNames.get(stay.child_id) || "Kind"} bei ${stay.responsible_display_name || "–"}`,
             detail: stay.note || "Betreuungszeit",
             startsAt: new Date(stay.starts_at),
             color: people.find((person) => person.id === stay.responsible_user_id)?.color || "var(--green)",
@@ -1820,6 +1820,7 @@ function CalendarScreen({
         starts_at: new Date(String(f.get("starts_at"))).toISOString(),
         ends_at: new Date(String(f.get("ends_at"))).toISOString(),
         status: "CONFIRMED",
+        title: String(f.get("title") || "").trim() || null,
         note: f.get("note") || null,
         recurrence_interval_weeks: repeat,
         recurrence_frequency: monthly ? "MONTHLY" : "WEEKLY",
@@ -1838,6 +1839,7 @@ function CalendarScreen({
           starts_at: payload.starts_at,
           ends_at: payload.ends_at,
           responsible_user_id: payload.responsible_user_id,
+          title: payload.title,
           note: payload.note,
           scope: editScope,
           preserve_remainder: stayRangeMode === "day",
@@ -1983,7 +1985,7 @@ function CalendarScreen({
   function openDay(day: Date, dayStays: Stay[], selectedStay?: Stay) {
     const source = selectedStay || dayStays[0] || null;
     if (!canWriteCalendar) {
-      if (source) setReadOnlyInfo({ title:`Betreuungszeit: ${children.find((child)=>child.id===source.child_id)?.display_name || "Kind"}`, message:`Bei ${source.responsible_display_name || "Person"}\n${new Date(source.starts_at).toLocaleString("de-DE")} – ${new Date(source.ends_at).toLocaleString("de-DE")}${source.note ? `\n\n${source.note}` : ""}\n\nDu besitzt Leserechte und kannst diese Betreuungszeit deshalb nicht bearbeiten.` });
+      if (source) setReadOnlyInfo({ title:source.title || `Betreuungszeit: ${children.find((child)=>child.id===source.child_id)?.display_name || "Kind"}`, message:`Bei ${source.responsible_display_name || "Person"}\n${new Date(source.starts_at).toLocaleString("de-DE")} – ${new Date(source.ends_at).toLocaleString("de-DE")}${source.note ? `\n\n${source.note}` : ""}\n\nDu besitzt Leserechte und kannst diese Betreuungszeit deshalb nicht bearbeiten.` });
       return;
     }
     const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
@@ -2097,6 +2099,7 @@ function CalendarScreen({
       starts_at: request.proposed_data.starts_at,
       ends_at: request.proposed_data.ends_at,
       responsible_user_id: request.proposed_data.responsible_user_id,
+      title: request.proposed_data.title === undefined ? stay.title : request.proposed_data.title,
       note: request.proposed_data.note ?? null,
     });
     setCounterRequest(request);
@@ -2305,6 +2308,8 @@ function CalendarScreen({
                         {proposedPerson?.display_name || proposal.responsible_user_name || "unbekannt"}
                       </strong>{" "}
                       vor.
+                      {proposal.title && <strong>{proposal.title}</strong>}
+                      {proposal.note && <span>{proposal.note}</span>}
                       <small>
                         {new Date(proposal.starts_at!).toLocaleString("de-DE")}{" "}
                         – {new Date(proposal.ends_at!).toLocaleString("de-DE")}
@@ -2338,6 +2343,9 @@ function CalendarScreen({
                             –{" "}
                             {new Date(proposal.ends_at!).toLocaleString("de-DE")}
                           </span>
+                        )}
+                        {proposal.title !== undefined && before.title !== proposal.title && (
+                          <span>Titel: {before.title || "–"} → {proposal.title || "–"}</span>
                         )}
                         {before.note !== proposal.note && (
                           <span>
@@ -2395,7 +2403,7 @@ function CalendarScreen({
             <article key={stay.recurrence_rule_id}>
               <div>
                 <strong>
-                  {stay.note || "Unbenannte Serie"} ·{" "}
+                  {stay.title || `${children.find((child) => child.id === stay.child_id)?.display_name || "Kind"} bei ${stay.responsible_display_name || "Person"}`} ·{" "}
                   {
                     children.find((child) => child.id === stay.child_id)
                       ?.display_name
@@ -2668,8 +2676,7 @@ function CalendarScreen({
                             }}
                           >
                             <CareMarkers child={child} responsible={responsible} />
-                            <b>{child.display_name}</b> bei{" "}
-                            {responsible.display_name}
+                            <b>{stay.title || `${child.display_name} bei ${responsible.display_name}`}</b>
                             {stay.note ? ` · ${stay.note}` : ""}
                             {conflictingStay && (
                               <em className="conflict-badge">Konflikt</em>
@@ -2832,7 +2839,7 @@ function CalendarScreen({
                 <Field
                   label="Titel"
                   name="title"
-                  defaultValue={editingEvent?.title || stayToConvert?.note || (stayToConvert ? `${children.find((child) => child.id === stayToConvert.child_id)?.display_name || "Kind"} bei ${stayToConvert.responsible_display_name || "Person"}` : "")}
+                  defaultValue={editingEvent?.title || stayToConvert?.title || (stayToConvert ? `${children.find((child) => child.id === stayToConvert.child_id)?.display_name || "Kind"} bei ${stayToConvert.responsible_display_name || "Person"}` : "")}
                 />
                 <label>
                   Terminart
@@ -2968,7 +2975,7 @@ function CalendarScreen({
                   />
                 </div>
                 <Field
-                  label="Notiz"
+                  label="Notizen"
                   name="description"
                   required={false}
                   defaultValue={editingEvent?.description || stayToConvert?.note || ""}
@@ -3262,7 +3269,13 @@ function CalendarScreen({
                   </label>
                 )}
                 <Field
-                  label="Notiz"
+                  label="Titel"
+                  name="title"
+                  required={false}
+                  defaultValue={editingStay?.title || String(createDraft?.title || "")}
+                />
+                <Field
+                  label="Notizen"
                   name="note"
                   required={false}
                   defaultValue={

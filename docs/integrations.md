@@ -10,7 +10,7 @@ Jeder Schlüssel ist genau einer Person zugeordnet und übernimmt bei jeder Anfr
 
 - `GET /api/v1/integrations/v1/status`
 - `GET /api/v1/integrations/v1/children`
-- `GET /api/v1/integrations/v1/events?from_at=...&to_at=...&child_id=...`
+- `GET /api/v1/integrations/v1/calendar?from_at=...&to_at=...&child_id=...`
 - `GET /api/v1/integrations/v1/children/{id}/location?at=...`
 
 Jedes Kalenderobjekt enthält ein `event_type`-Feld, beispielsweise `GENERAL`,
@@ -22,3 +22,15 @@ wird nicht ausgegeben. Betreuungen enthalten zusätzlich `responsible_user_id`,
 ISO-8601-Werte mit Zeitzone.
 
 Automatisierungen, Vor- und Nachlaufzeiten sowie Benachrichtigungen werden vom angebundenen Client wie einem ioBroker-Adapter aus den abgefragten Kalenderdaten berechnet. FamilienPlan versendet keine Webhooks.
+
+## Titel und Notizen
+
+Betreuungen und reguläre Kalendertermine liefern `title` und `description`.
+Bei Betreuungen enthält `description` die Notizen (oder `null`). `title`
+enthält den eigenen Titel; ohne Titel wird „Emma bei Papa“ aus den Namen
+des Kindes und der Betreuungsperson gebildet. Bestehende Notizen bleiben erhalten
+und werden nicht mehr als Titel ausgegeben. Clients, die bisher die Notiz aus
+`title` gelesen haben, müssen dafür künftig `description` verwenden.
+
+Erzeugte Standardbetreuungen haben beispielsweise `title: "(Standard) Emma bei Papa"`
+und `description: null`. Der bisherige Pfad `/events` bleibt als Alias verfügbar.

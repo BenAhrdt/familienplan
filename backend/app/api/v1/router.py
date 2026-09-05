@@ -1503,7 +1503,7 @@ def stay_payload(db: Session, stay: Stay) -> dict:
         "id": stay.id, "child_id": stay.child_id, "responsible_user_id": stay.responsible_user_id,
         "responsible_display_name": responsible.display_name if responsible else None,
         "starts_at": stay.starts_at, "ends_at": stay.ends_at, "status": stay.status,
-        "note": stay.note, "created_by_id": stay.created_by_id, "recurrence_rule_id": rule.id if rule else None,
+        "title": stay.title, "note": stay.note, "created_by_id": stay.created_by_id, "recurrence_rule_id": rule.id if rule else None,
         "recurrence_interval_weeks": int(interval_match.group(1)) if interval_match else (1 if rule else None), "recurrence_frequency": ("MONTHLY" if rule and "FREQ=MONTHLY" in rule.rrule else "WEEKLY"), "recurrence_day_of_month": int(day_match.group(1)) if day_match else None, "recurrence_until": rule.until_at if rule else None,
     }
 
@@ -1540,7 +1540,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
             RecurrenceRule.duration_minutes == duration_minutes,
         )):
             representative = db.scalar(select(Stay).where(Stay.recurrence_rule_id == candidate.id).order_by(Stay.starts_at).limit(1))
-            if representative and (representative.note or "") != (data.note or ""):
+            if representative and ((representative.note or "") != (data.note or "") or (representative.title or "") != (data.title or "")):
                 continue
             interval_match = re.search(r"INTERVAL=(\d+)", candidate.rrule)
             interval = int(interval_match.group(1)) if interval_match else 1
@@ -1569,7 +1569,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
                         existing.append(overlap_stay)
                         existing_starts.add(backward_cursor)
                     elif not overlap_stay:
-                        new_stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=backward_cursor, ends_at=backward_end, status=PlanStatus.CONFIRMED, note=data.note, created_by_id=user.id, recurrence_rule_id=matching_rule.id)
+                        new_stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=backward_cursor, ends_at=backward_end, status=PlanStatus.CONFIRMED, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=matching_rule.id)
                         db.add(new_stay); existing.append(new_stay); existing_starts.add(backward_cursor)
                     extended_backward = True
                     backward_cursor += step
@@ -1582,7 +1582,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
             while cursor_start <= data.recurrence_until:
                 cursor_end = cursor_start + timedelta(minutes=matching_rule.duration_minutes)
                 if cursor_start > previous_until and cursor_start not in existing_starts:
-                    db.add(Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=cursor_start, ends_at=cursor_end, status=PlanStatus.CONFIRMED, note=data.note, created_by_id=user.id, recurrence_rule_id=matching_rule.id))
+                    db.add(Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=cursor_start, ends_at=cursor_end, status=PlanStatus.CONFIRMED, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=matching_rule.id))
                     added += 1
                 cursor_start += step
             if added == 0 and not extended_backward and matching_rule.until_at and data.recurrence_until <= matching_rule.until_at:
@@ -1606,7 +1606,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
         db.add(rule); db.flush()
     created = []
     for starts_at, ends_at in occurrences:
-        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=data.status, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
+        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=data.status, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
         db.add(stay); created.append(stay)
     db.flush()
     audit(db, request, "STAY_SERIES_CREATED" if rule else "STAY_CREATED", user.id, ("stay", str(created[0].id)), {"status": data.status.value, "occurrences": len(created)})
@@ -1690,13 +1690,13 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diesen Vorschlag gibt es keine andere Person zur Bestätigung")
         proposed = {
             "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(),
-            "responsible_user_id": data.responsible_user_id, "note": data.note,
+            "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note,
             "scope": "occurrence", "preserve_remainder": False,
         }
         item = ChangeRequest(
             object_type="stay", object_id=existing.id, requested_by_id=user.id,
             affected_user_id=affected_id, status=PlanStatus.CHANGE_PROPOSED,
-            before_data={"starts_at": existing.starts_at.isoformat(), "ends_at": existing.ends_at.isoformat(), "responsible_user_id": existing.responsible_user_id, "note": existing.note},
+            before_data={"starts_at": existing.starts_at.isoformat(), "ends_at": existing.ends_at.isoformat(), "responsible_user_id": existing.responsible_user_id, "title": existing.title, "note": existing.note},
             proposed_data=proposed,
         )
         db.add(item); db.flush()
@@ -1714,13 +1714,13 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         db.add(rule); db.flush()
     created = []
     for starts_at, ends_at in occurrences:
-        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=PlanStatus.PROPOSED, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
+        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=PlanStatus.PROPOSED, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
         db.add(stay); created.append(stay)
     db.flush()
     item = ChangeRequest(
         object_type="stay", object_id=created[0].id, requested_by_id=user.id,
         affected_user_id=affected_id, status=PlanStatus.PROPOSED, before_data={},
-        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None},
+        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None},
     )
     db.add(item); db.flush()
     notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine neue Betreuungszeit vor.", item.id)
@@ -1739,6 +1739,8 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
         assert_person_visible(db, user, data.responsible_user_id)
     if user.role != Role.ADMIN and stay.status == PlanStatus.CONFIRMED and not getattr(request.state, "approved_change", False):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bestätigte Betreuungszeiten müssen über eine Änderungsanfrage geändert werden")
+    if "title" not in data.model_fields_set:
+        data.title = stay.title
     rule = inferred_recurrence_rule(db, stay)
     rule_id = rule.id if rule else None
     if data.scope != "occurrence" and not rule_id:
@@ -1767,7 +1769,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
             starts_at=data.starts_at,
             ends_at=data.ends_at,
             status=stay.status,
-            note=data.note,
+            title=data.title, note=data.note,
             recurrence_interval_weeks=data.recurrence_interval_weeks,
             recurrence_frequency=recurrence_frequency,
             recurrence_day_of_month=recurrence_day,
@@ -1790,7 +1792,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
                 starts_at=starts_at,
                 ends_at=ends_at,
                 status=stay.status,
-                note=data.note,
+                title=data.title, note=data.note,
                 created_by_id=stay.created_by_id,
                 recurrence_rule_id=rule.id,
             )
@@ -1801,12 +1803,15 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
         db.commit()
         return [stay_payload(db, item) for item in replacements]
     original_start, original_end = stay.starts_at, stay.ends_at
+    original_title = stay.title
     original_responsible_user_id, original_note = stay.responsible_user_id, stay.note
     original_status, original_created_by_id = stay.status, stay.created_by_id
     delta_start, delta_end = data.starts_at - stay.starts_at, data.ends_at - stay.ends_at
     for target in targets:
         new_start, new_end = target.starts_at + delta_start, target.ends_at + delta_end
         target.starts_at, target.ends_at = new_start, new_end
+        if "title" in data.model_fields_set:
+            target.title = data.title
         target.responsible_user_id, target.note = data.responsible_user_id, data.note
     if data.scope == "series" and rule:
         rule.starts_at += delta_start
@@ -1827,7 +1832,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
                 starts_at=remainder_start,
                 ends_at=remainder_end,
                 status=original_status,
-                note=original_note,
+                title=original_title, note=original_note,
                 created_by_id=original_created_by_id,
                 recurrence_rule_id=None,
             ))
@@ -1836,7 +1841,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
         stay.recurrence_exception_rule_id = rule.id if rule else None
         stay.recurrence_original_start = original_start if rule else None
         stay.recurrence_rule_id = None
-    audit(db, request, "STAY_SERIES_CHANGED" if len(targets) > 1 else "STAY_CHANGED", user.id, ("stay", str(stay.id)), {"scope": data.scope, "affected": len(targets), "child_id": stay.child_id, "responsible_user_id": data.responsible_user_id, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "note": data.note})
+    audit(db, request, "STAY_SERIES_CHANGED" if len(targets) > 1 else "STAY_CHANGED", user.id, ("stay", str(stay.id)), {"scope": data.scope, "affected": len(targets), "child_id": stay.child_id, "responsible_user_id": data.responsible_user_id, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "title": data.title, "note": data.note})
     db.commit()
     return [stay_payload(db, item) for item in targets]
 
@@ -1886,7 +1891,7 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
     item = ChangeRequest(
         object_type="stay", object_id=stay.id, requested_by_id=user.id,
         affected_user_id=affected_id, status=PlanStatus.PROPOSED,
-        before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "note": stay.note},
+        before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "title": stay.title, "note": stay.note},
         proposed_data={"action": "DELETE", "scope": scope},
     )
     db.add(item); db.flush()
@@ -1948,6 +1953,8 @@ def change_request_details(db: Session, item: ChangeRequest) -> str:
             parts.append(f"Person: {old_person.display_name if old_person else 'unbekannt'} → {new_person.display_name if new_person else 'unbekannt'}")
         if before.get("starts_at") != proposed.get("starts_at") or before.get("ends_at") != proposed.get("ends_at"):
             parts.append(f"Zeitraum: {format_date(before.get('starts_at'))} – {format_date(before.get('ends_at'))} → {format_date(proposed.get('starts_at'))} – {format_date(proposed.get('ends_at'))}")
+        if "title" in proposed and before.get("title") != proposed.get("title"):
+            parts.append(f"Titel: {before.get('title') or '–'} → {proposed.get('title') or '–'}")
         if before.get("note") != proposed.get("note"):
             parts.append(f"Notiz: {before.get('note') or '–'} → {proposed.get('note') or '–'}")
     return " · ".join(parts)
@@ -2100,7 +2107,9 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
     if affected.id == user.id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diese Änderung gibt es keine andere Person zur Bestätigung")
     proposed = data.model_dump(mode="json")
-    item = ChangeRequest(object_type="stay", object_id=stay.id, requested_by_id=user.id, affected_user_id=affected.id, status=PlanStatus.PROPOSED, before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "note": stay.note}, proposed_data=proposed)
+    if "title" not in data.model_fields_set:
+        proposed.pop("title")
+    item = ChangeRequest(object_type="stay", object_id=stay.id, requested_by_id=user.id, affected_user_id=affected.id, status=PlanStatus.PROPOSED, before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "title": stay.title, "note": stay.note}, proposed_data=proposed)
     db.add(item); db.flush()
     notify(db, affected.id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
     audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected.id, "scope": data.scope})
@@ -2423,7 +2432,7 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
         .join(User, User.id == Stay.responsible_user_id)
         .where(
             Stay.status == PlanStatus.CONFIRMED,
-            matches(Child.display_name, User.display_name, Stay.note),
+            matches(Child.display_name, User.display_name, Stay.title, Stay.note),
         )
     )
     if allowed_child_ids is not None:
@@ -2535,7 +2544,7 @@ def global_search(q: str, db: Session = Depends(get_db), user: User = Depends(cu
         {
             "kind": "stay",
             "id": stay.id,
-            "title": f"{child.display_name} bei {person.display_name}",
+            "title": stay.title or f"{child.display_name} bei {person.display_name}",
             "subtitle": stay.note or "Betreuung",
             "starts_at": stay.starts_at,
         }

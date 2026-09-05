@@ -53,3 +53,49 @@ def test_visible_person_ids_only_contains_self_and_explicitly_shared_people():
     user = SimpleNamespace(id=2, role=Role.VIEWER, allowed_person_color_ids=[3, 5])
 
     assert visible_person_ids(user) == {2, 3, 5}
+
+
+def test_stay_title_survives_series_regeneration_and_partial_edit():
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+    from starlette.requests import Request
+    from app.api.v1.router import create_stay, update_stay, stay_payload
+    from app.core.database import Base
+    from app.models.entities import Child, Stay, User, PlanStatus
+    from app.schemas import StayCreate, StayUpdate
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    request = Request({"type": "http", "method": "POST", "path": "/stays", "headers": [], "client": ("test", 1)})
+    with Session(engine, expire_on_commit=False) as db:
+        admin = User(username="admin", display_name="Papa", email="admin@example.test",
+                     password_hash="x", role=Role.ADMIN, allowed_event_types=["STAY"])
+        child = Child(first_name="Emma", display_name="Emma")
+        db.add_all([admin, child]); db.flush()
+        start, end = datetime(2026, 9, 5), datetime(2026, 9, 7)
+        created = create_stay(StayCreate(child_id=child.id, responsible_user_id=admin.id,
+            starts_at=start, ends_at=end, status=PlanStatus.CONFIRMED, title="Wochenende",
+            note="Sportsachen", recurrence_interval_weeks=1, recurrence_until=datetime(2026, 9, 12)),
+            request, db, admin)
+        created = [stay_payload(db, row) for row in db.scalars(select(Stay).order_by(Stay.starts_at))]
+        assert len(created) == 2
+        assert all(item["title"] == "Wochenende" and item["note"] == "Sportsachen" for item in created)
+        updated = update_stay(created[0]["id"], StayUpdate(starts_at=start, ends_at=end,
+            responsible_user_id=admin.id, title="Bei Papa", note="Sportsachen", scope="series",
+            recurrence_interval_weeks=1, recurrence_until=datetime(2026, 9, 19)), request, db, admin)
+        assert len(updated) == 3
+        assert all(item["title"] == "Bei Papa" for item in updated)
+        update_stay(updated[0]["id"], StayUpdate(starts_at=datetime(2026, 9, 6), ends_at=end,
+            responsible_user_id=admin.id, title="Ausflug", note="Trinkflasche", scope="occurrence",
+            preserve_remainder=True), request, db, admin)
+        remainder = db.scalar(select(Stay).where(Stay.starts_at == start))
+        assert remainder.title == "Bei Papa"
+        assert remainder.note == "Sportsachen"
+        edited = db.get(Stay, updated[0]["id"])
+        assert edited.title == "Ausflug"
+        # Old clients omitting title must not erase it; explicit null clears it.
+        for title_fields, expected in [({}, "Ausflug"), ({"title": None}, None)]:
+            result = update_stay(edited.id, StayUpdate(starts_at=edited.starts_at, ends_at=edited.ends_at,
+                responsible_user_id=admin.id, note=edited.note, scope="occurrence", **title_fields),
+                request, db, admin)
+            assert result[0]["title"] == expected

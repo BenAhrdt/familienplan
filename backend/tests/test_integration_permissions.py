@@ -59,18 +59,48 @@ def test_new_person_token_authenticates_immediately():
 def test_default_stays_fill_only_gaps_around_explicit_stays():
     start = datetime(2026, 9, 1, tzinfo=UTC)
     end = datetime(2026, 9, 4, tzinfo=UTC)
-    child = SimpleNamespace(id=7, default_responsible_user_id=11)
+    child = SimpleNamespace(id=7, display_name="Emma", default_responsible_user_id=11)
     stay = SimpleNamespace(
         child_id=7,
         starts_at=datetime(2026, 9, 2, tzinfo=UTC),
         ends_at=datetime(2026, 9, 3, tzinfo=UTC),
     )
 
-    periods = default_stay_periods(child, [stay], start, end)
+    periods = default_stay_periods(child, [stay], start, end, "Papa")
 
     assert [(item["starts_at"], item["ends_at"]) for item in periods] == [
         (start, stay.starts_at),
         (stay.ends_at, end),
     ]
+    assert all(item["title"] == "(Standard) Emma bei Papa" and item["description"] is None for item in periods)
     assert all(item["event_type"] == "STAY" for item in periods)
     assert all(item["source"] == "default" and item["generated"] for item in periods)
+
+
+def test_calendar_separates_stay_titles_notes_and_default_titles():
+    from app.api.v1.integration_router import integration_events
+    from app.models.entities import Stay, PlanStatus
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        person = User(username="papa", display_name="Papa", email="papa@example.test", password_hash="x", role=Role.ADMIN)
+        db.add(person); db.flush()
+        child = Child(first_name="Emma", display_name="Emma", default_responsible_user_id=person.id)
+        db.add(child); db.flush()
+        start, end = datetime(2026, 9, 5), datetime(2026, 9, 6)
+        stay = Stay(child_id=child.id, responsible_user_id=person.id, created_by_id=person.id,
+                    starts_at=start.replace(hour=8), ends_at=start.replace(hour=18),
+                    status=PlanStatus.CONFIRMED, title="Nachmittag bei Papa", note="Sportsachen mitgeben")
+        db.add(stay); db.commit()
+        token = SimpleNamespace(scopes=["read:stays"])
+        result = integration_events(start, end, child_id=child.id, context=(token, person), db=db)
+        assert [item["title"] for item in result] == [
+            "(Standard) Emma bei Papa", "Nachmittag bei Papa", "(Standard) Emma bei Papa",
+        ]
+        assert [item["description"] for item in result] == [None, "Sportsachen mitgeben", None]
+        stay.title = None
+        db.commit()
+        result = integration_events(start, end, child_id=child.id, context=(token, person), db=db)
+        assert result[1]["title"] == "Emma bei Papa"
+        assert result[1]["description"] == "Sportsachen mitgeben"
