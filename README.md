@@ -2,7 +2,7 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.100** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.101** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 
@@ -181,3 +181,7 @@ Die Weboberfläche verwendet dieselbe API unter `/api/v1/`. Externe Clients verw
 ## Bekannte Einschränkungen
 
 Die erste Version ist für selbst gehostete Installationen gedacht. Vor einem Einsatz mit vielen Familien oder öffentlich erreichbaren Registrierungen sollten insbesondere vollständige PostgreSQL-Integrationstests, automatisierte Wiederherstellungstests, Rate-Limits und ein externer Sicherheitsreview ergänzt werden.
+
+## Stundenpläne der Kinder
+
+Unter **Personen** können Wochenstundenpläne manuell bearbeitet oder aus Bildern/PDFs als prüfbarer Vorschlag eingelesen werden. Über „Als Nächstes“ zeigt die Übersicht den aktuellen Unterrichtsstatus und eine aufklappbare Woche. Es entstehen keine Kalendertermine. [Bedienung, Serverpakete und JSON-API](docs/timetable.md).

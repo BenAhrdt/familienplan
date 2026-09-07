@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.101 – 7. September 2026
+
+- Ganztagstermine: Beginn direkt per Datumsauswahl ändern; Ende folgt automatisch am nächsten Tag um 00:00 Uhr. Kalender-Schaltflächen öffnen die Datumsauswahl auch bei Terminen mit Uhrzeit.
+
+- Separate Stundenpläne pro Kind: manuelle Bearbeitung und lokale Bild-/PDF-Erkennung mit Vorschau unter Personen.
+- Übersicht mit aktuellem Unterricht, Pause, Unterrichtsschluss und aufklappbarem Wochenplan.
+- Berechtigungsgeprüfte JSON-API für aktuellen Status sowie Tages- und Wochenplan; keine Kalendertermine.
+- Gültigkeitszeitraum, Zeitzone und manuelle unterrichtsfreie Tage; Datenbankmigration 0024.
+
+Für die lokale Bild-/PDF-Erkennung auf bestehenden Installationen einmalig `apt-get install tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng poppler-utils` als root ausführen. Die Migration 0024 wird beim regulären Update automatisch angewendet. Ferien und Vertretungen werden nicht automatisch übernommen; die API liefert planmäßigen Unterricht.
+
 ## 0.1.100 – 5. September 2026
 
 ### Einheitliche Geburtstage und offene Anfragen im Kalender

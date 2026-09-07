@@ -675,3 +675,8 @@
   .dayentries > .daypending { width:22px; height:22px; min-width:22px; flex-basis:22px; padding:3px; }
   .dayentries > .daypending span, .dayentries > .daypending small { display:none; }
 }
+
+.event-date-input { display: flex; align-items: stretch; gap: .4rem; }
+.event-date-input input { min-width: 0; flex: 1; }
+.event-date-input button { flex: 0 0 auto; padding: .65rem; }
+.event-date-end { display: block; padding: .8rem; border: 1px solid var(--line); border-radius: 10px; font-weight: 400; }

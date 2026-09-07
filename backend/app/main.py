@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import router, synchronize_child_calendar
 from app.api.v1.integration_router import router as integration_router
+from app.api.v1.timetable_router import router as timetable_router
 from app.core.config import get_settings
 from app.integrations import deliver_outbox_once
 from app.core.database import SessionLocal
@@ -71,6 +72,7 @@ app = FastAPI(title="FamilienPlan API", version=VERSION, docs_url="/api/docs", r
 app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(router, prefix="/api/v1")
 app.include_router(integration_router, prefix="/api/v1")
+app.include_router(timetable_router, prefix="/api/v1")
 
 
 @app.exception_handler(Exception)

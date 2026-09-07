@@ -100,6 +100,7 @@ class Child(Base):
     school_state_code: Mapped[str | None] = mapped_column(String(2))
     school_url: Mapped[str | None] = mapped_column(String(1000))
     school_calendar_url: Mapped[str | None] = mapped_column(String(1000))
+    timetable: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     school_class: Mapped[str | None] = mapped_column(String(80))
     care: Mapped[str | None] = mapped_column(String(200))
     care_city: Mapped[str | None] = mapped_column(String(160))

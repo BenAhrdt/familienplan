@@ -1,3 +1,5 @@
+import { EventDateFields } from "./event-dates";
+import { TimetableOverview, TimetableManagement } from "./timetable";
 import { birthdayOccursOnDay } from "./birthdays";
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -860,6 +862,7 @@ function Dashboard({
             </div>
           </section>
         )}
+        <TimetableOverview children={children}/>
         <section className="dashboardupcoming">
           <div className="sectiontitle">
             <h2>Als Nächstes</h2>
@@ -1291,15 +1294,7 @@ const localDayStart = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const nextLocalDay = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-const nextDateInputDay = (dateValue: string) => {
-  const match = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(dateValue);
-  if (!match) return null;
-  const date = new Date(0);
-  date.setUTCHours(12, 0, 0, 0);
-  date.setUTCFullYear(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1);
-  if (Number.isNaN(date.getTime())) return null;
-  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-};
+
 
 function PdfAttachmentViewer({ url, title }: { url: string; title: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2960,80 +2955,19 @@ function CalendarScreen({
                       ))}
                     </select>
                   </label>}
-                <label className="check event-all-day">
-                  <input
-                    type="checkbox"
-                    checked={eventAllDay}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      if (checked) {
-                        const form = event.currentTarget.form;
-                        const startInput = form?.elements.namedItem("starts_at") as HTMLInputElement | null;
-                        const endInput = form?.elements.namedItem("ends_at") as HTMLInputElement | null;
-                        const startDate = startInput?.value.split("T")[0] || "";
-                        const endDate = nextDateInputDay(startDate);
-                        if (startDate && endDate && startInput && endInput) {
-                          startInput.value = `${startDate}T00:00`;
-                          endInput.value = `${endDate}T00:00`;
-                        }
-                      }
-                      setEventAllDay(checked);
-                    }}
-                  />
-                  Ganztägig
-                </label>
-                <div className="grid2">
-                  <Field
-                    key={`event-start-${editingEvent?.id || stayToConvert?.id || "new"}`}
-                    label="Beginn"
-                    name="starts_at"
-                    type="datetime-local"
-                    readOnly={eventAllDay}
-                    defaultValue={localDateTime(eventAllDay ? localDayStart(
-                      editingEvent
-                        ? new Date(editingEvent.starts_at)
-                        : stayToConvert
-                          ? new Date(stayToConvert.starts_at)
-                        : new Date(
-                            (selectedDay || now).getFullYear(),
-                            (selectedDay || now).getMonth(),
-                            (selectedDay || now).getDate(),
-                          ),
-                    ) : editingEvent
-                      ? new Date(editingEvent.starts_at)
-                      : stayToConvert
-                        ? new Date(stayToConvert.starts_at)
-                        : new Date(
-                            (selectedDay || now).getFullYear(),
-                            (selectedDay || now).getMonth(),
-                            (selectedDay || now).getDate(),
-                          ))}
-                  />
-                  <Field
-                    key={`event-end-${editingEvent?.id || stayToConvert?.id || "new"}`}
-                    label="Ende"
-                    name="ends_at"
-                    type="datetime-local"
-                    readOnly={eventAllDay}
-                    defaultValue={localDateTime(eventAllDay ? nextLocalDay(localDayStart(
-                      editingEvent
-                        ? new Date(editingEvent.starts_at)
-                        : stayToConvert
-                          ? new Date(stayToConvert.starts_at)
-                          : selectedDay || now,
-                    )) : editingEvent
-                        ? new Date(editingEvent.ends_at)
-                        : stayToConvert
-                          ? new Date(stayToConvert.ends_at)
-                        : new Date(
-                            (selectedDay || now).getFullYear(),
-                            (selectedDay || now).getMonth(),
-                            (selectedDay || now).getDate(),
-                            1,
-                          ),
-                    )}
-                  />
-                </div>
+                <EventDateFields
+                  key={`event-dates-${editingEvent?.id || stayToConvert?.id || "new"}`}
+                  allDay={eventAllDay}
+                  onAllDayChange={setEventAllDay}
+                  initialStart={localDateTime(editingEvent
+                    ? new Date(editingEvent.starts_at)
+                    : stayToConvert ? new Date(stayToConvert.starts_at)
+                    : localDayStart(selectedDay || now))}
+                  initialEnd={localDateTime(editingEvent
+                    ? new Date(editingEvent.ends_at)
+                    : stayToConvert ? new Date(stayToConvert.ends_at)
+                    : new Date((selectedDay || now).getFullYear(), (selectedDay || now).getMonth(), (selectedDay || now).getDate(), 1))}
+                />
                 <Field
                   label="Notizen"
                   name="description"
@@ -3932,6 +3866,7 @@ function PeopleScreen({
           </button>
         )}
       </header>
+      <TimetableManagement children={children}/>
       <div className="cards">
         {people.map((p) => (
           <button

@@ -1,0 +1,23 @@
+.timetable-overview { margin-bottom: 2rem; }
+.timetable-card { background: var(--surface, #fff); border: 1px solid var(--border, #dde5e0); border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: .75rem; }
+.timetable-card > strong { font-size: 1.05rem; }
+.timetable-card p { margin: .4rem 0; }
+.timetable-card summary, .timetable-editor summary { cursor: pointer; padding: .6rem 0; }
+.timetable-week { display: grid; grid-template-columns: repeat(auto-fit,minmax(145px,1fr)); gap: .75rem; margin: .5rem 0 1rem; }
+.timetable-week h4 { margin: .5rem 0; }
+.timetable-lesson { display: flex; flex-direction: column; border-left: 3px solid var(--school, #3979b8); padding: .5rem .65rem; margin: .5rem 0; background: var(--bg, #f5f7f5); overflow-wrap: anywhere; }
+.timetable-management { margin: 2rem 0; }
+.timetable-children { display: flex; flex-wrap: wrap; gap: .75rem; }
+.panel.timetable-editor { width: min(1100px, 96vw); max-width: 1100px; max-height: 90dvh; overflow-y: auto; }
+.timetable-editor fieldset { border: 0; padding: 0; min-width: 0; }
+.timetable-settings { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
+.timetable-preview { display: block; width: 100%; max-height: 400px; object-fit: contain; }
+object.timetable-preview { height: 350px; }
+.timetable-proposal { padding: 1rem; border: 1px solid var(--border, #dde5e0); border-radius: 10px; margin: 1rem 0; }
+.timetable-proposal pre { white-space: pre-wrap; max-height: 220px; overflow: auto; }
+.timetable-row { display: grid; grid-template-columns: 1.1fr .85fr .85fr 1.5fr .8fr 1.1fr auto; gap: .5rem; align-items: end; padding: .75rem 0; border-bottom: 1px solid var(--border, #dde5e0); }
+.timetable-row input, .timetable-row select { min-width: 0; width: 100%; }
+.timetable-rows { margin-bottom: 1rem; }
+.timetable-days-off { margin-top: 1rem; }
+.timetable-days-off li { margin: .5rem 0; }
+@media (max-width: 750px) { .timetable-row { grid-template-columns: repeat(2,minmax(0,1fr)); } .timetable-settings { grid-template-columns: 1fr; } }

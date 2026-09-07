@@ -74,7 +74,7 @@ esac
 echo "Installiere benötigte Systempakete …"
 run_as_root apt-get update
 run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  ca-certificates curl gnupg openssl postgresql postgresql-client python3 python3-venv python3-pip
+  ca-certificates curl gnupg openssl postgresql postgresql-client python3 python3-venv python3-pip tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng poppler-utils
 
 node_major=0
 if command -v node >/dev/null 2>&1; then
