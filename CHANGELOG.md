@@ -2,6 +2,11 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.103 – 7. September 2026
+
+- Hinweistext unter dem Wochenstundenplan in der Übersicht entfernt.
+- Stundenplan-Editor nach Wochentagen gruppiert: kompakte Stundenzeilen, gemeinsame Spaltenüberschriften und direktes Hinzufügen pro Tag. Duplizieren und Entfernen stehen platzsparend neben der Stunde.
+
 ## 0.1.102 – 7. September 2026
 
 - Stundenplan direkt beim jeweiligen Kind statt im Personenmenü öffnen.

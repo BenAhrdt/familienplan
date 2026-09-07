@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, Child } from "./api";
 import "./timetable.css";
+import { Copy, Trash2 } from "lucide-react";
 
 import { copyDay, copyLesson, type Lesson } from "./timetable-copy";
 
@@ -56,7 +57,7 @@ export function TimetableOverview({ children }: { children: Child[] }) {
       <strong>{item.childName}{item.status === "lesson" ? " hat aktuell: " : " · "}{item.statusText}</strong>
       {item.currentLesson && <p>{item.currentLesson.start}–{item.currentLesson.end} Uhr{item.currentLesson.teacher && ` · ${item.currentLesson.teacher}`}{item.currentLesson.room && ` · Raum ${item.currentLesson.room}`}</p>}
       {item.nextLesson && <p>Danach: {item.nextLesson.subject} ab {item.nextLesson.start} Uhr</p>}
-      {item.configured ? <details><summary>Wochenstundenplan anzeigen</summary><Week lessons={item.weeklySchedule}/><small>Planmäßiger Unterricht · {item.timezone}. Vertretungen und Ferien werden nicht automatisch übernommen.</small></details>
+      {item.configured ? <details><summary>Wochenstundenplan anzeigen</summary><Week lessons={item.weeklySchedule}/></details>
       : <p>Unter Kinder kannst du beim jeweiligen Kind den Stundenplan anlegen.</p>}
     </article>)}
   </section>;
@@ -136,18 +137,28 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
           <button type="button" className="secondary" onClick={duplicateDay} disabled={copyFrom === copyTo || !plan.lessons.some(x => x.weekday === copyFrom) || plan.lessons.length + plan.lessons.filter(x => x.weekday === copyFrom).length > 150}>Tag duplizieren</button>
         </div>
         <p>Stundenkopien folgen im nächsten freien Zeitraum desselben Tages. Tageskopien behalten Zeiten, Fächer, Lehrkräfte und Farben bei.</p>
-        <div className="timetable-rows">{plan.lessons.map((lesson,index) => <div className="timetable-row" key={index}>
-          <label>Tag<select value={lesson.weekday} onChange={e => changeLesson(index,{weekday:Number(e.target.value)})}>{days.map((day,i) => <option value={i} key={day}>{day}</option>)}</select></label>
-          <label>Von<input type="time" required value={lesson.start} onChange={e => changeLesson(index,{start:e.target.value})}/></label>
-          <label>Bis<input type="time" required value={lesson.end} onChange={e => changeLesson(index,{end:e.target.value})}/></label>
-          <label>Fach<input required maxLength={160} value={lesson.subject} onChange={e => changeLesson(index,{subject:e.target.value})}/></label>
-          <label>Raum<input maxLength={100} value={lesson.room} onChange={e => changeLesson(index,{room:e.target.value})}/></label>
-          <label>Lehrkraft<input maxLength={160} value={lesson.teacher} onChange={e => changeLesson(index,{teacher:e.target.value})}/></label>
-          <label>Farbe<input type="color" value={lesson.color || "#3979b8"} onChange={e => changeLesson(index,{color:e.target.value})}/></label>
-          <button type="button" className="secondary" disabled={plan.lessons.length >= 150} onClick={() => duplicateLesson(index)}>Duplizieren</button>
-          <button type="button" className="secondary" aria-label={`Stunde ${index+1} entfernen`} onClick={() => change({...plan,lessons:plan.lessons.filter((_,i) => i !== index)})}>Entfernen</button>
-        </div>)}</div>
-        <button type="button" className="secondary" disabled={plan.lessons.length >= 150} onClick={() => change({...plan,lessons:[...plan.lessons,{weekday:0,start:"08:00",end:"08:45",subject:"",room:"",teacher:"",color:"#3979b8"}]})}>+ Unterrichtsstunde</button>
+        <div className="timetable-rows">{days.map((day, weekday) => {
+          const entries = plan.lessons.map((lesson, index) => ({lesson, index})).filter(x => x.lesson.weekday === weekday);
+          return <section className="timetable-day" key={day} aria-label={day}>
+            <header className="timetable-day-heading"><h3>{day}</h3><span>{entries.length} {entries.length === 1 ? "Stunde" : "Stunden"}</span>
+              <button type="button" className="secondary" disabled={plan.lessons.length >= 150} onClick={() => change({...plan,lessons:[...plan.lessons,{weekday,start:"08:00",end:"08:45",subject:"",room:"",teacher:"",color:"#3979b8"}]})}>+ Stunde</button>
+            </header>
+            {entries.length > 0 && <div className="timetable-column-headings" aria-hidden="true"><span>Von</span><span>Bis</span><span>Fach</span><span>Raum</span><span>Lehrkraft</span><span>Farbe</span><span>Aktionen</span></div>}
+            {entries.map(({lesson,index}) => <div className="timetable-row" key={index}>
+              <label><span>Von</span><input type="time" required value={lesson.start} onChange={e => changeLesson(index,{start:e.target.value})}/></label>
+              <label><span>Bis</span><input type="time" required value={lesson.end} onChange={e => changeLesson(index,{end:e.target.value})}/></label>
+              <label><span>Fach</span><input required maxLength={160} value={lesson.subject} onChange={e => changeLesson(index,{subject:e.target.value})}/></label>
+              <label><span>Raum</span><input maxLength={100} value={lesson.room} onChange={e => changeLesson(index,{room:e.target.value})}/></label>
+              <label><span>Lehrkraft</span><input maxLength={160} value={lesson.teacher} onChange={e => changeLesson(index,{teacher:e.target.value})}/></label>
+              <label><span>Farbe</span><input type="color" value={lesson.color || "#3979b8"} onChange={e => changeLesson(index,{color:e.target.value})}/></label>
+              <div className="timetable-row-actions">
+                <button type="button" className="secondary" title="Stunde duplizieren" aria-label={`${day} ${lesson.start}: Stunde duplizieren`} disabled={plan.lessons.length >= 150} onClick={() => duplicateLesson(index)}><Copy size={16}/></button>
+                <button type="button" className="secondary" title="Stunde entfernen" aria-label={`${day} ${lesson.start}: Stunde entfernen`} onClick={() => change({...plan,lessons:plan.lessons.filter((_,i) => i !== index)})}><Trash2 size={16}/></button>
+                <details className="timetable-move"><summary>Verschieben</summary><label>Nach<select value={lesson.weekday} onChange={e => changeLesson(index,{weekday:Number(e.target.value)})}>{days.map((name,i) => <option value={i} key={name}>{name}</option>)}</select></label></details>
+              </div>
+            </div>)}
+          </section>;
+        })}</div>
         <details className="timetable-days-off"><summary>Unterrichtsfreie Tage ({plan.days_off.length})</summary>
           <p>Ferien, Feiertage und Ausfälle werden nicht automatisch erkannt. Hier eingetragene Tage erhalten den Status „Heute kein Unterricht“.</p>
           <label>Freier Tag<input type="date" value={dayOff} onChange={e => setDayOff(e.target.value)}/></label>

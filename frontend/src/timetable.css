@@ -9,12 +9,34 @@
 .panel.timetable-editor { width: min(1100px, 96vw); max-width: 1100px; max-height: 90dvh; overflow-y: auto; }
 .timetable-editor fieldset { border: 0; padding: 0; min-width: 0; }
 .timetable-settings { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
-.timetable-row { display: grid; grid-template-columns: 1.1fr .85fr .85fr 1.5fr .8fr 1.1fr .6fr; gap: .5rem; align-items: end; padding: .75rem 0; border-bottom: 1px solid var(--border, #dde5e0); }
-.timetable-row input, .timetable-row select { min-width: 0; width: 100%; }
-.timetable-rows { margin-bottom: 1rem; }
+ .timetable-row, .timetable-column-headings { display: grid; grid-template-columns: minmax(100px,.9fr) minmax(100px,.9fr) minmax(110px,1.5fr) minmax(55px,.6fr) minmax(100px,1.2fr) 48px 88px; gap: .5rem; align-items: center; }
+.timetable-row { padding: .4rem 0; border-top: 1px solid var(--border, #dde5e0); }
+.panel .timetable-row label { margin: 0; min-width: 0; }
+.timetable-row > label > span { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.panel .timetable-row input, .timetable-row select { min-width: 0; width: 100%; padding: .5rem; }
+.timetable-rows { margin: 1rem 0; }
+.timetable-day { border: 1px solid var(--border, #dde5e0); border-radius: 10px; padding: .6rem .8rem; margin-bottom: .8rem; }
+.timetable-day-heading { display: flex; gap: .6rem; align-items: center; margin-bottom: .4rem; }
+.timetable-day-heading h3 { margin: 0; font-size: 1rem; }
+.timetable-day-heading > span { color: var(--muted); font-size: .8rem; }
+.timetable-day-heading > button { margin-left: auto; padding: .4rem .6rem; }
+.timetable-column-headings { color: var(--muted); font-size: .75rem; padding: .25rem 0; }
+.timetable-row-actions { display: flex; flex-wrap: wrap; gap: .25rem; }
+.timetable-row-actions > button { display: grid; place-items: center; padding: .4rem; min-width: 36px; min-height: 36px; }
+.timetable-move { width: 100%; }
+.timetable-editor .timetable-move summary { font-size: .7rem; padding: 0; }
+.timetable-settings { align-items: end; }
 .timetable-days-off { margin-top: 1rem; }
 .timetable-days-off li { margin: .5rem 0; }
-@media (max-width: 750px) { .timetable-row { grid-template-columns: repeat(2,minmax(0,1fr)); } .timetable-settings { grid-template-columns: 1fr; } }
+@media (max-width: 850px) {
+  .timetable-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; padding: .6rem 0; }
+  .timetable-row > label > span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+  .timetable-column-headings { display: none; }
+  .timetable-row-actions { grid-column: 1 / -1; align-items: center; }
+  .timetable-move { width: auto; }
+  .timetable-editor .timetable-move summary { padding: .4rem; }
+  .timetable-settings { grid-template-columns: 1fr; }
+}
 
 .timetable-overview + .dashboardupcoming > .sectiontitle { margin-top: 0; }
 .child-profile { display: block; width: 100%; padding: 0; text-align: left; background: transparent; color: inherit; margin-bottom: 1rem; }
