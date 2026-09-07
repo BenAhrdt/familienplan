@@ -1165,9 +1165,8 @@ function Children({
       </header>
       <div className="cards">
         {items.map((c) => (
-          <button
-            className="childcard"
-            key={c.id}
+          <article className="childcard" key={c.id}>
+          <button className="child-profile"
             disabled={!isAdmin}
             onClick={() => {
               if (!isAdmin) return;
@@ -1185,6 +1184,8 @@ function Children({
               {isAdmin ? "Bearbeiten" : "Nur Ansicht"}
             </span>
           </button>
+          <TimetableManagement child={c}/>
+          </article>
         ))}
       </div>
       {isAdmin && editing !== undefined && (
@@ -3866,7 +3867,6 @@ function PeopleScreen({
           </button>
         )}
       </header>
-      <TimetableManagement children={children}/>
       <div className="cards">
         {people.map((p) => (
           <button

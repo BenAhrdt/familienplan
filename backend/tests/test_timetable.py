@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.core.database import Base
 from app.models.entities import Child, User, Role, ChildUserPermission, Permission, CalendarEvent
 from app.timetable import Timetable, timetable_status
-from app.timetable_import import parse_tsv, analyze_upload
 from app.api.v1.timetable_router import get_timetable, save_timetable, integration_timetable
 
 
@@ -78,10 +77,13 @@ def test_persistence_access_api_scope_and_no_calendar_events(monkeypatch):
         db.add_all([ChildUserPermission(user_id=editor.id,child_id=child.id,permission=Permission.EDIT),ChildUserPermission(user_id=viewer.id,child_id=child.id,permission=Permission.VIEW)])
         db.commit()
         monkeypatch.setattr("app.api.v1.router.audit",lambda *args,**kwargs:None)
-        result = save_timetable(child.id,plan(),SimpleNamespace(),db,editor)
+        colored = plan()
+        colored.lessons[0].color = "#abcdef"
+        result = save_timetable(child.id,colored,SimpleNamespace(),db,editor)
         assert result["configured"] and result["canEdit"]
         db.expire_all()
         assert len(get_timetable(child.id,db=db,user=viewer)["weeklySchedule"]) == 2
+        assert get_timetable(child.id,db=db,user=viewer)["weeklySchedule"][0]["color"] == "#abcdef"
         assert not get_timetable(child.id,db=db,user=viewer)["canEdit"]
         with pytest.raises(HTTPException) as exc: save_timetable(child.id,plan(),SimpleNamespace(),db,viewer)
         assert exc.value.status_code == 403
@@ -95,21 +97,6 @@ def test_persistence_access_api_scope_and_no_calendar_events(monkeypatch):
         with pytest.raises(HTTPException): get_timetable(child.id,db=db,user=editor)
 
 
-def test_ocr_table_coordinates_and_pause():
-    words = [(200,20,"Montag"),(400,20,"Dienstag"),(20,80,"08:00-08:45"),(200,80,"Mathematik"),(400,80,"Deutsch"),(20,130,"08:45-08:50"),(200,130,"Pause"),(20,180,"08:50-09:35"),(200,180,"Sport")]
-    tsv = "level\tleft\ttop\twidth\theight\ttext\n" + "\n".join(f"5\t{x}\t{y}\t80\t16\t{text}" for x,y,text in words)
-    lessons, text = parse_tsv(tsv)
-    assert [(x["weekday"],x["subject"],x["start"]) for x in lessons] == [(0,"Mathematik","08:00"),(1,"Deutsch","08:00"),(0,"Sport","08:50")]
-    assert "Pause" in text
-    assert parse_tsv("level\tleft\ttop\twidth\theight\ttext\n5\t0\t0\t10\t10\tHallo")[0] == []
-
-
-def test_upload_requires_real_file_and_explains_missing_tools(monkeypatch):
-    with pytest.raises(ValueError): analyze_upload(b"not an image")
-    monkeypatch.setattr("app.timetable_import.shutil.which",lambda _:None)
-    with pytest.raises(RuntimeError,match="Serverpakete"): analyze_upload(b"%PDF-1.7")
-
-
 def test_session_endpoint_rejects_unscoped_bearer():
     from app.api.v1.timetable_router import timetable_user
     with pytest.raises(HTTPException) as exc:
@@ -117,27 +104,12 @@ def test_session_endpoint_rejects_unscoped_bearer():
     assert exc.value.status_code == 403
 
 
-def test_upload_pipeline_returns_draft_and_removes_temporary_files(monkeypatch):
-    from pathlib import Path
-    from app import timetable_import
-    paths = []
-    monkeypatch.setattr(timetable_import.shutil,"which",lambda name:f"/usr/bin/{name}")
-    def run(args,**kwargs):
-        source = Path(args[1]); paths.append(source)
-        assert source.exists()
-        return SimpleNamespace(stdout=b"level\tleft\ttop\twidth\theight\ttext\n5\t0\t0\t10\t10\tMathematik")
-    monkeypatch.setattr(timetable_import.subprocess,"run",run)
-    result = analyze_upload(b"\x89PNG\r\n\x1a\nfixture")
-    assert result["lessons"] == [] and "Mathematik" in result["extractedText"]
-    assert all(not path.exists() for path in paths)
-
-
-def test_pdf_page_limit_before_rasterizing(monkeypatch):
-    from app import timetable_import
-    monkeypatch.setattr(timetable_import.shutil,"which",lambda name:f"/usr/bin/{name}")
-    calls = []
-    def run(args,**kwargs):
-        calls.append(args[0]);return SimpleNamespace(stdout=b"Pages:          4\n")
-    monkeypatch.setattr(timetable_import.subprocess,"run",run)
-    with pytest.raises(ValueError,match="3 PDF-Seiten"): analyze_upload(b"%PDF-1.7")
-    assert calls == ["pdfinfo"]
+def test_lesson_colors_and_legacy_plans():
+    old = plan().model_dump(mode="json")
+    old["lessons"][0].pop("color")
+    old["lessons"][1]["color"] = "#12ABef"
+    result = timetable_status(SimpleNamespace(id=7, display_name="Rika", timetable=old), datetime(2026,9,7,6,tzinfo=timezone.utc))
+    assert result["currentLesson"]["color"] == "#3979b8"
+    assert result["weeklySchedule"][1]["color"] == "#12ABef"
+    old["lessons"][1]["color"] = "red; background: url(x)"
+    with pytest.raises(ValidationError): Timetable.model_validate(old)

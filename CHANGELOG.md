@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.102 – 7. September 2026
+
+- Stundenplan direkt beim jeweiligen Kind statt im Personenmenü öffnen.
+- Einzelne Stunden und ganze Tage duplizieren; Tageskopien verhindern Überschneidungen mit vorhandenen Stunden.
+- Individuelle Stundenfarben dauerhaft speichern und im Wochenplan anzeigen.
+- Aktuelle Lehrkraft in der Übersicht anzeigen und Abstand zu „Als Nächstes“ verkleinern.
+- Unzuverlässigen Bild-/PDF-Upload samt Analyse-Endpunkt entfernt; OCR-Pakete werden nicht mehr benötigt.
+
+Bereits installierte Tesseract-Sprachpakete und Poppler-Werkzeuge können installiert bleiben. Für dieses Update sind keine weiteren OCR-Befehle und keine zusätzliche Datenbankmigration erforderlich.
+
 ## 0.1.101 – 7. September 2026
 
 - Ganztagstermine: Beginn direkt per Datumsauswahl ändern; Ende folgt automatisch am nächsten Tag um 00:00 Uhr. Kalender-Schaltflächen öffnen die Datumsauswahl auch bei Terminen mit Uhrzeit.

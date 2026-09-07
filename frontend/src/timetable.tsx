@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { api, Child } from "./api";
 import "./timetable.css";
 
-type Lesson = { weekday: number; start: string; end: string; subject: string; room: string; teacher: string };
+import { copyDay, copyLesson, type Lesson } from "./timetable-copy";
+
 type Plan = { timezone: string; valid_from: string | null; valid_until: string | null; days_off: string[]; lessons: Lesson[] };
 type Snapshot = {
   childId: number; childName: string; status: string; statusText: string; timezone: string;
@@ -16,7 +17,7 @@ function Week({ lessons }: { lessons: Lesson[] }) {
   return <div className="timetable-week">{days.map((day, index) => {
     const items = lessons.filter(x => x.weekday === index).sort((a,b) => a.start.localeCompare(b.start));
     if (index > 4 && !items.length) return null;
-    return <section key={day}><h4>{day}</h4>{items.length ? items.map((lesson, i) => <div className="timetable-lesson" key={i}>
+    return <section key={day}><h4>{day}</h4>{items.length ? items.map((lesson, i) => <div className="timetable-lesson" style={{borderLeftColor: lesson.color || "#3979b8"}} key={i}>
       <small>{lesson.start}–{lesson.end}</small><strong>{lesson.subject}</strong>
       {(lesson.room || lesson.teacher) && <small>{[lesson.room && `Raum ${lesson.room}`, lesson.teacher].filter(Boolean).join(" · ")}</small>}
     </div>) : <p>Kein Unterricht</p>}</section>;
@@ -53,22 +54,20 @@ export function TimetableOverview({ children }: { children: Child[] }) {
     {!items.length && !error && <p>Stundenpläne werden geladen …</p>}
     {items.map(item => <article className="timetable-card" key={item.childId}>
       <strong>{item.childName}{item.status === "lesson" ? " hat aktuell: " : " · "}{item.statusText}</strong>
-      {item.currentLesson && <p>{item.currentLesson.start}–{item.currentLesson.end} Uhr{item.currentLesson.room && ` · Raum ${item.currentLesson.room}`}</p>}
+      {item.currentLesson && <p>{item.currentLesson.start}–{item.currentLesson.end} Uhr{item.currentLesson.teacher && ` · ${item.currentLesson.teacher}`}{item.currentLesson.room && ` · Raum ${item.currentLesson.room}`}</p>}
       {item.nextLesson && <p>Danach: {item.nextLesson.subject} ab {item.nextLesson.start} Uhr</p>}
       {item.configured ? <details><summary>Wochenstundenplan anzeigen</summary><Week lessons={item.weeklySchedule}/><small>Planmäßiger Unterricht · {item.timezone}. Vertretungen und Ferien werden nicht automatisch übernommen.</small></details>
-      : <p>Unter Personen kannst du den Stundenplan hochladen oder selbst anlegen.</p>}
+      : <p>Unter Kinder kannst du beim jeweiligen Kind den Stundenplan anlegen.</p>}
     </article>)}
   </section>;
 }
 
-export function TimetableManagement({ children }: { children: Child[] }) {
-  const [selected, setSelected] = useState<Child | null>(null);
-  if (!children.length) return null;
-  return <section className="timetable-management">
-    <h2>Stundenpläne der Kinder</h2><p>Wochenplan ansehen, selbst bearbeiten oder aus einem Bild bzw. einer PDF übernehmen.</p>
-    <div className="timetable-children">{children.map(child => <button className="secondary" key={child.id} onClick={() => setSelected(child)}>{child.display_name} · Stundenplan</button>)}</div>
-    {selected && <TimetableEditor key={selected.id} child={selected} close={() => setSelected(null)}/>}
-  </section>;
+export function TimetableManagement({ child }: { child: Child }) {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button type="button" className="secondary" onClick={() => setOpen(true)} aria-label={`Stundenplan für ${child.display_name}`}>Stundenplan</button>
+    {open && <TimetableEditor key={child.id} child={child} close={() => setOpen(false)}/>}
+  </>;
 }
 
 function TimetableEditor({ child, close }: { child: Child; close: () => void }) {
@@ -79,8 +78,8 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [preview, setPreview] = useState<{ url: string; pdf: boolean } | null>(null);
-  const [proposal, setProposal] = useState<{ lessons: Lesson[]; extractedText: string; message: string } | null>(null);
+  const [copyFrom, setCopyFrom] = useState(0);
+  const [copyTo, setCopyTo] = useState(1);
   const [dayOff, setDayOff] = useState("");
   useEffect(() => {
     let active = true;
@@ -89,7 +88,6 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
     }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [child.id]);
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
   useEffect(() => {
     const prevent = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", prevent);
@@ -100,17 +98,13 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
     change({...plan, lessons: plan.lessons.map((lesson,i) => i === index ? {...lesson,...value} : lesson)});
   }
   function dismiss() { if (!busy && (!dirty || confirm("Ungespeicherte Änderungen verwerfen?"))) close(); }
-  async function upload(file: File) {
-    setError(""); setNotice(""); setProposal(null);
-    if (file.size > 10 * 1024 * 1024) { setError("Die Datei darf höchstens 10 MB groß sein."); return; }
-    setPreview({url: URL.createObjectURL(file), pdf: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")});
-    setBusy(true);
-    const form = new FormData(); form.append("file", file);
-    try {
-      const result = await api<{lessons:Lesson[];extractedText:string;message:string}>(`/children/${child.id}/timetable/analyze`, {method:"POST",body:form});
-      setProposal(result);
-    } catch(e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+  function duplicateDay() {
+    try { change({...plan, lessons: copyDay(plan.lessons, copyFrom, copyTo)}); setError(""); }
+    catch (e) { setError((e as Error).message); }
+  }
+  function duplicateLesson(index: number) {
+    try { change({...plan, lessons: copyLesson(plan.lessons, index)}); setError(""); }
+    catch (e) { setError((e as Error).message); }
   }
   async function save(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
@@ -127,19 +121,8 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
     {!loaded && !error && <p>Wird geladen …</p>}
     {loaded && !editable && <><p>Du kannst diesen Stundenplan ansehen.</p><Week lessons={plan.lessons}/></>}
     {loaded && editable && <>
-      <p>Bild oder PDF hochladen oder die Stunden unten selbst eintragen. Es entstehen keine Kalendertermine.</p>
-      <label>Stundenplan hochladen (PNG, JPEG, WebP oder PDF; höchstens 10 MB / 3 PDF-Seiten)
-        <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" disabled={busy} onChange={event => { const file=event.target.files?.[0]; if (file) void upload(file); event.target.value=""; }}/>
-      </label>
-      {busy && <p role="status">Wird verarbeitet …</p>}
-      {preview && <details open><summary>Hochgeladene Vorlage</summary>{preview.pdf ? <object className="timetable-preview" data={preview.url} type="application/pdf"><a href={preview.url} target="_blank" rel="noreferrer">PDF öffnen</a></object> : <img className="timetable-preview" src={preview.url} alt="Hochgeladener Stundenplan zum Abgleichen"/>}</details>}
-      {proposal && <div className="timetable-proposal"><p>{proposal.message}</p>
-        {!!proposal.lessons.length && <><Week lessons={proposal.lessons}/><button type="button" disabled={busy} onClick={() => {
-          if (plan.lessons.length && !confirm("Die aktuellen Einträge im Bearbeitungsformular durch den Vorschlag ersetzen? Gespeichert wird erst mit „Stundenplan speichern“.")) return;
-          change({...plan,lessons:proposal.lessons}); setProposal(null);
-        }}>Vorschlag zur Bearbeitung übernehmen</button></>}
-        <details><summary>Erkannten Text anzeigen</summary><pre>{proposal.extractedText || "Kein Text erkannt"}</pre></details>
-      </div>}
+      <p>Stunden eintragen oder bestehende Stunden und Tage duplizieren. Es entstehen keine Kalendertermine.</p>
+      {busy && <p role="status">Wird gespeichert …</p>}
       <form onSubmit={save}><fieldset disabled={busy}>
         <div className="timetable-settings">
           <label>Gültig ab<input type="date" value={plan.valid_from || ""} onChange={e => change({...plan,valid_from:e.target.value || null})}/></label>
@@ -147,6 +130,12 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
           <label>Zeitzone<input required value={plan.timezone} onChange={e => change({...plan,timezone:e.target.value})}/></label>
         </div>
         <p>Zeiten gelten in der angegebenen Zeitzone. Lücken zwischen Stunden werden als Pause angezeigt.</p>
+        <div className="timetable-settings">
+          <label>Tag kopieren<select value={copyFrom} onChange={e => setCopyFrom(Number(e.target.value))}>{days.map((day,i) => <option key={day} value={i}>{day}</option>)}</select></label>
+          <label>Nach<select value={copyTo} onChange={e => setCopyTo(Number(e.target.value))}>{days.map((day,i) => <option key={day} value={i}>{day}</option>)}</select></label>
+          <button type="button" className="secondary" onClick={duplicateDay} disabled={copyFrom === copyTo || !plan.lessons.some(x => x.weekday === copyFrom) || plan.lessons.length + plan.lessons.filter(x => x.weekday === copyFrom).length > 150}>Tag duplizieren</button>
+        </div>
+        <p>Stundenkopien folgen im nächsten freien Zeitraum desselben Tages. Tageskopien behalten Zeiten, Fächer, Lehrkräfte und Farben bei.</p>
         <div className="timetable-rows">{plan.lessons.map((lesson,index) => <div className="timetable-row" key={index}>
           <label>Tag<select value={lesson.weekday} onChange={e => changeLesson(index,{weekday:Number(e.target.value)})}>{days.map((day,i) => <option value={i} key={day}>{day}</option>)}</select></label>
           <label>Von<input type="time" required value={lesson.start} onChange={e => changeLesson(index,{start:e.target.value})}/></label>
@@ -154,9 +143,11 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
           <label>Fach<input required maxLength={160} value={lesson.subject} onChange={e => changeLesson(index,{subject:e.target.value})}/></label>
           <label>Raum<input maxLength={100} value={lesson.room} onChange={e => changeLesson(index,{room:e.target.value})}/></label>
           <label>Lehrkraft<input maxLength={160} value={lesson.teacher} onChange={e => changeLesson(index,{teacher:e.target.value})}/></label>
+          <label>Farbe<input type="color" value={lesson.color || "#3979b8"} onChange={e => changeLesson(index,{color:e.target.value})}/></label>
+          <button type="button" className="secondary" disabled={plan.lessons.length >= 150} onClick={() => duplicateLesson(index)}>Duplizieren</button>
           <button type="button" className="secondary" aria-label={`Stunde ${index+1} entfernen`} onClick={() => change({...plan,lessons:plan.lessons.filter((_,i) => i !== index)})}>Entfernen</button>
         </div>)}</div>
-        <button type="button" className="secondary" disabled={plan.lessons.length >= 150} onClick={() => change({...plan,lessons:[...plan.lessons,{weekday:0,start:"08:00",end:"08:45",subject:"",room:"",teacher:""}]})}>+ Unterrichtsstunde</button>
+        <button type="button" className="secondary" disabled={plan.lessons.length >= 150} onClick={() => change({...plan,lessons:[...plan.lessons,{weekday:0,start:"08:00",end:"08:45",subject:"",room:"",teacher:"",color:"#3979b8"}]})}>+ Unterrichtsstunde</button>
         <details className="timetable-days-off"><summary>Unterrichtsfreie Tage ({plan.days_off.length})</summary>
           <p>Ferien, Feiertage und Ausfälle werden nicht automatisch erkannt. Hier eingetragene Tage erhalten den Status „Heute kein Unterricht“.</p>
           <label>Freier Tag<input type="date" value={dayOff} onChange={e => setDayOff(e.target.value)}/></label>

@@ -1,15 +1,13 @@
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import assert_child_access, current_user, require_csrf
 from app.api.v1.integration_router import allowed_children, api_context, need
 from app.core.database import get_db
 from app.models.entities import Child, ChildUserPermission, Permission, Role, User
 from app.timetable import Timetable, timetable_status
-from app.timetable_import import analyze_upload
 from sqlalchemy import select
 
 router = APIRouter()
@@ -53,24 +51,6 @@ def save_timetable(child_id: int, data: Timetable, request: Request, db: Session
     audit(db, request, "CHILD_TIMETABLE_CHANGED", user.id, ("child", str(child.id)), {"lesson_count": len(data.lessons)})
     db.commit()
     return get_timetable(child_id, db=db, user=user)
-
-
-@router.post("/children/{child_id}/timetable/analyze", dependencies=[Depends(require_csrf)])
-async def analyze_timetable(child_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(timetable_user)):
-    assert_child_access(db, user, child_id, edit=True)
-    get_child(db, child_id)
-    try:
-        content = await file.read(10 * 1024 * 1024 + 1)
-    finally:
-        await file.close()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(413, "Die Datei darf höchstens 10 MB groß sein")
-    try:
-        return await run_in_threadpool(analyze_upload, content)
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
 
 
 @router.get("/integrations/v1/children/{child_id}/timetable")

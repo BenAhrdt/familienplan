@@ -1,8 +1,10 @@
 # Stundenpläne
 
-Unter **Personen → Stundenpläne der Kinder** einen Wochenplan manuell erfassen oder ein Bild/PDF hochladen. Der Upload analysiert die Datei lokal und zeigt einen Vorschlag. Erst „Vorschlag zur Bearbeitung übernehmen“ füllt das Formular; erst „Stundenplan speichern“ speichert es. Das Original wird nur temporär zur Analyse verarbeitet, nicht dauerhaft gespeichert. Änderungen am Plan erzeugen keine Kalendertermine.
+Unter **Kinder → beim jeweiligen Kind → Stundenplan** den Wochenplan erfassen. Einzelne Stunden lassen sich in den nächsten freien Zeitraum desselben Tages duplizieren. Ganze Tage können auf einen anderen Wochentag kopiert werden; vorhandene Stunden bleiben erhalten, Überschneidungen werden abgewiesen. Jede Stunde hat eine frei wählbare Farbe. Änderungen werden erst mit „Stundenplan speichern“ gespeichert und erzeugen keine Kalendertermine.
 
-Leserechte folgen den Kinderfreigaben; Bearbeiten und Hochladen benötigen EDIT für das Kind oder Administratorrechte. Die Übersicht zeigt den aktuellen planmäßigen Status und eine aufklappbare Woche; sie aktualisiert sich alle 15 Sekunden sowie beim Wiederöffnen des Browsertabs.
+Leserechte folgen den Kinderfreigaben; Bearbeiten benötigt EDIT für das Kind oder Administratorrechte. Die Übersicht zeigt die Lehrkraft beim laufenden Unterricht und eine aufklappbare Woche; sie aktualisiert sich alle 15 Sekunden sowie beim Wiederöffnen des Browsertabs.
+
+Der Bild-/PDF-Upload wurde entfernt, da die lokale Erkennung fotografierte Stundenpläne nicht zuverlässig zuordnet. OCR-Pakete sind nicht mehr erforderlich.
 
 ## API
 
@@ -34,7 +36,7 @@ Optional: `?on=2026-09-08` wählt das Datum für `dailySchedule`. `status`, `cur
 }
 ```
 
-`weeklySchedule` enthält alle Wochenstunden (im Beispiel ausgelassen). `plan` liefert zusätzlich `timezone`, `valid_from`, `valid_until`, `days_off` und `lessons`. Wochentage: Montag=0 bis Sonntag=6. Uhrzeiten: `HH:MM` in der Zeitzone des Plans.
+`weeklySchedule` enthält alle Wochenstunden (im Beispiel ausgelassen). `plan` liefert zusätzlich `timezone`, `valid_from`, `valid_until`, `days_off` und `lessons`. Jede Stunde enthält `color` als Hex-Farbe (`#RRGGBB`, Standard für bestehende Stunden: `#3979b8`). Wochentage: Montag=0 bis Sonntag=6. Uhrzeiten: `HH:MM` in der Zeitzone des Plans.
 
 | Status | Bedeutung |
 | --- | --- |
@@ -48,18 +50,6 @@ Optional: `?on=2026-09-08` wählt das Datum für `dailySchedule`. `status`, `cur
 
 Ein bewusst leer gespeicherter Wochenplan bedeutet `no_school`. Gültigkeitsgrenzen gelten einschließlich. Überschneidungen, ungültige Zeiten und leere Fächer werden beim Speichern abgewiesen.
 
-Die Browseroberfläche nutzt mit Sitzung/CSRF `GET` und `PUT /api/v1/children/{id}/timetable` sowie `POST /api/v1/children/{id}/timetable/analyze` (Multipart-Feld `file`). Bearer-Clients verwenden ausschließlich den Integration-Endpunkt.
-
-## Lokale Dateierkennung
-
-Serverpakete auf Debian/Ubuntu:
-
-```sh
-sudo apt-get install tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng poppler-utils
-```
-
-Der Installer installiert diese Pakete für neue Installationen. Auf bestehenden Installationen vor der Nutzung der Erkennung nachinstallieren. Ohne diese Pakete sind manuelle Bearbeitung und API weiterhin verfügbar; beim Analyseversuch erscheint ein konkreter Hinweis.
-
-Akzeptiert werden PNG, JPEG, WebP und unverschlüsselte PDFs (höchstens 10 MB, PDF höchstens 3 Seiten). Die Erkennung unterstützt Tabellen mit Wochentagen als Spalten und expliziten Von-/Bis-Uhrzeiten links. OCR ist ungenau: alle Ergebnisse müssen geprüft werden. Reine Stundennummern ohne Zeiten, ungewöhnliche Layouts und mehrwöchige/A-/B-Pläne werden nicht automatisch zuverlässig zugeordnet. Ohne erkennbares Layout bleibt die Vorschlagsliste leer; Vorlage und erkannter Text helfen beim manuellen Eintragen. Raum/Lehrkraft können im erkannten Fachtext stehen und sind dann manuell zuzuordnen.
+Die Browseroberfläche nutzt mit Sitzung/CSRF `GET` und `PUT /api/v1/children/{id}/timetable`. Bearer-Clients verwenden ausschließlich den Integration-Endpunkt.
 
 Ferien, Feiertage und Vertretungen werden nicht automatisch übernommen. Unterrichtsfreie Tage können im Plan hinterlegt werden. Der Plan beschreibt die reguläre Woche, keine Live-Auskunft der Schule.

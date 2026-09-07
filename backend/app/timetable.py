@@ -13,6 +13,7 @@ class Lesson(BaseModel):
     subject: str = Field(min_length=1, max_length=160)
     room: str = Field(default="", max_length=100)
     teacher: str = Field(default="", max_length=160)
+    color: str = Field(default="#3979b8", pattern=r"^#[0-9a-fA-F]{6}$")
 
     @model_validator(mode="after")
     def duration(self):
