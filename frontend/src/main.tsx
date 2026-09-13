@@ -2449,7 +2449,7 @@ function CalendarScreen({
           })}
         </section>
       )}
-      <button type="button" className="secondary" onClick={async () => {
+      <button type="button" className="secondary request-history-button" onClick={async () => {
         try { setRequestHistory(await api<ChangeRequest[]>("/change-requests?include_closed=true")); }
         catch (x) { setError((x as Error).message); }
       }}>Anfrageverlauf</button>

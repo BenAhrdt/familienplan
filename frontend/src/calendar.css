@@ -82,6 +82,7 @@
   padding: 1rem 1.35rem;
   margin-bottom: 1.25rem;
 }
+.request-history-button { margin:0 0 1.25rem; }
 .series-list {
   background: white;
   border: 1px solid var(--line);

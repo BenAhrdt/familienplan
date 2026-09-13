@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.105 – 13. September 2026
+
+- Der Button „Anfrageverlauf“ besitzt in der mobilen Kalenderansicht nun ausreichend Abstand zum darunterliegenden Kalender.
+
+Validierung: Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.104 – 13. September 2026
 
 ### Länger gültige Einladungen und verständliche Passwortprüfung
