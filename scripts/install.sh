@@ -52,7 +52,7 @@ write_env() {
     printf 'APP_ORIGIN=%s\n' "$1"
     printf 'APP_TIMEZONE=Europe/Berlin\n'
     printf 'SESSION_COOKIE_SECURE=%s\n' "$3"
-    printf 'SESSION_HOURS=12\nREMEMBER_SESSION_DAYS=30\nINVITATION_HOURS=72\n'
+    printf 'SESSION_HOURS=12\nREMEMBER_SESSION_DAYS=30\nINVITATION_HOURS=720\n'
     printf 'SMTP_HOST=\nSMTP_PORT=587\nSMTP_USERNAME=\nSMTP_PASSWORD=\n'
     printf 'SMTP_FROM=FamilienPlan <familienplan@example.de>\nSMTP_STARTTLS=true\n'
     printf 'UPLOAD_DIR=%s/uploads\nGITHUB_REPOSITORY=BenAhrdt/familienplan\n' "$INSTALL_DIR"

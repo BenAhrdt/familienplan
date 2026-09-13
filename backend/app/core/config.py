@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     session_hours: int = 12
     remember_session_days: int = 30
-    invitation_hours: int = 72
+    invitation_hours: int = 24 * 30
     upload_dir: Path = Path("./uploads")
     smtp_host: str | None = None
     smtp_port: int = 587

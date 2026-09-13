@@ -18,7 +18,10 @@ import {
   ChevronRight,
   ClipboardList,
   Clock,
+  Circle,
   Download,
+  Eye,
+  EyeOff,
   Clapperboard,
   Copy,
   Drama,
@@ -275,18 +278,45 @@ function Field({
   defaultValue?: string;
   readOnly?: boolean;
 }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const isPassword = type === "password";
   return (
     <label>
       {label}
-      <input
-        name={name}
-        type={type}
-        required={required}
-        defaultValue={defaultValue}
-        readOnly={readOnly}
-      />
+      {isPassword ? <span className="password-input">
+        <input
+          name={name}
+          type={passwordVisible ? "text" : "password"}
+          required={required}
+          defaultValue={defaultValue}
+          readOnly={readOnly}
+        />
+        <button type="button" className="password-toggle" onClick={() => setPasswordVisible((visible) => !visible)} aria-label={passwordVisible ? `${label} ausblenden` : `${label} anzeigen`} aria-pressed={passwordVisible}>
+          {passwordVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+        </button>
+      </span> : <input name={name} type={type} required={required} defaultValue={defaultValue} readOnly={readOnly} />}
     </label>
   );
+}
+
+function PasswordFields({ passwordLabel = "Passwort", confirmationLabel = "Passwort bestätigen" }: { passwordLabel?: string; confirmationLabel?: string }) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const longEnough = password.length >= 12;
+  const matches = confirmation.length > 0 && password === confirmation;
+  return (
+    <div className="password-fields">
+      <label>{passwordLabel}<PasswordInput name="password" value={password} onChange={setPassword} label={passwordLabel} /></label>
+      <ul className="password-requirements" aria-label="Passwortanforderungen"><li className={longEnough ? "fulfilled" : ""}>{longEnough ? <CheckCircle2 aria-hidden="true" /> : <Circle aria-hidden="true" />} Mindestens 12 Zeichen</li></ul>
+      <label>{confirmationLabel}<PasswordInput name="password_confirm" value={confirmation} onChange={setConfirmation} label={confirmationLabel} /></label>
+      <p className={`password-match ${matches ? "fulfilled" : ""}`} aria-live="polite">{matches ? <CheckCircle2 aria-hidden="true" /> : <Circle aria-hidden="true" />}{matches ? "Die Passwörter stimmen überein." : "Beide Passwörter müssen übereinstimmen."}</p>
+    </div>
+  );
+}
+
+function PasswordInput({ name, value, onChange, label }: { name: string; value: string; onChange: (value: string) => void; label: string }) {
+  const [visible, setVisible] = useState(false);
+  return <span className="password-input"><input name={name} type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} required /><button type="button" className="password-toggle" onClick={() => setVisible((current) => !current)} aria-label={visible ? `${label} ausblenden` : `${label} anzeigen`} aria-pressed={visible}>{visible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}</button></span>;
 }
 
 function EventColorPicker({
@@ -559,16 +589,7 @@ function Setup({ done }: { done: (u: User) => void }) {
             required={false}
           />
         </div>
-        <Field
-          label="Passwort (mindestens 12 Zeichen)"
-          name="password"
-          type="password"
-        />
-        <Field
-          label="Passwort bestätigen"
-          name="password_confirm"
-          type="password"
-        />
+        <PasswordFields />
         <button>
           FamilienPlan einrichten <ChevronRight size={18} />
         </button>
@@ -631,7 +652,7 @@ function Login({ done }: { done: (u: User) => void }) {
 function ResetPassword() {
   const token=location.pathname.split("/reset-password/")[1]||"", [message,setMessage]=useState(""), [error,setError]=useState("");
   async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const f=new FormData(e.currentTarget);try{const result=await api<{message:string}>("/auth/password/reset",{method:"POST",body:JSON.stringify({token,password:f.get("password"),password_confirm:f.get("password_confirm")})});setMessage(result.message)}catch(x){setError((x as Error).message)}}
-  return <main className="auth"><section className="auth-copy"><span className="eyebrow">FamilienPlan</span><h1>Neues Passwort festlegen.</h1></section>{message?<section className="panel"><h2>Passwort geändert</h2><p className="success">{message}</p><button onClick={()=>{history.replaceState({},"","/");location.reload()}}>Zur Anmeldung</button></section>:<form className="panel" onSubmit={submit}><h2>Passwort zurücksetzen</h2><p className="muted">Der Link kann nur einmal verwendet werden.</p>{error&&<p className="error">{error}</p>}<Field label="Neues Passwort (mindestens 12 Zeichen)" name="password" type="password"/><Field label="Passwort bestätigen" name="password_confirm" type="password"/><button>Passwort speichern</button></form>}</main>
+  return <main className="auth"><section className="auth-copy"><span className="eyebrow">FamilienPlan</span><h1>Neues Passwort festlegen.</h1></section>{message?<section className="panel"><h2>Passwort geändert</h2><p className="success">{message}</p><button onClick={()=>{history.replaceState({},"","/");location.reload()}}>Zur Anmeldung</button></section>:<form className="panel" onSubmit={submit}><h2>Passwort zurücksetzen</h2><p className="muted">Der Link kann nur einmal verwendet werden.</p>{error&&<p className="error">{error}</p>}<PasswordFields passwordLabel="Neues Passwort"/><button>Passwort speichern</button></form>}</main>
 }
 
 type DashboardItem = {
@@ -5662,16 +5683,7 @@ function InviteAccept() {
           <Field label="Vorname" name="first_name" required={false} />
           <Field label="Nachname" name="last_name" required={false} />
         </div>
-        <Field
-          label="Passwort (mindestens 12 Zeichen)"
-          name="password"
-          type="password"
-        />
-        <Field
-          label="Passwort bestätigen"
-          name="password_confirm"
-          type="password"
-        />
+        <PasswordFields />
         <button>Einladung annehmen</button>
       </form>
     </main>
@@ -5873,7 +5885,8 @@ function SettingsScreen({
     [updateCheckMessage, setUpdateCheckMessage] = useState(""),
     [settingsSection, setSettingsSection] = useState<"profile" | "calendar" | "access" | "sources" | "updates" | "integrations" | "audit" | "appearance">("profile"),
     [error, setError] = useState("");
-  async function changePassword(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");setSaved(false);const form=e.currentTarget,f=new FormData(form);try{await api("/profile/password",{method:"PUT",body:JSON.stringify({current_password:f.get("current_password"),password:f.get("password"),password_confirm:f.get("password_confirm")})});form.reset();setSaved(true)}catch(x){setError((x as Error).message)}}
+  const [passwordFieldsKey, setPasswordFieldsKey] = useState(0);
+  async function changePassword(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");setSaved(false);const form=e.currentTarget,f=new FormData(form);try{await api("/profile/password",{method:"PUT",body:JSON.stringify({current_password:f.get("current_password"),password:f.get("password"),password_confirm:f.get("password_confirm")})});form.reset();setPasswordFieldsKey((key) => key + 1);setSaved(true)}catch(x){setError((x as Error).message)}}
   useEffect(() => {
     api<{ primary_color: string; holiday_color: string; birthday_color: string; school_color: string }>(
       "/settings/theme",
@@ -6018,8 +6031,7 @@ function SettingsScreen({
           <h2>Passwort ändern</h2>
           <p className="muted">Dabei werden alle anderen angemeldeten Geräte abgemeldet.</p>
           <Field label="Aktuelles Passwort" name="current_password" type="password" />
-          <Field label="Neues Passwort (mindestens 12 Zeichen)" name="password" type="password" />
-          <Field label="Neues Passwort bestätigen" name="password_confirm" type="password" />
+          <PasswordFields key={passwordFieldsKey} passwordLabel="Neues Passwort" confirmationLabel="Neues Passwort bestätigen" />
           <button>Passwort ändern</button>
         </form>
         <PushNotificationSettings />

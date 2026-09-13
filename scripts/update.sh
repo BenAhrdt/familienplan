@@ -35,6 +35,9 @@ echo "Erstelle Sicherheitskopie …"
 
 echo "Aktualisiere $current_version auf $latest_tag …"
 git checkout --detach "$latest_tag"
+# Installationen aus früheren Versionen hatten Einladungen standardmäßig nur
+# drei Tage lang gültig. Eigene abweichende Werte bleiben unangetastet.
+sed -i 's/^INVITATION_HOURS=72$/INVITATION_HOURS=720/' .env
 "$PROJECT_DIR/.venv/bin/pip" install -r "$PROJECT_DIR/backend/requirements.txt"
 npm --prefix "$PROJECT_DIR/frontend" ci
 npm --prefix "$PROJECT_DIR/frontend" run build

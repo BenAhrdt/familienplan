@@ -2,6 +2,20 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.104 – 13. September 2026
+
+### Länger gültige Einladungen und verständliche Passwortprüfung
+
+- Einladungslinks sind nun 30 Tage statt drei Tage gültig. Beim Update werden noch offene Links ebenfalls bis 30 Tage nach dem Update verlängert.
+- Bestehende Installationen mit der bisherigen Standardkonfiguration werden beim Update automatisch von 72 auf 720 Stunden umgestellt; individuell konfigurierte Laufzeiten bleiben erhalten.
+- Beim Festlegen eines Passworts wird die Mindestlänge von zwölf Zeichen direkt angezeigt und nach Erfüllung grün markiert.
+- Die Übereinstimmung beider Passworteingaben wird live geprüft und bei Erfolg grün bestätigt.
+- Passwortfelder können über ein Auge-Symbol ein- und ausgeblendet werden. Dies gilt auch für Anmeldung, Ersteinrichtung, Passwort-Reset und Passwortänderung.
+
+Die Datenbankmigration 0025 verlängert bestehende offene Einladungen und wird beim regulären Update automatisch ausgeführt.
+
+Validierung: 71 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.103 – 7. September 2026
 
 - Hinweistext unter dem Wochenstundenplan in der Übersicht entfernt.

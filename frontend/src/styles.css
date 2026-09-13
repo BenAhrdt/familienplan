@@ -186,6 +186,18 @@ html.api-pending::after {
 .impersonation-banner { position:fixed; z-index:80; left:50%; top:.7rem; transform:translateX(-50%); display:flex; align-items:center; gap:1rem; padding:.55rem .8rem; border:1px solid #9a7411; border-radius:10px; background:#fff2c7; color:#5f4808; box-shadow:0 6px 24px #1d2f2830; }
 .impersonation-banner button { padding:.45rem .65rem; border-radius:7px; background:#795d00; color:white; font-weight:750; }
 .pending-invitation { display:grid; gap:.65rem; padding:1rem; border:1px solid #d7b75c; border-radius:10px; background:#fff9e8; }
+.password-fields { display:grid; gap:0; }
+.password-input { position:relative; display:block; width:100%; }
+.password-input input { width:100%; padding-right:3rem; }
+.password-toggle { position:absolute; top:50%; right:.45rem; width:2.25rem; height:2.25rem; padding:0; display:grid; place-items:center; transform:translateY(-50%); border-radius:7px; background:transparent; color:var(--muted); }
+.password-toggle:not(:disabled):active { transform:translateY(-50%) scale(.94); }
+.password-toggle:hover,.password-toggle:focus-visible { background:var(--sage); color:var(--green); outline:none; }
+.password-toggle svg { width:1.15rem; height:1.15rem; }
+.password-requirements { list-style:none; margin:.65rem 0 0; padding:0; display:grid; gap:.35rem; color:var(--muted); font-size:.82rem; }
+.password-requirements li,.password-match { display:flex; align-items:center; gap:.45rem; }
+.password-requirements svg,.password-match svg { flex:0 0 auto; width:1rem; height:1rem; }
+.password-requirements .fulfilled,.password-match.fulfilled { color:#24643a; font-weight:700; }
+.password-match { margin:.65rem 0 0; color:var(--muted); font-size:.82rem; }
 .sidebar .brand { align-items:flex-start; }
 .brand-copy { min-width:0; display:flex; flex-direction:column; align-items:flex-start; padding-top:.08rem; }
 .brand-version { margin:.16rem 0 0; padding:0; background:transparent; color:var(--muted); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:.68rem; text-align:left; }
