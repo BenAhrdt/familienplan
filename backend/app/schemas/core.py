@@ -299,6 +299,8 @@ class PushSubscriptionCreate(BaseModel):
 
 class AuditPushSetting(BaseModel):
     enabled: bool = False
+    user_ids: list[int] = Field(default_factory=list)
+    actions: list[str] = Field(default_factory=list)
 
 
 class BirthdayCreate(BaseModel):

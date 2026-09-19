@@ -5184,7 +5184,7 @@ function App() {
   useEffect(() => {
     Promise.all([
       api<{ setup_required: boolean }>("/setup/status"),
-      api<{ user: User; csrf_token: string; impersonating?: boolean }>("/auth/me").catch(() => null),
+      api<{ user: User; csrf_token: string; impersonating?: boolean }>("/auth/me", { headers:{ "X-App-Open":"1" } }).catch(() => null),
     ])
       .then(([s, m]) => {
         setSetup(s.setup_required);
@@ -5195,6 +5195,19 @@ function App() {
         }
       })
       .finally(() => setLoading(false));
+  }, []);
+  useEffect(() => {
+    let wasHidden = document.visibilityState === "hidden";
+    const recordResume = () => {
+      if (document.visibilityState === "hidden") { wasHidden = true; return; }
+      if (!wasHidden) return;
+      wasHidden = false;
+      api<{ user: User; csrf_token: string; impersonating?: boolean }>("/auth/me", { background:true, headers:{ "X-App-Open":"1" } })
+        .then((session) => { setUser(session.user); setCsrf(session.csrf_token); setImpersonating(Boolean(session.impersonating)); })
+        .catch(() => null);
+    };
+    document.addEventListener("visibilitychange", recordResume);
+    return () => document.removeEventListener("visibilitychange", recordResume);
   }, []);
   useEffect(() => {
     if (user) {
@@ -5753,24 +5766,26 @@ const auditActionLabels: Record<string,string> = {
   PASSWORD_CHANGED:"hat das eigene Passwort geändert",
   PASSWORD_RESET_REQUESTED:"hat einen Passwort-Reset angefordert",
   PASSWORD_RESET_COMPLETED:"hat das Passwort über einen Reset-Link geändert",
-  LOGIN:"hat sich angemeldet", LOGOUT:"hat sich abgemeldet", LOGIN_FAILED:"Anmeldung fehlgeschlagen",
+  LOGIN:"hat sich angemeldet", LOGOUT:"hat sich abgemeldet", LOGIN_FAILED:"Anmeldung fehlgeschlagen", APP_OPENED:"hat FamilienPlan geöffnet",
   INITIAL_ADMIN_CREATED:"hat FamilienPlan eingerichtet", PERSON_ACCESS_CHANGED:"hat die Rechte einer Person geändert", PERSON_DELETED:"hat eine Person gelöscht",
   INVITATION_CREATED:"hat eine Einladung erstellt", INVITATION_RENEWED:"hat einen Einladungslink erneuert", INVITATION_SENT:"hat eine Einladung versendet", INVITATION_ACCEPTED:"hat eine Einladung angenommen",
   CHILD_CREATED:"hat ein Kind angelegt", CHILD_CHANGED:"hat ein Kind geändert", CHILD_PERMISSION_CHANGED:"hat Kinderrechte geändert",
   STAY_CREATED:"hat eine Betreuungszeit angelegt", STAY_CHANGED:"hat eine Betreuungszeit geändert", STAY_DELETED:"hat eine Betreuungszeit gelöscht", STAY_SERIES_CREATED:"hat eine Betreuungsserie angelegt", STAY_SERIES_CHANGED:"hat eine Betreuungsserie geändert",
   STAY_SERIES_EXTENDED:"hat eine Betreuungsserie verlängert", NEW_STAY_PROPOSED:"hat eine neue Betreuungszeit vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Betreuungsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen einer Betreuungszeit vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",
   CALENDAR_EVENT_CREATED:"hat einen Termin angelegt", CALENDAR_EVENT_CHANGED:"hat einen Termin geändert", CALENDAR_EVENT_DELETED:"hat einen Termin gelöscht", CALENDAR_EVENT_SERIES_CREATED:"hat eine Terminserie angelegt", CALENDAR_EVENT_SERIES_CHANGED:"hat eine Terminserie geändert", CALENDAR_EVENT_SERIES_DELETED:"hat eine Terminserie gelöscht",
+  CALENDAR_EVENT_ATTACHMENT_ADDED:"hat einem Termin einen Anhang hinzugefügt", CALENDAR_EVENT_ATTACHMENT_DELETED:"hat einen Terminanhang gelöscht",
   BIRTHDAY_CREATED:"hat einen Geburtstag angelegt", BIRTHDAY_CHANGED:"hat einen Geburtstag geändert", BIRTHDAY_DELETED:"hat einen Geburtstag gelöscht",
   SECTION_ACCESS_CHANGED:"hat Rubrikenfreigaben geändert", CALENDAR_EVENT_TYPES_CHANGED:"hat Terminarten und deren Freigaben geändert", THEME_CHANGED:"hat die globale Darstellung geändert", PERSONAL_CALENDAR_COLORS_CHANGED:"hat persönliche Kalenderfarben geändert", PERSONAL_CALENDAR_DISPLAY_CHANGED:"hat die persönliche Kalenderanzeige geändert", OWN_PROFILE_CHANGED:"hat das eigene Profil geändert",
-  SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender eingerichtet",
+  SCHOOL_CALENDAR_SYNCED:"hat einen Schulkalender synchronisiert", WASTE_CALENDAR_SYNCED:"hat den Abfallkalender synchronisiert", CALENDAR_SOURCE_SYNCED:"hat einen externen Kalender synchronisiert", WASTE_CALENDAR_CREATED:"hat einen Abfallkalender angelegt", WASTE_CALENDAR_SETTINGS_CHANGED:"hat den Abfallkalender geändert", WASTE_CALENDAR_DELETED:"hat einen Abfallkalender gelöscht",
   SYSTEM_UPDATE_REQUESTED:"hat ein Systemupdate gestartet", IMPERSONATION_STARTED:"hat die Ansicht einer Person übernommen", IMPERSONATION_STOPPED:"hat die übernommene Ansicht beendet",
   AUDIT_PUSH_CHANGED:"hat Logbuch-Pushnachrichten eingestellt",
 };
-const auditTargetLabels:Record<string,string>={user:"Person",child:"Kind",stay:"Betreuungszeit",recurrence_rule:"Betreuungsserie",calendar_event:"Termin",calendar_event_series:"Terminserie",birthday:"Geburtstag",invitation:"Einladung",change_request:"Anfrage",calendar_source:"Kalenderquelle",setting:"Einstellung",system:"System",username:"Benutzername"};
+const auditTargetLabels:Record<string,string>={user:"Person",child:"Kind",stay:"Betreuungszeit",recurrence_rule:"Betreuungsserie",calendar_event:"Termin",calendar_event_series:"Terminserie",birthday:"Geburtstag",invitation:"Einladung",change_request:"Anfrage",calendar_source:"Kalenderquelle",setting:"Einstellung",system:"System",session:"Sitzung",username:"Benutzername"};
 const auditDetailLabels:Record<string,string>={title:"Titel",name:"Name",display_name:"Anzeigename",event_type:"Terminart",starts_at:"Beginn",ends_at:"Ende",birth_date:"Geburtsdatum",description:"Beschreibung",note:"Notiz",scope:"Umfang",affected:"Betroffene Einträge",occurrences:"Einträge",children:"Freigegebene Kinder",role:"Rolle",email:"E-Mail-Adresse",user_id:"Person",responsible_user_id:"Zuständige Person",child_id:"Kind",from_version:"Ausgangsversion",removed:"Entfernt",events:"Termine",visibility:"Sichtbar für",changed_values:"Geänderte Werte"};
 
 function AuditLogSettings({ people }: { people: User[] }) {
-  const [items,setItems] = useState<AuditEntry[]>([]), [userFilter,setUserFilter] = useState(""), [actionFilter,setActionFilter] = useState(""), [offset,setOffset] = useState(0), [hasMore,setHasMore] = useState(false), [busy,setBusy] = useState(false), [pushBusy,setPushBusy] = useState(false), [pushEnabled,setPushEnabled] = useState(false), [message,setMessage] = useState(""), [error,setError] = useState("");
+  type AuditPushSetting = { enabled:boolean; user_ids:number[]; actions:string[] };
+  const [items,setItems] = useState<AuditEntry[]>([]), [userFilter,setUserFilter] = useState(""), [actionFilter,setActionFilter] = useState(""), [offset,setOffset] = useState(0), [hasMore,setHasMore] = useState(false), [busy,setBusy] = useState(false), [pushBusy,setPushBusy] = useState(false), [pushSetting,setPushSetting] = useState<AuditPushSetting>({enabled:false,user_ids:[],actions:[]}), [message,setMessage] = useState(""), [error,setError] = useState("");
   async function load(nextOffset=0, append=false) {
     setBusy(true); setError("");
     const query = new URLSearchParams({ limit:"100", offset:String(nextOffset) });
@@ -5781,17 +5796,19 @@ function AuditLogSettings({ people }: { people: User[] }) {
     finally { setBusy(false); }
   }
   useEffect(()=>{ void load(); },[userFilter,actionFilter]);
-  useEffect(()=>{ api<{enabled:boolean}>("/settings/audit-push").then((value)=>setPushEnabled(value.enabled)).catch((x)=>setError((x as Error).message)); },[]);
-  async function togglePush() {
+  useEffect(()=>{ api<AuditPushSetting>("/settings/audit-push").then(setPushSetting).catch((x)=>setError((x as Error).message)); },[]);
+  async function savePush(enabled=pushSetting.enabled) {
     setPushBusy(true); setError(""); setMessage("");
-    try { const value=await api<{enabled:boolean}>("/settings/audit-push",{method:"PUT",body:JSON.stringify({enabled:!pushEnabled})}); setPushEnabled(value.enabled); setMessage(value.enabled?"Pushnachrichten für fremde Logbucheinträge sind aktiviert.":"Pushnachrichten für fremde Logbucheinträge sind deaktiviert."); }
+    try { const value=await api<AuditPushSetting>("/settings/audit-push",{method:"PUT",body:JSON.stringify({...pushSetting,enabled})}); setPushSetting(value); setMessage(value.enabled?"Pushregeln für fremde Logbucheinträge sind gespeichert und aktiviert.":"Pushnachrichten für fremde Logbucheinträge sind deaktiviert."); }
     catch(x){ setError((x as Error).message); }
     finally { setPushBusy(false); }
   }
   const actions = [...new Set(items.map((item)=>item.action))].sort();
+  const selectablePushActions = Object.keys(auditActionLabels).filter((action)=>!["LOGIN_FAILED","NEW_STAY_PROPOSED","STAY_CHANGE_PROPOSED","STAY_DELETE_PROPOSED","GROUP_PLAN_PROPOSED","AUDIT_PUSH_CHANGED"].includes(action)).sort((a,b)=>auditActionLabels[a].localeCompare(auditActionLabels[b],"de"));
   return <section id="settings-audit" className="themebox settings-card settings-wide audit-log">
     <div className="audit-heading"><div><h2>Logbuch</h2><p className="muted">Sicherheits- und Änderungsverlauf aller Personen. Geheimnisse und Passwörter werden nicht protokolliert.</p></div><button type="button" className="secondary" onClick={()=>load()} disabled={busy}>{busy?"Lädt …":"Neu laden"}</button></div>
-    <div className="audit-push-setting"><div><strong>Fremde Logbucheinträge als Pushnachricht</strong><p className="muted">Informiert dich über Aktivitäten anderer Personen. Eigene Aktionen, An- und Abmeldungen sowie Anfragen und Entscheidungen mit eigener Benachrichtigung werden ausgelassen.</p></div><button type="button" className={pushEnabled?"secondary":""} onClick={togglePush} disabled={pushBusy}>{pushBusy?"Wird gespeichert …":pushEnabled?"Deaktivieren":"Aktivieren"}</button></div>
+    <div className="audit-push-setting"><div><strong>Fremde Logbucheinträge als Pushnachricht</strong><p className="muted">Lege fest, von welchen Personen und für welche Aktivitäten du Pushnachrichten erhältst. Ohne Auswahl gelten weiterhin alle normalen Änderungen; Anmeldungen und App-Öffnungen werden nur bei ausdrücklicher Auswahl gesendet.</p></div><div className="audit-push-actions"><button type="button" onClick={()=>savePush(true)} disabled={pushBusy}>{pushBusy?"Wird gespeichert …":pushSetting.enabled?"Auswahl speichern":"Aktivieren"}</button>{pushSetting.enabled&&<button type="button" className="secondary" onClick={()=>savePush(false)} disabled={pushBusy}>Deaktivieren</button>}</div></div>
+    <div className="audit-push-rules"><MultiSelectPicker title="Push für Personen" items={people.map((person)=>({id:person.id,label:person.display_name,color:person.color}))} values={pushSetting.user_ids} onChange={(values)=>setPushSetting({...pushSetting,user_ids:values.map(Number)})} hint="Keine Auswahl bedeutet: alle anderen Personen."/><MultiSelectPicker title="Push für Aktivitäten" items={selectablePushActions.map((action)=>({id:action,label:auditActionLabels[action]}))} values={pushSetting.actions} onChange={(values)=>setPushSetting({...pushSetting,actions:values.map(String)})} hint="Wähle „hat FamilienPlan geöffnet“, um App-Öffnungen zu melden."/></div>
     {message&&<p className="success">{message}</p>}
     <div className="audit-filters"><label>Person<select value={userFilter} onChange={(e)=>setUserFilter(e.target.value)}><option value="">Alle Personen</option>{people.map((person)=><option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label><label>Aktivität<select value={actionFilter} onChange={(e)=>setActionFilter(e.target.value)}><option value="">Alle Aktivitäten</option>{actions.map((action)=><option key={action} value={action}>{auditActionLabels[action]||action}</option>)}</select></label></div>
     {error&&<p className="error">{error}</p>}

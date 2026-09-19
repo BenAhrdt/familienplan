@@ -11,7 +11,7 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
@@ -238,11 +238,12 @@ def recurrence_dates(data: StayCreate) -> list[tuple[datetime, datetime]]:
     return occurrences
 
 
-AUDIT_PUSH_EXCLUDED_ACTIONS = {
-    "LOGIN", "LOGOUT", "LOGIN_FAILED",
+AUDIT_PUSH_ALWAYS_EXCLUDED_ACTIONS = {
+    "LOGIN_FAILED",
     "NEW_STAY_PROPOSED", "STAY_CHANGE_PROPOSED", "STAY_DELETE_PROPOSED", "GROUP_PLAN_PROPOSED",
     "AUDIT_PUSH_CHANGED",
 }
+AUDIT_PUSH_DEFAULT_EXCLUDED_ACTIONS = {"LOGIN", "LOGOUT", "APP_OPENED"}
 AUDIT_PUSH_ACTION_LABELS = {
     "PASSWORD_CHANGED": "hat das eigene Passwort geändert", "PASSWORD_RESET_REQUESTED": "hat einen Passwort-Reset angefordert", "PASSWORD_RESET_COMPLETED": "hat das Passwort zurückgesetzt",
     "INITIAL_ADMIN_CREATED": "hat FamilienPlan eingerichtet",
@@ -261,22 +262,32 @@ AUDIT_PUSH_ACTION_LABELS = {
     "SCHOOL_CALENDAR_SYNCED": "hat einen Schulkalender synchronisiert", "WASTE_CALENDAR_SYNCED": "hat einen Abfallkalender synchronisiert", "CALENDAR_SOURCE_SYNCED": "hat einen externen Kalender synchronisiert",
     "WASTE_CALENDAR_CREATED": "hat einen Abfallkalender angelegt", "WASTE_CALENDAR_SETTINGS_CHANGED": "hat einen Abfallkalender geändert", "WASTE_CALENDAR_DELETED": "hat einen Abfallkalender gelöscht",
     "SYSTEM_UPDATE_REQUESTED": "hat ein Systemupdate gestartet", "IMPERSONATION_STARTED": "hat die Ansicht einer Person übernommen", "IMPERSONATION_STOPPED": "hat die übernommene Ansicht beendet",
+    "LOGIN": "hat sich angemeldet", "LOGOUT": "hat sich abgemeldet", "APP_OPENED": "hat FamilienPlan geöffnet",
 }
 
 
-def audit_push_enabled(db: Session, user_id: int) -> bool:
+def audit_push_setting(db: Session, user_id: int) -> AuditPushSetting:
     row = db.get(ApplicationSetting, f"audit_push_{user_id}")
-    return bool(row and (row.value or {}).get("enabled"))
+    return AuditPushSetting.model_validate(row.value if row else {})
 
 
 def queue_audit_pushes(db: Session, request: Request, entry: AuditLog, actor: User | None) -> None:
-    if not actor or entry.action in AUDIT_PUSH_EXCLUDED_ACTIONS or getattr(request.state, "approved_change", False):
+    if not actor or entry.action in AUDIT_PUSH_ALWAYS_EXCLUDED_ACTIONS or getattr(request.state, "approved_change", False):
         return
     app_url = settings.app_origin.rstrip("/")
     label = AUDIT_PUSH_ACTION_LABELS.get(entry.action, entry.action.lower().replace("_", " "))
     for recipient in db.scalars(select(User).where(User.role == Role.ADMIN, User.is_active.is_(True), User.id != actor.id)):
-        if audit_push_enabled(db, recipient.id):
-            queue_push(db, recipient.id, f"audit:{entry.id}", f"Logbuch: {actor.display_name}", f"{actor.display_name} {label}.", app_url)
+        push_setting = audit_push_setting(db, recipient.id)
+        if not push_setting.enabled:
+            continue
+        if push_setting.user_ids and actor.id not in push_setting.user_ids:
+            continue
+        if push_setting.actions:
+            if entry.action not in push_setting.actions:
+                continue
+        elif entry.action in AUDIT_PUSH_DEFAULT_EXCLUDED_ACTIONS:
+            continue
+        queue_push(db, recipient.id, f"audit:{entry.id}", f"Logbuch: {actor.display_name}", f"{actor.display_name} {label}.", app_url)
 
 
 def audit(db: Session, request: Request, action: str, user_id: int | None = None, target: tuple[str, str] | None = None, metadata: dict | None = None):
@@ -290,6 +301,21 @@ def audit(db: Session, request: Request, action: str, user_id: int | None = None
     db.add(entry)
     db.flush()
     queue_audit_pushes(db, request, entry, actor)
+
+
+def audit_app_opened(db: Session, request: Request, user: User, session: UserSession) -> bool:
+    cutoff = utcnow() - timedelta(minutes=5)
+    already_logged = db.scalar(select(AuditLog.id).where(
+        AuditLog.user_id == user.id,
+        AuditLog.action == "APP_OPENED",
+        AuditLog.target_type == "session",
+        AuditLog.target_id == str(session.id),
+        AuditLog.created_at >= cutoff,
+    ))
+    if already_logged:
+        return False
+    audit(db, request, "APP_OPENED", user.id, ("session", str(session.id)))
+    return True
 
 
 def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None):
@@ -389,8 +415,10 @@ def reset_password(data: PasswordReset, request: Request, db: Session = Depends(
 
 
 @router.get("/auth/me", response_model=SessionOut)
-def me(request: Request, user: User = Depends(current_user), admin_session_token: str | None = Cookie(default=None)):
+def me(request: Request, user: User = Depends(current_user), admin_session_token: str | None = Cookie(default=None), x_app_open: str | None = Header(default=None, alias="X-App-Open"), db: Session = Depends(get_db)):
     session = getattr(request.state, "auth_session", None)
+    if x_app_open == "1" and session and audit_app_opened(db, request, user, session):
+        db.commit()
     return SessionOut(user=user, csrf_token=session.csrf_token if session else "", impersonating=bool(admin_session_token))
 
 
@@ -698,11 +726,17 @@ def get_audit_log(user_id: int | None = None, action: str | None = None, limit: 
 
 @router.get("/settings/audit-push", response_model=AuditPushSetting)
 def get_audit_push_setting(db: Session = Depends(get_db), user: User = Depends(admin)):
-    return AuditPushSetting(enabled=audit_push_enabled(db, user.id))
+    return audit_push_setting(db, user.id)
 
 
 @router.put("/settings/audit-push", response_model=AuditPushSetting, dependencies=[Depends(require_csrf)])
 def update_audit_push_setting(data: AuditPushSetting, request: Request, db: Session = Depends(get_db), user: User = Depends(admin)):
+    valid_user_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
+    if set(data.user_ids) - valid_user_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Push-Auswahl enthält unbekannte Personen")
+    valid_actions = set(AUDIT_PUSH_ACTION_LABELS)
+    if set(data.actions) - valid_actions:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Push-Auswahl enthält unbekannte Aktivitäten")
     upsert_application_setting(db, f"audit_push_{user.id}", data.model_dump())
     audit(db, request, "AUDIT_PUSH_CHANGED", user.id, ("setting", "audit_push"), data.model_dump())
     db.commit()

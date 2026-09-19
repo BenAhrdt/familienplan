@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.106 – 19. September 2026
+
+- Das Logbuch protokolliert nun, wenn eine bestehende Sitzung FamilienPlan öffnet oder die App auf dem Gerät fortgesetzt wird. Pro Sitzung entsteht höchstens alle fünf Minuten ein Eintrag.
+- Administratoren können Pushnachrichten für Logbucheinträge nach Personen und Aktivitäten filtern. Anmeldungen und App-Öffnungen lassen sich gezielt auswählen; die bisherigen allgemeinen Push-Einstellungen bleiben erhalten.
+
+Validierung: 74 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.105 – 13. September 2026
 
 - Der Button „Anfrageverlauf“ besitzt in der mobilen Kalenderansicht nun ausreichend Abstand zum darunterliegenden Kalender.
