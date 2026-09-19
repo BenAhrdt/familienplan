@@ -15,3 +15,5 @@ uploads/*
 backups/
 *.sql
 *.dump
+/AGENTS.md
+/secondBrain/
