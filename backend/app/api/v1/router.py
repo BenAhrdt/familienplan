@@ -1004,6 +1004,7 @@ def delete_person(user_id: int, request: Request, db: Session = Depends(get_db),
     linked_records = any((
         db.scalar(select(Child.id).where(Child.default_responsible_user_id == person.id).limit(1)),
         db.scalar(select(CalendarEvent.id).where(CalendarEvent.created_by_id == person.id).limit(1)),
+        db.scalar(select(CalendarEvent.id).where(cast(CalendarEvent.participant_user_ids, JSONB).contains([person.id])).limit(1)),
         db.scalar(select(Stay.id).where(or_(Stay.responsible_user_id == person.id, Stay.created_by_id == person.id)).limit(1)),
         db.scalar(select(RecurrenceRule.id).where(RecurrenceRule.responsible_user_id == person.id).limit(1)),
         db.scalar(select(HolidayPlan.id).where(HolidayPlan.created_by_id == person.id).limit(1)),
@@ -2815,6 +2816,9 @@ def create_calendar_event(data: CalendarEventCreate, request: Request, db: Sessi
         data.child_id = None
     if data.child_id is not None:
         assert_child_access(db, user, data.child_id, edit=not waste_section_allowed)
+    data.participant_user_ids = [person_id for person_id in data.participant_user_ids if person_id != user.id]
+    for person_id in data.participant_user_ids:
+        assert_person_visible(db, user, person_id)
     if data.event_type != "PRIVATE" and data.event_type not in (user.allowed_event_types or []) and not waste_section_allowed and not custom_type_allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Diese Terminart ist für dich nicht freigeschaltet")
     if custom_type:
@@ -2889,6 +2893,9 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         data.child_id = None
     if data.child_id is not None:
         assert_child_access(db, user, data.child_id, edit=not waste_section_allowed)
+    data.participant_user_ids = [person_id for person_id in data.participant_user_ids if person_id != (event.created_by_id or user.id)]
+    for person_id in data.participant_user_ids:
+        assert_person_visible(db, user, person_id)
     if event.recurrence_group and data.recurrence_frequency and data.recurrence_interval and scope in {"future", "series"}:
         old_group = event.recurrence_group
         group = old_group if scope == "series" else str(uuid.uuid4())
@@ -2912,6 +2919,7 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
                 is_private=data.is_private, event_type=data.event_type,
                 custom_type_label=data.custom_type_label,
                 visible_to_user_ids=data.visible_to_user_ids, created_by_id=creator_id,
+                participant_user_ids=data.participant_user_ids,
                 recurrence_group=group, recurrence_frequency=data.recurrence_frequency,
                 recurrence_interval=data.recurrence_interval,
                 recurrence_until=data.recurrence_until,
@@ -2941,6 +2949,7 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
     event.event_type = data.event_type
     event.custom_type_label = data.custom_type_label
     event.visible_to_user_ids = data.visible_to_user_ids
+    event.participant_user_ids = data.participant_user_ids
     if event.recurrence_group and scope == "occurrence":
         event.recurrence_group = None
         event.recurrence_frequency = None

@@ -186,6 +186,21 @@ const eventDisplayColor = (event: CalendarEvent) =>
       : event.event_type === "WASTE"
         ? event.color || "var(--waste, #5C8B58)"
       : event.color || "#8B6CC1";
+const eventDisplayColors = (event: CalendarEvent, people: User[]) => [
+  eventDisplayColor(event),
+  ...(event.participant_user_ids || [])
+    .map((id) => people.find((person) => person.id === id)?.color)
+    .filter((color): color is string => !!color),
+];
+const eventColorGradient = (event: CalendarEvent, people: User[], light = false) => {
+  const colors = eventDisplayColors(event, people);
+  if (colors.length === 1) return light ? `color-mix(in srgb, ${colors[0]} 20%, white)` : colors[0];
+  const stops = colors.flatMap((color, index) => {
+    const value = light ? `color-mix(in srgb, ${color} 20%, white)` : color;
+    return [`${value} ${(index / colors.length) * 100}%`, `${value} ${((index + 1) / colors.length) * 100}%`];
+  });
+  return `linear-gradient(135deg, ${stops.join(", ")})`;
+};
 const eventTypeDisplayColor = (type: EventType) => type === "SCHOOL" ? "var(--school)" : type === "BIRTHDAY" ? "var(--birthday)" : type === "WASTE" ? "var(--waste, #5C8B58)" : type === "STAY" ? "var(--green)" : type === "CLEANING" ? "#35A853" : type === "PRIVATE" ? "#9A477E" : type === "GENERAL" ? "#8B6CC1" : "#6F63B6";
 
 const localDateKey = (date: Date) =>
@@ -1796,6 +1811,7 @@ function CalendarScreen({
           custom_type_label: selectedCustomTypeId ? customEventTypes.find((type) => type.id === selectedCustomTypeId)?.name : f.get("custom_type_label") || null,
           child_id: childlessEventTypes.has(eventType) ? null : Number(f.get("child_id")) || null,
           color: f.get("color"),
+          participant_user_ids: f.getAll("participant_user_ids").map(Number),
           is_private: false,
           // Sichtbarkeit ergibt sich aus Rubrik- und Kinderfreigaben.
           visible_to_user_ids: eventType === "PRIVATE" ? f.getAll("visible_to_user_ids").map(Number) : null,
@@ -2277,7 +2293,7 @@ function CalendarScreen({
       {pendingOnDay(mobileSelectedDay, mobileSelectedDayEnd).map((preview) => <button className="pending-agenda" key={`${position}-${preview.entry.id}`} onClick={() => { setError(""); setPendingPreview(preview); }}>
         <i className="agenda-entry-icon"><Clock/></i><span><strong>{preview.entry.title}</strong><small>{preview.entry.action === "DELETE" ? "Löschung angefragt" : "Bestätigung ausstehend"}</small></span><ChevronRight/>
       </button>)}
-      {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event)} as React.CSSProperties}>
+      {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event),"--entry-background":eventColorGradient(event, people)} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
         <span><strong>{event.title}</strong><small>{calendarEventTiming(event)}</small></span>
         {event.child_id && children.find((child) => child.id === event.child_id) && <ChildStar child={children.find((child) => child.id === event.child_id)!} />}
@@ -2806,7 +2822,9 @@ function CalendarScreen({
                       data-calendar-target={`event-${event.id}`}
                       style={{
                         "--event-color": eventDisplayColor(event),
-                        backgroundColor: `color-mix(in srgb, ${eventDisplayColor(event)} 20%, white)`,
+                        "--event-background": eventColorGradient(event, people, true),
+                        "--event-dot-background": eventColorGradient(event, people),
+                        background: eventColorGradient(event, people, true),
                         color: `color-mix(in srgb, ${eventDisplayColor(event)} 70%, #172d27)`,
                         borderLeft: `3px solid ${eventDisplayColor(event)}`,
                       } as React.CSSProperties}
@@ -2977,6 +2995,13 @@ function CalendarScreen({
                       ))}
                     </select>
                   </label>}
+                <MultiSelectPicker
+                  title="Weitere teilnehmende Personen"
+                  name="participant_user_ids"
+                  items={people.filter((person) => person.id !== (editingEvent?.created_by_id || getSessionUser()?.id) && (getSessionUser()?.role === "ADMIN" || getSessionUser()?.allowed_person_color_ids?.includes(person.id))).map((person) => ({id:person.id,label:person.display_name,color:person.color}))}
+                  values={editingEvent?.participant_user_ids || []}
+                  hint="Die Grundfarbe und die Farben der ausgewählten Personen werden im Kalender gleichmäßig diagonal aufgeteilt."
+                />
                 <EventDateFields
                   key={`event-dates-${editingEvent?.id || stayToConvert?.id || "new"}`}
                   allDay={eventAllDay}

@@ -155,6 +155,7 @@ class CalendarEvent(Base):
     event_type: Mapped[str] = mapped_column(String(30), default="GENERAL", index=True)
     custom_type_label: Mapped[str | None] = mapped_column(String(120))
     visible_to_user_ids: Mapped[list[int] | None] = mapped_column(JSON)
+    participant_user_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     recurrence_group: Mapped[str | None] = mapped_column(String(36), index=True)
     recurrence_frequency: Mapped[str | None] = mapped_column(String(10))
     recurrence_interval: Mapped[int | None] = mapped_column(Integer)

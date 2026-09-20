@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.107 – 20. September 2026
+
+- Normale Termine können jetzt weitere teilnehmende Personen enthalten. Die gewählte Grundfarbe und die Personenfarben werden in der Kalenderkachel diagonal und gleichmäßig aufgeteilt.
+- Mobile Kalenderpunkte verwenden dieselbe mehrfarbige Darstellung. Ein ausgewähltes Kind bleibt weiterhin unabhängig davon als Stern gekennzeichnet.
+- Die Teilnehmerauswahl wird auch für Terminserien gespeichert und berücksichtigt die bestehenden Personenfreigaben.
+
+Die Datenbankmigration 0026 ergänzt die Teilnehmerzuordnung und wird beim regulären Update automatisch ausgeführt.
+
+Validierung: 75 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.106 – 19. September 2026
 
 - Das Logbuch protokolliert nun, wenn eine bestehende Sitzung FamilienPlan öffnet oder die App auf dem Gerät fortgesetzt wird. Pro Sitzung entsteht höchstens alle fünf Minuten ein Eintrag.

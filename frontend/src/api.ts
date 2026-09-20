@@ -60,6 +60,7 @@ export type CalendarEvent = {
   event_type: EventType;
   custom_type_label: string | null;
   visible_to_user_ids: number[] | null;
+  participant_user_ids: number[];
   recurrence_group: string | null;
   recurrence_frequency: "WEEKLY" | "MONTHLY" | null;
   recurrence_interval: number | null;

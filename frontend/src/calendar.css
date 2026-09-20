@@ -606,14 +606,14 @@
     border-radius: 50%;
     font-size: 0;
     overflow: hidden;
-    background:var(--event-color,currentColor) !important;
+    background:var(--event-background,var(--event-color,currentColor)) !important;
   }
   .dayentries > span:nth-child(n + 8) { display:none; }
   .dayentries span small { display:none; }
-  .dayentries > .dayevent,.dayentries > .daybirthday { width:12px; height:12px; min-width:12px; max-width:12px; min-height:12px; max-height:12px; flex-basis:12px; background:var(--event-color,var(--birthday)) !important; overflow:hidden; }
+  .dayentries > .dayevent,.dayentries > .daybirthday { width:12px; height:12px; min-width:12px; max-width:12px; min-height:12px; max-height:12px; flex-basis:12px; background:var(--event-dot-background,var(--event-color,var(--birthday))) !important; overflow:hidden; }
   .dayentries > .dayevent > .calendar-event-icon,.dayentries > .daybirthday > .calendar-birthday-icon { display:none; }
   .dayentries > .dayevent.has-child-marker { position:relative; width:36px; min-width:36px; max-width:36px; height:20px; min-height:20px; max-height:20px; flex-basis:36px; border-radius:0; background:transparent !important; }
-  .dayentries > .dayevent.has-child-marker::before { content:""; position:absolute; left:0; top:4px; width:12px; height:12px; border-radius:50%; background:var(--event-color); }
+  .dayentries > .dayevent.has-child-marker::before { content:""; position:absolute; left:0; top:4px; width:12px; height:12px; border-radius:50%; background:var(--event-dot-background,var(--event-color)); }
   .dayentries > .dayevent.has-child-marker .care-child-star { display:block; top:0; right:0; width:20px; height:20px; }
   .dayentries > .dayevent.has-child-marker > .inline-attachment-icon { display:none; }
   .dayentries > .daystay { position:relative; display:block; width:44px; height:20px; min-width:44px; max-width:44px; min-height:20px; max-height:20px; flex-basis:44px; padding:0 !important; background:transparent !important; overflow:visible; }
@@ -639,7 +639,7 @@
   .mobile-day-agenda .agenda-entry-icon > svg { width:21px; height:21px; }
   .mobile-day-agenda .agenda-attachment-badge { display:grid; place-items:center; width:28px; height:28px; flex:0 0 28px; border:1px solid color-mix(in srgb,var(--entry-color) 28%,white); border-radius:50%; background:color-mix(in srgb,var(--entry-color) 12%,white); color:color-mix(in srgb,var(--entry-color) 72%,#172d27); font-style:normal; }
   .mobile-day-agenda .agenda-attachment-badge > svg { width:15px; height:15px; }
-  .mobile-day-agenda .agenda-color-dot { display:block; width:13px; height:13px; border-radius:50%; background:var(--entry-color); }
+  .mobile-day-agenda .agenda-color-dot { display:block; width:13px; height:13px; border-radius:50%; background:var(--entry-background,var(--entry-color)); }
   .mobile-day-agenda .agenda-entry-icon.care { width:48px; flex-basis:48px; }
   .mobile-day-agenda .agenda-entry-icon .care-markers { position:relative; display:inline-flex; width:44px; height:20px; margin:0; padding:0 !important; overflow:visible !important; }
   .mobile-day-agenda .agenda-entry-icon .care-person-marker { width:20px; height:20px; font-size:.62rem; }

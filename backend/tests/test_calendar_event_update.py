@@ -45,3 +45,29 @@ def test_calendar_event_update_persists_new_child_assignment():
         assert updated.child_id == child.id
         db.expire_all()
         assert db.get(CalendarEvent, event_id).child_id == child.id
+
+
+def test_calendar_event_update_persists_additional_participants():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    start = datetime(2026, 10, 4, tzinfo=timezone.utc)
+    with Session(engine, expire_on_commit=False) as db:
+        admin = User(username="admin", display_name="Admin", email="admin@example.test", password_hash="test", role=Role.ADMIN, allowed_event_types=["GENERAL"])
+        friederike = User(username="friederike", display_name="Friederike", email="friederike@example.test", password_hash="test", role=Role.EDITOR)
+        db.add_all([admin, friederike])
+        db.flush()
+        event = CalendarEvent(title="Taunuswunderland", starts_at=start, ends_at=start + timedelta(hours=1), event_type="GENERAL", category="FAMILY", created_by_id=admin.id)
+        db.add(event)
+        db.commit()
+
+        updated = update_calendar_event(
+            event.id,
+            CalendarEventCreate(title=event.title, starts_at=start, ends_at=start + timedelta(hours=1), event_type="GENERAL", participant_user_ids=[admin.id, friederike.id, friederike.id]),
+            Request({"type": "http", "method": "PUT", "path": f"/calendar/{event.id}", "headers": [], "client": ("test", 1)}),
+            db=db,
+            user=admin,
+        )
+
+        assert updated.participant_user_ids == [friederike.id]
+        db.expire_all()
+        assert db.get(CalendarEvent, event.id).participant_user_ids == [friederike.id]

@@ -349,6 +349,7 @@ class CalendarEventCreate(BaseModel):
     event_type: str = Field(default="GENERAL", pattern="^(STAY|BIRTHDAY|GENERAL|SCHOOL|CLEANING|WASTE|PRIVATE|OTHER)$")
     custom_type_label: str | None = Field(default=None, max_length=120)
     visible_to_user_ids: list[int] | None = None
+    participant_user_ids: list[int] = Field(default_factory=list)
     recurrence_frequency: str | None = Field(default=None, pattern="^(WEEKLY|MONTHLY)$")
     recurrence_interval: int | None = Field(default=None, ge=1, le=52)
     recurrence_day_of_month: int | None = Field(default=None, ge=1, le=31)
@@ -362,6 +363,7 @@ class CalendarEventCreate(BaseModel):
             raise ValueError("Für den Typ Sonstiges ist eine Bezeichnung erforderlich")
         if self.event_type != "OTHER":
             self.custom_type_label = None
+        self.participant_user_ids = list(dict.fromkeys(self.participant_user_ids))
         return self
 
 
