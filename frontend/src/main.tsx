@@ -697,45 +697,6 @@ type DashboardConflict = {
   stayIds: number[];
 };
 
-type TrafficDirection = {
-  origin_user_id: number; origin_name: string;
-  destination_user_id: number; destination_name: string;
-  duration_minutes: number | null; usual_duration_minutes: number | null;
-  delay_minutes: number | null; distance_meters: number | null;
-  maps_url: string; available: boolean;
-};
-
-function TrafficOverview() {
-  const [result, setResult] = useState<{configured:boolean;directions:TrafficDirection[]} | null>(null),
-    [loading, setLoading] = useState(true), [error, setError] = useState("");
-  const load = () => {
-    setLoading(true); setError("");
-    api<{configured:boolean;directions:TrafficDirection[]}>("/traffic", {background:true, cache:"no-store"})
-      .then(setResult).catch((reason) => setError(reason instanceof Error ? reason.message : "Verkehrslage nicht erreichbar"))
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => {
-    load();
-    const timer = window.setInterval(load, 5 * 60_000),
-      visible = () => document.visibilityState === "visible" && load();
-    document.addEventListener("visibilitychange", visible);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
-  }, []);
-  if (!loading && !error && !result?.directions.length) return null;
-  const ownId = getSessionUser()?.id;
-  return <section className="traffic-overview">
-    <div className="sectiontitle"><div><h2><Car size={21}/> Verkehr aktuell</h2><p>Beide Fahrtrichtungen – unabhängig von Betreuungszeiten</p></div><button type="button" onClick={load} disabled={loading}>{loading ? "Prüft …" : "Aktualisieren"}</button></div>
-    {error ? <p className="traffic-note error">{error}</p> : !result?.configured ? <p className="traffic-note">Die Fahrten sind angelegt. Für Live-Verkehr muss noch ein Google-Routes-Schlüssel am Server hinterlegt werden.</p> : null}
-    <div className="traffic-list">{result?.directions.map((direction) => {
-      const from = direction.origin_user_id === ownId ? "dir" : direction.origin_name,
-        to = direction.destination_user_id === ownId ? "dir" : direction.destination_name,
-        delay = direction.delay_minutes || 0,
-        state = !direction.available ? "unknown" : delay >= 10 ? "heavy" : delay >= 3 ? "slow" : "clear";
-      return <a className={`traffic-direction ${state}`} href={direction.maps_url} target="_blank" rel="noreferrer" key={`${direction.origin_user_id}-${direction.destination_user_id}`}><span className="traffic-light" aria-hidden="true"/><span><strong>Von {from} zu {to}</strong><small>{!direction.available ? "Live-Verkehr noch nicht verfügbar" : delay < 3 ? `Kein Stau · ${direction.duration_minutes} Min.` : `Voraussichtlich ${delay} Min. Verzögerung · ${direction.duration_minutes} Min. gesamt`}</small></span><ChevronRight size={19}/></a>;
-    })}</div>
-  </section>;
-}
-
 function Dashboard({
   children,
   people,
@@ -937,7 +898,6 @@ function Dashboard({
             </div>
           </section>
         )}
-        <TrafficOverview />
         <TimetableOverview children={children}/>
         <section className="dashboardupcoming">
           <div className="sectiontitle">
@@ -3870,8 +3830,6 @@ function PeopleScreen({
             role,
             color: String(f.get("color")),
             birth_date: f.get("birth_date") || null,
-            address: f.get("address") || null,
-            traffic_partner_user_ids: f.getAll("traffic_partner_user_ids").map(Number),
             allowed_event_types: f.getAll("allowed_event_types"),
             allowed_person_color_ids: f.getAll("allowed_person_color_ids").map(Number),
             visible_custom_event_type_ids: f.getAll("visible_custom_event_type_ids"),
@@ -4103,8 +4061,6 @@ function PeopleScreen({
                       required={false}
                       defaultValue={selected?.user.birth_date || ""}
                     />
-                    <Field label="Fahradresse – Straße, Hausnummer, PLZ und Ort (optional)" name="address" required={false} defaultValue={selected?.user.address || ""} />
-                    <p className="hint">Die Adresse wird serverseitig zur Berechnung ausgewählter Fahrten an den eingerichteten Routendienst übertragen.</p>
                     <label>
                       Kalenderfarbe
                       <div className="personcolor">
@@ -4124,9 +4080,6 @@ function PeopleScreen({
                 )}
                 {open === "edit" && (
                   <MultiSelectPicker key={`person-colors-${selected?.user.id}-${draftRole}`} title="Sichtbare Personen" name="allowed_person_color_ids" items={people.filter((person) => person.id !== selected?.user.id).map((person) => ({id:person.id,label:person.display_name,color:person.color}))} values={people.filter((person) => person.id !== selected?.user.id && (draftRole === "ADMIN" || selected?.user.allowed_person_color_ids?.includes(person.id))).map((person) => person.id)} hint={draftRole === "ADMIN" ? "Administratoren sehen automatisch alle Personen – auch später hinzugefügte." : undefined}/>
-                )}
-                {open === "edit" && (
-                  <MultiSelectPicker key={`traffic-${selected?.user.id}`} title="Verkehr auf der Übersicht" name="traffic_partner_user_ids" items={people.filter((person) => person.id !== selected?.user.id).map((person) => ({id:person.id,label:person.display_name,color:person.color}))} values={selected?.user.traffic_partner_user_ids || []} hint="Zeigt für diese Person beide Fahrtrichtungen zu den ausgewählten Personen. Beide benötigen eine Fahradresse."/>
                 )}
                 {open === "edit" && customTypes.length > 0 && <>
                   <MultiSelectPicker key={`custom-visible-${selected?.user.id}-${draftRole}`} title="Eigene Terminarten sichtbar" name="visible_custom_event_type_ids" items={customTypes.map((type)=>({id:type.id,label:type.name,color:type.color}))} values={customTypes.filter((type)=>draftRole === "ADMIN" || type.visible_to_user_ids.includes(selected!.user.id) || type.editable_by_user_ids.includes(selected!.user.id)).map((type)=>type.id)} hint="Bearbeitbare Terminarten sind automatisch ebenfalls sichtbar."/>

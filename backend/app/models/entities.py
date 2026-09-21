@@ -39,8 +39,6 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
     birth_date: Mapped[date | None] = mapped_column(Date)
-    address: Mapped[str | None] = mapped_column(String(500))
-    traffic_partner_user_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     password_hash: Mapped[str] = mapped_column(String(512))
     role: Mapped[Role] = mapped_column(Enum(Role, name="role"), default=Role.VIEWER)
     language: Mapped[str] = mapped_column(String(10), default="de")

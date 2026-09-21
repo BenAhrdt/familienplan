@@ -11,31 +11,6 @@
   min-width: 0;
 }
 
-.traffic-overview { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: white; box-shadow: 0 8px 28px #18362c0d; }
-.traffic-overview .sectiontitle { padding: 1rem 1.2rem .75rem; }
-.traffic-overview .sectiontitle > div { min-width: 0; }
-.traffic-overview .sectiontitle h2 { display: flex; align-items: center; gap: .55rem; margin: 0; }
-.traffic-overview .sectiontitle p { margin: .2rem 0 0; color: var(--muted); font-size: .85rem; }
-.traffic-overview .sectiontitle button { padding: .55rem .8rem; border-radius: 9px; background: var(--sage); color: var(--green); font-weight: 750; }
-.traffic-note { margin: 0; padding: .8rem 1.2rem; background: #fff7dd; color: #755b16; font-size: .9rem; }
-.traffic-list { border-top: 1px solid var(--line); }
-.traffic-direction { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .85rem; padding: 1rem 1.2rem; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
-.traffic-direction:last-child { border-bottom: 0; }
-.traffic-direction > span:nth-child(2) { display: grid; gap: .2rem; min-width: 0; }
-.traffic-direction strong, .traffic-direction small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.traffic-direction small { color: var(--muted); }
-.traffic-direction > svg { color: var(--muted); }
-.traffic-light { width: .75rem; height: .75rem; border-radius: 50%; background: #9ba6a1; box-shadow: 0 0 0 5px #9ba6a118; }
-.traffic-direction.clear .traffic-light { background: #2c9b63; box-shadow: 0 0 0 5px #2c9b6318; }
-.traffic-direction.slow .traffic-light { background: #e19b2d; box-shadow: 0 0 0 5px #e19b2d1c; }
-.traffic-direction.heavy .traffic-light { background: #c94c3c; box-shadow: 0 0 0 5px #c94c3c1c; }
-
-@media (max-width: 620px) {
-  .traffic-overview .sectiontitle { align-items: flex-start; }
-  .traffic-overview .sectiontitle p { max-width: 14rem; }
-  .traffic-direction { padding: .9rem 1rem; }
-}
-
 .dashboard-calendar-dialog-host > :not(.modal) {
   display: none !important;
 }

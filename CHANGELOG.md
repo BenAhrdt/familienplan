@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.109 – 21. September 2026
+
+- Die in 0.1.108 ergänzte Verkehrsanzeige wurde wieder vollständig entfernt, da verlässliche Live-Verkehrsdaten nicht ohne externes Anbieter- und Abrechnungsmodell bereitgestellt werden können.
+- Fahradressen, Verkehrspartner, Google-Routes-Konfiguration, automatische Abfragen und die Übersichtskarte sind entfernt. FamilienPlan verursacht dadurch keine möglichen Kosten für Kartendienste.
+
+Die Datenbankmigration 0028 löscht die mit 0.1.108 ergänzten Adress- und Verkehrszuordnungsfelder einschließlich eventuell bereits eingetragener Werte. Migration 0027 bleibt für eine lückenlose Aktualisierung bestehender Installationen erhalten.
+
+Validierung: 75 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.108 – 21. September 2026
 
 - Personen können eine Fahradresse und persönliche Verkehrspartner erhalten.

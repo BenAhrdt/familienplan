@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     smtp_from: str = "FamilienPlan <familienplan@example.de>"
     smtp_starttls: bool = True
     github_repository: str | None = None
-    google_maps_api_key: str | None = None
 
     @field_validator("database_url")
     @classmethod
