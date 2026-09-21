@@ -764,7 +764,7 @@ function Dashboard({
               .filter(Boolean)
               .join(" · "),
             startsAt: new Date(event.starts_at),
-            color: eventDisplayColor(event),
+            color: eventColorGradient(event, people),
             kind: "Termin" as const,
             eventType: event.event_type,
             childId: event.child_id,

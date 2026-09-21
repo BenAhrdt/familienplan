@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.110 – 21. September 2026
+
+- Termine mit beteiligten Personen verwenden in der Übersicht „Als Nächstes“ nun dieselbe mehrfarbige Kennzeichnung wie im Kalender.
+
+Validierung: 75 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.109 – 21. September 2026
 
 - Die in 0.1.108 ergänzte Verkehrsanzeige wurde wieder vollständig entfernt, da verlässliche Live-Verkehrsdaten nicht ohne externes Anbieter- und Abrechnungsmodell bereitgestellt werden können.
