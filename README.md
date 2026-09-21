@@ -2,7 +2,7 @@
 
 FamilienPlan ist eine selbst gehostete, deutschsprachige Webanwendung für gemeinsame Familienorganisation. Der erste Meilenstein enthält ein PostgreSQL-basiertes FastAPI-Fundament, Alembic-Migrationen, sichere Ersteinrichtung und Anmeldung, Einladungen, Rollen, Kinderberechtigungen, Aufenthalte samt Konfliktprüfung sowie eine responsive React-Oberfläche.
 
-Aktuelle Version: **0.1.103** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
+Aktuelle Version: **0.1.108** · [Änderungsprotokoll](CHANGELOG.md) · [MIT-Lizenz](LICENSE)
 
 ## Geführte Ein-Befehl-Installation
 
@@ -185,3 +185,15 @@ Die erste Version ist für selbst gehostete Installationen gedacht. Vor einem Ei
 ## Stundenpläne der Kinder
 
 Unter **Personen** können Wochenstundenpläne manuell bearbeitet oder aus Bildern/PDFs als prüfbarer Vorschlag eingelesen werden. Über „Als Nächstes“ zeigt die Übersicht den aktuellen Unterrichtsstatus und eine aufklappbare Woche. Es entstehen keine Kalendertermine. [Bedienung, Serverpakete und JSON-API](docs/timetable.md).
+
+## Aktuelle Verkehrslage
+
+Administratoren können bei Personen eine Fahradresse sowie Verkehrspartner auswählen. Auf der Übersicht der jeweiligen Person erscheinen anschließend beide Fahrtrichtungen, werden beim Öffnen und alle fünf Minuten aktualisiert und lassen sich direkt in Google Maps öffnen. Die Anzeige ist nicht an Betreuungszeiten gebunden.
+
+Für Live-Fahrzeiten muss die Google Routes API im verwendeten Google-Cloud-Projekt aktiviert und ihr Server-Schlüssel in `.env` hinterlegt sein:
+
+```env
+GOOGLE_MAPS_API_KEY=...
+```
+
+Der Schlüssel bleibt im Backend. Die eingetragenen Start- und Zieladressen werden zur Routenberechnung an Google übertragen. Ohne Schlüssel bleiben die gespeicherten Fahrten mit einem Einrichtungshinweis sichtbar, es werden jedoch keine Verkehrswerte vorgetäuscht.

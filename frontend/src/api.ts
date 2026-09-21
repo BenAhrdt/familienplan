@@ -8,6 +8,8 @@ export type User = {
   role: "VIEWER" | "EDITOR" | "ADMIN";
   color: string;
   birth_date: string | null;
+  address: string | null;
+  traffic_partner_user_ids: number[];
   allowed_event_types: EventType[];
   allowed_person_color_ids: number[];
   is_pending: boolean;

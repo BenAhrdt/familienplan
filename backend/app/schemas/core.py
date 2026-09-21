@@ -71,6 +71,8 @@ class UserOut(BaseModel):
     role: Role
     color: str
     birth_date: date | None = None
+    address: str | None = None
+    traffic_partner_user_ids: list[int] = []
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
     allowed_person_color_ids: list[int] = []
     is_pending: bool = False
@@ -165,6 +167,8 @@ class PersonAccessUpdate(BaseModel):
     child_permissions: dict[int, Permission] = {}
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     birth_date: date | None = None
+    address: str | None = Field(default=None, max_length=500)
+    traffic_partner_user_ids: list[int] = []
     allowed_event_types: list[str] = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
     allowed_person_color_ids: list[int] = []
     visible_custom_event_type_ids: list[str] = []

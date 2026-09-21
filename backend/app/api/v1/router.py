@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -482,6 +482,118 @@ def people(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return list(db.scalars(query.order_by(User.display_name)))
 
 
+def _google_duration_seconds(value: str | None) -> int:
+    try:
+        return max(0, round(float((value or "0s").removesuffix("s"))))
+    except ValueError:
+        return 0
+
+
+async def _traffic_direction(client: httpx.AsyncClient, origin: User, destination: User) -> dict:
+    maps_url = (
+        "https://www.google.com/maps/dir/?api=1"
+        f"&origin={quote_plus(origin.address or '')}"
+        f"&destination={quote_plus(destination.address or '')}"
+        "&travelmode=driving"
+    )
+    result = {
+        "origin_user_id": origin.id,
+        "origin_name": origin.display_name,
+        "destination_user_id": destination.id,
+        "destination_name": destination.display_name,
+        "duration_minutes": None,
+        "usual_duration_minutes": None,
+        "delay_minutes": None,
+        "distance_meters": None,
+        "maps_url": maps_url,
+        "available": False,
+    }
+    try:
+        response = await client.post(
+            "https://routes.googleapis.com/directions/v2:computeRoutes",
+            headers={
+                "X-Goog-Api-Key": settings.google_maps_api_key or "",
+                "X-Goog-FieldMask": "routes.duration,routes.staticDuration,routes.distanceMeters",
+            },
+            json={
+                "origin": {"address": origin.address},
+                "destination": {"address": destination.address},
+                "travelMode": "DRIVE",
+                "routingPreference": "TRAFFIC_AWARE_OPTIMAL",
+                "computeAlternativeRoutes": False,
+                "languageCode": "de-DE",
+                "units": "METRIC",
+            },
+        )
+        response.raise_for_status()
+        route = (response.json().get("routes") or [None])[0]
+        if not route:
+            return result
+        duration = _google_duration_seconds(route.get("duration"))
+        usual_duration = _google_duration_seconds(route.get("staticDuration")) or duration
+        result.update({
+            "duration_minutes": max(1, round(duration / 60)),
+            "usual_duration_minutes": max(1, round(usual_duration / 60)),
+            "delay_minutes": max(0, round((duration - usual_duration) / 60)),
+            "distance_meters": route.get("distanceMeters"),
+            "available": True,
+        })
+    except (httpx.HTTPError, ValueError, TypeError):
+        pass
+    return result
+
+
+@router.get("/traffic")
+async def traffic_overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    partner_ids = list(dict.fromkeys(user.traffic_partner_user_ids or []))
+    if not user.address or not partner_ids:
+        return {"configured": bool(settings.google_maps_api_key), "directions": []}
+    allowed_ids = visible_person_ids(user) if user.role != Role.ADMIN else set(partner_ids)
+    partners = list(db.scalars(select(User).where(
+        User.id.in_(set(partner_ids) & allowed_ids),
+        User.is_active.is_(True),
+        User.address.is_not(None),
+    ).order_by(User.display_name)))
+    if not settings.google_maps_api_key:
+        directions = []
+        for partner in partners:
+            directions.extend([
+                _traffic_direction_placeholder(user, partner),
+                _traffic_direction_placeholder(partner, user),
+            ])
+        return {"configured": False, "directions": directions}
+    async with httpx.AsyncClient(timeout=8) as client:
+        results = await asyncio.gather(*[
+            direction
+            for partner in partners
+            for direction in (
+                _traffic_direction(client, user, partner),
+                _traffic_direction(client, partner, user),
+            )
+        ])
+    return {"configured": True, "directions": results}
+
+
+def _traffic_direction_placeholder(origin: User, destination: User) -> dict:
+    return {
+        "origin_user_id": origin.id,
+        "origin_name": origin.display_name,
+        "destination_user_id": destination.id,
+        "destination_name": destination.display_name,
+        "duration_minutes": None,
+        "usual_duration_minutes": None,
+        "delay_minutes": None,
+        "distance_meters": None,
+        "maps_url": (
+            "https://www.google.com/maps/dir/?api=1"
+            f"&origin={quote_plus(origin.address or '')}"
+            f"&destination={quote_plus(destination.address or '')}"
+            "&travelmode=driving"
+        ),
+        "available": False,
+    }
+
+
 @router.get("/birthdays", response_model=list[BirthdayOut])
 def birthdays(db: Session = Depends(get_db), user: User = Depends(current_user)):
     has_section_access = user.role == Role.ADMIN or user.id in section_access(db)["birthdays"]
@@ -946,11 +1058,16 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
     if data.color:
         person.color = data.color.upper()
     person.birth_date = data.birth_date
+    person.address = data.address.strip() if data.address and data.address.strip() else None
     unknown_types = set(data.allowed_event_types) - EVENT_TYPES
     if unknown_types:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Terminart")
     person.allowed_event_types = list(dict.fromkeys(data.allowed_event_types))
     active_person_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
+    unknown_traffic_partners = set(data.traffic_partner_user_ids) - active_person_ids
+    if unknown_traffic_partners or person.id in data.traffic_partner_user_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ungültige Verkehrsverbindung")
+    person.traffic_partner_user_ids = list(dict.fromkeys(data.traffic_partner_user_ids))
     unknown_person_ids = set(data.allowed_person_color_ids) - active_person_ids
     if unknown_person_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Person in der Farbenfreigabe")
@@ -988,7 +1105,7 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
             existing_by_child[child_id].permission = permission
         else:
             db.add(ChildUserPermission(child_id=child_id, user_id=person.id, permission=permission))
-    audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions), "person_colors": person.allowed_person_color_ids, "visible_custom_types": sorted(requested_visible), "editable_custom_types": sorted(requested_editable)})
+    audit(db, request, "PERSON_ACCESS_CHANGED", actor.id, ("user", str(person.id)), {"username": person.username, "display_name": person.display_name, "role": data.role.value, "children": list(data.child_permissions), "person_colors": person.allowed_person_color_ids, "traffic_address_set": bool(person.address), "traffic_partners": person.traffic_partner_user_ids, "visible_custom_types": sorted(requested_visible), "editable_custom_types": sorted(requested_editable)})
     db.commit()
     return PersonAccessOut(user=person, child_permissions=data.child_permissions)
 
@@ -1046,6 +1163,8 @@ def delete_person(user_id: int, request: Request, db: Session = Depends(get_db),
         event.visible_to_user_ids = [entry for entry in (event.visible_to_user_ids or []) if entry != person.id]
     for birthday in db.scalars(select(Birthday).where(cast(Birthday.visible_to_user_ids, JSONB).contains([person.id]))):
         birthday.visible_to_user_ids = [entry for entry in (birthday.visible_to_user_ids or []) if entry != person.id]
+    for other in db.scalars(select(User).where(cast(User.traffic_partner_user_ids, JSONB).contains([person.id]))):
+        other.traffic_partner_user_ids = [entry for entry in (other.traffic_partner_user_ids or []) if entry != person.id]
 
     db.delete(person)
     audit(db, request, "PERSON_DELETED", actor.id, ("user", str(user_id)), {"display_name": display_name})

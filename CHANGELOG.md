@@ -2,6 +2,17 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.108 – 21. September 2026
+
+- Personen können eine Fahradresse und persönliche Verkehrspartner erhalten.
+- Die mobile Übersicht zeigt beide Fahrtrichtungen mit aktueller Gesamtfahrzeit und verkehrsbedingter Verzögerung. Die Werte werden beim Öffnen, manuell und automatisch alle fünf Minuten aktualisiert.
+- Jede Richtung öffnet sich bei Bedarf direkt in Google Maps. Die Anzeige ist dauerhaft verfügbar und nicht an Betreuungszeiten gebunden.
+- Aktuelle Verkehrswerte werden serverseitig über die Google Routes API geladen; ohne eingerichteten Schlüssel erscheint ein klarer Hinweis anstelle geschätzter Werte.
+
+Die Datenbankmigration 0027 ergänzt Fahradressen und Verkehrspartner und wird beim regulären Update automatisch ausgeführt. Für Live-Daten muss `GOOGLE_MAPS_API_KEY` gesetzt und die Routes API im zugehörigen Google-Cloud-Projekt aktiviert sein.
+
+Validierung: 78 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.107 – 20. September 2026
 
 - Normale Termine können jetzt weitere teilnehmende Personen enthalten. Die gewählte Grundfarbe und die Personenfarben werden in der Kalenderkachel diagonal und gleichmäßig aufgeteilt.
