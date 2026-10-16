@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.111 – 16. Oktober 2026
+
+- Betreuungszeiten desselben Kindes bei derselben Person werden bei Überschneidung oder direktem Anschluss automatisch zusammengeführt. Eine echte zeitliche Lücke bleibt erhalten; unterschiedliche Betreuungspersonen bleiben als Konflikt beziehungsweise Übergabe sichtbar.
+
+Validierung: 78 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.110 – 21. September 2026
 
 - Termine mit beteiligten Personen verwenden in der Übersicht „Als Nächstes“ nun dieselbe mehrfarbige Kennzeichnung wie im Kalender.

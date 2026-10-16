@@ -1562,6 +1562,63 @@ def untouched_stay_ranges(
     return ranges
 
 
+def merge_same_person_stay(db: Session, stay: Stay) -> Stay:
+    """Merge touching/overlapping confirmed stays for the same child/person.
+
+    Different people remain separate so that a real handover is still visible
+    as a conflict.  Cancelled source rows are retained as recurrence
+    exceptions instead of being deleted, which keeps the audit/history and
+    prevents a later series regeneration from recreating the merged interval.
+    """
+    if stay.status != PlanStatus.CONFIRMED:
+        return stay
+
+    component: dict[int, Stay] = {stay.id: stay}
+    range_start, range_end = stay.starts_at, stay.ends_at
+    while True:
+        candidates = list(db.scalars(select(Stay).where(
+            Stay.child_id == stay.child_id,
+            Stay.responsible_user_id == stay.responsible_user_id,
+            Stay.status == PlanStatus.CONFIRMED,
+            Stay.starts_at <= range_end,
+            Stay.ends_at >= range_start,
+            ~Stay.id.in_(component.keys()),
+        ).order_by(Stay.starts_at, Stay.id)))
+        if not candidates:
+            break
+        for candidate in candidates:
+            component[candidate.id] = candidate
+            range_start = min(range_start, candidate.starts_at)
+            range_end = max(range_end, candidate.ends_at)
+
+    if len(component) == 1:
+        return stay
+
+    preferred_title, preferred_note = stay.title, stay.note
+    canonical = min(component.values(), key=lambda item: (item.starts_at, item.id))
+    canonical_original_start = canonical.starts_at
+    canonical_original_rule_id = canonical.recurrence_rule_id
+    canonical.starts_at, canonical.ends_at = range_start, range_end
+    canonical.title = preferred_title or canonical.title
+    canonical.note = preferred_note or canonical.note
+    if canonical_original_rule_id:
+        canonical.recurrence_exception_rule_id = canonical_original_rule_id
+        canonical.recurrence_original_start = canonical_original_start
+        canonical.recurrence_rule_id = None
+
+    for candidate in component.values():
+        if candidate.id == canonical.id:
+            continue
+        original_start, original_rule_id = candidate.starts_at, candidate.recurrence_rule_id
+        if original_rule_id:
+            candidate.recurrence_exception_rule_id = original_rule_id
+            candidate.recurrence_original_start = original_start
+            candidate.recurrence_rule_id = None
+        candidate.status = PlanStatus.CANCELLED
+
+    return canonical
+
+
 def stay_payload(db: Session, stay: Stay) -> dict:
     responsible = db.get(User, stay.responsible_user_id)
     rule = inferred_recurrence_rule(db, stay)
@@ -1677,9 +1734,16 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
         stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=data.status, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
         db.add(stay); created.append(stay)
     db.flush()
+    merged = []
+    for stay in sorted(created, key=lambda item: (item.starts_at, item.id)):
+        if stay.status == PlanStatus.CONFIRMED:
+            merged.append(merge_same_person_stay(db, stay))
+        else:
+            merged.append(stay)
     audit(db, request, "STAY_SERIES_CREATED" if rule else "STAY_CREATED", user.id, ("stay", str(created[0].id)), {"status": data.status.value, "occurrences": len(created)})
     db.commit()
-    return stay_payload(db, created[0])
+    first = min(merged, key=lambda item: (item.starts_at, item.id))
+    return stay_payload(db, first)
 
 
 @router.post("/stays/conflicts", response_model=list[StayOut], dependencies=[Depends(require_csrf)])
@@ -1693,7 +1757,8 @@ def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User =
             Stay.child_id == data.child_id, Stay.status == PlanStatus.CONFIRMED,
             Stay.starts_at < ends_at, Stay.ends_at > starts_at,
         )):
-            found[stay.id] = stay
+            if stay.responsible_user_id != data.responsible_user_id:
+                found[stay.id] = stay
     visible_ids = None if user.role == Role.ADMIN else visible_person_ids(user)
     return [
         stay_payload(db, stay)
@@ -1738,7 +1803,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
             if interval == data.recurrence_interval_weeks and delta_seconds % period_seconds == 0 and rule.until_at and data.recurrence_until <= rule.until_at:
                 raise HTTPException(status.HTTP_409_CONFLICT, "Diese Serie besteht mit demselben Rhythmus und Zeitraum bereits")
     occurrences = recurrence_dates(data)
-    overlapping: dict[int, Stay] = {}
+    overlapping_other: dict[int, Stay] = {}
     for starts_at, ends_at in occurrences:
         for stay in db.scalars(select(Stay).where(
             Stay.child_id == data.child_id,
@@ -1746,13 +1811,12 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
             Stay.starts_at < ends_at,
             Stay.ends_at > starts_at,
         )):
-            overlapping[stay.id] = stay
-    if overlapping:
-        if len(occurrences) != 1 or len(overlapping) != 1:
+            if stay.responsible_user_id != data.responsible_user_id:
+                overlapping_other[stay.id] = stay
+    if overlapping_other:
+        if len(occurrences) != 1 or len(overlapping_other) != 1:
             raise HTTPException(status.HTTP_409_CONFLICT, "Für diesen Zeitraum bestehen bereits Betreuungen. Bitte ändere die vorhandenen Einträge einzeln.")
-        existing = next(iter(overlapping.values()))
-        if existing.responsible_user_id == data.responsible_user_id:
-            raise HTTPException(status.HTTP_409_CONFLICT, "Für diese Person besteht in diesem Zeitraum bereits eine Betreuung")
+        existing = next(iter(overlapping_other.values()))
         affected_id = stay_request_recipient_id(user.id, child.default_responsible_user_id, existing.responsible_user_id, data.responsible_user_id)
         if not affected_id:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diesen Vorschlag gibt es keine andere Person zur Bestätigung")
@@ -2097,6 +2161,10 @@ def create_planning_group(data: GroupPlanningCreate, request: Request, mode: str
         db.flush()
         created.append(stay)
         item_payloads.append({**entry.model_dump(mode="json"), "stay_id": stay.id})
+    if mode == "direct":
+        for stay in sorted(created, key=lambda item: (item.starts_at, item.id)):
+            if stay.status == PlanStatus.CONFIRMED:
+                merge_same_person_stay(db, stay)
     if mode == "proposal":
         group_request = ChangeRequest(
             object_type="group_plan",
@@ -2270,24 +2338,32 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt" if is_group else "Betreuungsanfrage bestätigt", f"{user.display_name} hat deinen Vorschlag bestätigt. {details}{f' · Kommentare: {decision_comment}' if decision_comment else ''}")
         if item.proposed_data.get("action") == "GROUP_CREATE":
             proposed_stays = [db.get(Stay, stay_id) for stay_id in item.proposed_data.get("stay_ids", [])]
-            confirmed_count = 0
             for stay in proposed_stays:
                 if stay:
                     stay.status = PlanStatus.CONFIRMED
-                    confirmed_count += 1
-            if not confirmed_count:
+            db.flush()
+            merged_stays = []
+            for stay in sorted((item for item in proposed_stays if item), key=lambda item: (item.starts_at, item.id)):
+                if stay.status == PlanStatus.CONFIRMED:
+                    merged_stays.append(merge_same_person_stay(db, stay))
+            if not merged_stays:
                 raise HTTPException(status.HTTP_409_CONFLICT, "Die Gruppenplanung enthält keine verfügbaren Einträge mehr")
+            item.object_id = min(merged_stays, key=lambda item: (item.starts_at, item.id)).id
             db.commit()
         elif item.proposed_data.get("action") == "CREATE":
             proposed_stays = [db.get(Stay, stay_id) for stay_id in item.proposed_data.get("stay_ids", [item.object_id])]
-            confirmed_count = 0
             for stay in proposed_stays:
                 if not stay:
                     continue
                 stay.status = PlanStatus.CONFIRMED
-                confirmed_count += 1
-            if not confirmed_count:
+            db.flush()
+            merged_stays = []
+            for stay in sorted((item for item in proposed_stays if item), key=lambda item: (item.starts_at, item.id)):
+                if stay.status == PlanStatus.CONFIRMED:
+                    merged_stays.append(merge_same_person_stay(db, stay))
+            if not merged_stays:
                 raise HTTPException(status.HTTP_409_CONFLICT, "Alle vorgeschlagenen Termine sind bereits belegt")
+            item.object_id = min(merged_stays, key=lambda item: (item.starts_at, item.id)).id
             db.commit()
         elif item.proposed_data.get("action") == "DELETE":
             stay = db.get(Stay, item.object_id)

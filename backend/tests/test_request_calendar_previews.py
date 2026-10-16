@@ -7,8 +7,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from app.api.v1.router import (create_planning_group, decide_change_request, propose_new_stay,
-    propose_stay_change, propose_stay_deletion, request_calendar_previews, withdraw_change_request)
+from app.api.v1.router import (create_planning_group, create_stay, decide_change_request,
+    propose_new_stay, propose_stay_change, propose_stay_deletion,
+    request_calendar_previews, withdraw_change_request)
 from app.api.v1.integration_router import integration_events, child_location
 from app.core.database import Base
 from app.models.entities import ChangeRequest, Child, PlanStatus, Role, Stay, User
@@ -48,6 +49,74 @@ def test_proposed_series_visible_only_to_participants_and_excluded_from_calendar
     assert request_calendar_previews(db, item, sender) == []
     rows = integration_events(start, start+timedelta(days=30), context=(token, sender), db=db)
     assert len([row for row in rows if row['source'] == 'stay']) == 3
+
+
+def test_same_person_overlap_is_merged_when_new_stay_is_approved(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2026, 12, 25, 14, 30)
+    existing = Stay(child_id=child.id, responsible_user_id=recipient.id,
+                    starts_at=start, ends_at=datetime(2026, 12, 27, 17),
+                    status=PlanStatus.CONFIRMED, title='Wochenende', created_by_id=recipient.id)
+    db.add(existing); db.commit()
+
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=recipient.id,
+        starts_at=datetime(2026, 12, 26, 10), ends_at=datetime(2026, 12, 31, 14),
+        title='Weihnachtsferien',
+    ), request, db, sender)
+    decide_change_request(result.id, ChangeDecision(decision='APPROVE'), request, db, recipient)
+
+    confirmed = list(db.scalars(select(Stay).where(Stay.status == PlanStatus.CONFIRMED)))
+    assert len(confirmed) == 1
+    assert confirmed[0].starts_at == start
+    assert confirmed[0].ends_at == datetime(2026, 12, 31, 14)
+    assert confirmed[0].title == 'Weihnachtsferien'
+    assert db.get(Stay, existing.id).status == PlanStatus.CONFIRMED
+
+
+def test_same_person_adjacent_direct_stays_are_merged_but_gap_is_preserved(context):
+    db, (sender, recipient, other), child, request = context
+    first_start = datetime(2026, 12, 25, 14, 30)
+    first_end = datetime(2026, 12, 31, 14)
+    first = Stay(child_id=child.id, responsible_user_id=recipient.id,
+                 starts_at=first_start, ends_at=first_end,
+                 status=PlanStatus.CONFIRMED, created_by_id=recipient.id)
+    db.add(first); db.commit()
+
+    create_stay(StayCreate(
+        child_id=child.id, responsible_user_id=recipient.id,
+        starts_at=first_end, ends_at=datetime(2027, 1, 2, 14),
+        status=PlanStatus.CONFIRMED,
+    ), request, db, sender)
+    confirmed = list(db.scalars(select(Stay).where(Stay.status == PlanStatus.CONFIRMED)))
+    assert len(confirmed) == 1
+    assert confirmed[0].starts_at == first_start
+    assert confirmed[0].ends_at == datetime(2027, 1, 2, 14)
+
+    create_stay(StayCreate(
+        child_id=child.id, responsible_user_id=recipient.id,
+        starts_at=datetime(2027, 1, 3, 14), ends_at=datetime(2027, 1, 10, 17),
+        status=PlanStatus.CONFIRMED,
+    ), request, db, sender)
+    confirmed = list(db.scalars(select(Stay).where(Stay.status == PlanStatus.CONFIRMED).order_by(Stay.starts_at)))
+    assert len(confirmed) == 2
+    assert [stay.starts_at for stay in confirmed] == [first_start, datetime(2027, 1, 3, 14)]
+
+
+def test_different_person_overlap_remains_a_handover_conflict(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2026, 12, 25, 14, 30)
+    db.add(Stay(child_id=child.id, responsible_user_id=recipient.id,
+                starts_at=start, ends_at=start + timedelta(days=2),
+                status=PlanStatus.CONFIRMED, created_by_id=recipient.id))
+    db.commit()
+
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=start + timedelta(hours=1), ends_at=start + timedelta(days=3),
+    ), request, db, sender)
+    assert result.proposed_data['scope'] == 'occurrence'
+    assert result.before_data['responsible_user_id'] == recipient.id
 
 
 def test_change_and_delete_previews_leave_confirmed_stay_untouched_and_withdraw_preserves_it(context):
