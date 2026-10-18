@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.114 – 18. Oktober 2026
+
+- Entwürfe für Änderungsanfragen zeigen jetzt ebenfalls den bisherigen und den vorgeschlagenen Stand.
+- Änderungsentwürfe enthalten sichtbare Vergleiche für Person, Zeitraum, Titel, Notiz und Änderungsumfang.
+- Entwürfe für neue Betreuungszeiten, Löschungen und Ferienplanungen zeigen ihre jeweiligen Details und alle enthaltenen Zeiträume.
+
+Validierung: 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.113 – 18. Oktober 2026
 
 - Beim Wechsel von einem Entwurf zu einer normalen Betreuungszeit wird der Entwurfsmodus im Kalender zuverlässig zurückgesetzt.

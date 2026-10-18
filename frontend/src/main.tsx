@@ -2438,6 +2438,79 @@ function CalendarScreen({
       setError((x as Error).message);
     }
   }
+  function draftRequestDetails(request: ChangeRequest): React.ReactNode {
+    const proposal = request.proposed_data;
+    const before = request.before_data;
+    const scopeLabel =
+      proposal.scope === "series"
+        ? "gesamte Serie"
+        : proposal.scope === "future"
+          ? "dieser und alle zukünftigen Termine"
+          : "einzelne Betreuungszeit";
+    const previousPerson = people.find((person) => person.id === before.responsible_user_id);
+    const proposedPerson = people.find((person) => person.id === proposal.responsible_user_id);
+    const dateRange = (startsAt?: string, endsAt?: string) => startsAt && endsAt
+      ? `${new Date(startsAt).toLocaleString("de-DE")} – ${new Date(endsAt).toLocaleString("de-DE")}`
+      : "Noch kein Zeitraum angegeben";
+    const inclusiveDateRange = (startsAt?: string, endsAt?: string) => startsAt && endsAt
+      ? `${new Date(startsAt).toLocaleDateString("de-DE")} – ${new Date(new Date(endsAt).getTime() - 1).toLocaleDateString("de-DE")}`
+      : "Noch kein Zeitraum angegeben";
+    const draftTag = <span className="tag">Entwurf</span>;
+    if (proposal.action === "GROUP_CREATE") {
+      return <>
+        <strong>{draftTag} Gemeinsame Planung „{proposal.title || "Gemeinsame Planung"}“</strong>
+        <small>Für {request.affected_user_name} · {proposal.items?.length || 0} Zeiträume</small>
+        <div className="grouprequestitems">
+          {(proposal.items || []).map((item, index) => (
+            <span key={item.stay_id || index}>
+              <b>{item.name}</b> · {children.find((child) => child.id === item.child_id)?.display_name || "Kind"} bei {people.find((person) => person.id === item.responsible_user_id)?.display_name || "unbekannt"} · {inclusiveDateRange(item.starts_at, item.ends_at)}
+            </span>
+          ))}
+        </div>
+      </>;
+    }
+    if (proposal.action === "DELETE") {
+      return <>
+        <strong>{draftTag} Löschung einer Betreuungszeit</strong>
+        <small className="change-comparison">
+          <b>{request.child_name || "Kind"}</b>
+          <span>Bisher bei: {previousPerson?.display_name || before.responsible_user_name || "unbekannt"}</span>
+          <span>Bisheriger Zeitraum: {dateRange(before.starts_at, before.ends_at)}</span>
+          <span>Umfang: {scopeLabel}</span>
+        </small>
+        <small>Für {request.affected_user_name}</small>
+      </>;
+    }
+    if (proposal.action === "CREATE") {
+      return <>
+        <strong>{draftTag} Neue Betreuungszeit</strong>
+        <small className="change-comparison">
+          <b>{request.child_name || "Kind"} bei {proposedPerson?.display_name || proposal.responsible_user_name || "unbekannt"}</b>
+          <span>Zeitraum: {dateRange(proposal.starts_at, proposal.ends_at)}</span>
+          {proposal.title && <span>Titel: {proposal.title}</span>}
+          {proposal.note && <span>Notiz: {proposal.note}</span>}
+          {proposal.recurrence_interval_weeks && <span>Wiederholung: alle {proposal.recurrence_interval_weeks} {proposal.recurrence_interval_weeks === 1 ? "Woche" : "Wochen"}{proposal.recurrence_until ? ` bis ${new Date(proposal.recurrence_until).toLocaleDateString("de-DE")}` : ""}</span>}
+        </small>
+        <small>Für {request.affected_user_name}</small>
+      </>;
+    }
+    return <>
+      <strong>{draftTag} Änderung einer Betreuungszeit</strong>
+      <small className="change-comparison">
+        <b>{request.child_name || "Kind"}</b>
+        {before.responsible_user_id !== proposal.responsible_user_id && (
+          <span>Person: {previousPerson?.display_name || before.responsible_user_name || "unbekannt"} → {proposedPerson?.display_name || proposal.responsible_user_name || "unbekannt"}</span>
+        )}
+        {(before.starts_at !== proposal.starts_at || before.ends_at !== proposal.ends_at) && (
+          <span>Zeitraum: {dateRange(before.starts_at, before.ends_at)} → {dateRange(proposal.starts_at, proposal.ends_at)}</span>
+        )}
+        {proposal.title !== undefined && before.title !== proposal.title && <span>Titel: {before.title || "–"} → {proposal.title || "–"}</span>}
+        {proposal.note !== undefined && before.note !== proposal.note && <span>Notiz: {before.note || "–"} → {proposal.note || "–"}</span>}
+        <span>Umfang: {scopeLabel}</span>
+      </small>
+      <small>Für {request.affected_user_name}</small>
+    </>;
+  }
   function mobileDayAgenda(position: "top" | "bottom") {
     return <section className={`mobile-day-agenda mobile-agenda-${position}`} aria-live={position === "top" ? "polite" : "off"}>
       <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
@@ -2479,15 +2552,9 @@ function CalendarScreen({
           <p className="muted">Diese Anfragen sind noch nicht versendet. Du kannst sie prüfen, ändern oder vollständig löschen.</p>
           {error && !open && <p className="error">{error}</p>}
           {draftRequests.map((request) => {
-            const proposal = request.proposed_data;
-            const firstEntry = proposal.items?.[0] || request.calendar_previews?.[0];
-            const label = proposal.action === "GROUP_CREATE"
-              ? (proposal.title || "Gemeinsame Planung") + " · " + (proposal.items?.length || 0) + " Zeiträume"
-              : proposal.action === "DELETE" ? "Löschung einer Betreuungszeit" : proposal.action === "CREATE" ? "Neue Betreuungszeit" : "Änderung einer Betreuungszeit";
             return <article key={request.id}>
               <div>
-                <strong>{label}</strong>
-                <small>{request.affected_user_name} · {firstEntry?.starts_at ? new Date(firstEntry.starts_at).toLocaleString("de-DE") : "Noch keine Zeitangabe"}</small>
+                {draftRequestDetails(request)}
               </div>
               <div className="request-actions">
                 <button onClick={() => openDraftEditor(request)}>Bearbeiten</button>
