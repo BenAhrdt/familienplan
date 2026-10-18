@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.112 – 18. Oktober 2026
+
+- Änderungsanfragen für Betreuungszeiten und gemeinsame Planungen werden zunächst als private Entwürfe gespeichert.
+- Entwürfe können vor dem Versand vollständig gelöscht oder bearbeitet werden.
+- Einzelne Zeiträume innerhalb einer gemeinsamen Planung können bearbeitet oder entfernt werden.
+- Erst die ausdrückliche Aktion „Anfrage versenden“ macht den Entwurf für die andere Person sichtbar und löst die Benachrichtigung aus.
+
+Validierung: 80 Backend-Tests und 15 Frontend-Tests erfolgreich; Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.111 – 16. Oktober 2026
 
 - Betreuungszeiten desselben Kindes bei derselben Person werden bei Überschneidung oder direktem Anschluss automatisch zusammengeführt. Eine echte zeitliche Lücke bleibt erhalten; unterschiedliche Betreuungspersonen bleiben als Konflikt beziehungsweise Übergabe sichtbar.

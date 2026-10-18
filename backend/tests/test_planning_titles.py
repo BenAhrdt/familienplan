@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from app.api.v1.router import create_planning_group, decide_change_request
+from app.api.v1.router import create_planning_group, decide_change_request, send_change_request
 from app.core.database import Base
 from app.models.entities import Child, User, Role, Stay, PlanStatus
 from app.schemas import GroupPlanningCreate, GroupPlanningItem, ChangeDecision
@@ -30,6 +30,7 @@ def test_planning_uses_title_including_counter_proposal(mode, note):
         assert stay.title == "Herbstferien"
         assert stay.note == note
         if mode == "proposal":
+            send_change_request(result["request_id"], request, db, admin)
             counter_entry = entry.model_dump(mode="json")
             counter_entry["name"] = "Herbstferien bei Papa"
             counter_entry["note"] = "Treffpunkt Bahnhof"

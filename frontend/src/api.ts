@@ -101,7 +101,7 @@ export type ChangeRequest = {
   requested_by_name: string;
   affected_user_id: number;
   affected_user_name: string;
-  status: "PROPOSED" | "CHANGE_PROPOSED" | "CONFIRMED" | "REJECTED" | "CANCELLED";
+  status: "DRAFT" | "PROPOSED" | "CHANGE_PROPOSED" | "CONFIRMED" | "REJECTED" | "CANCELLED";
   proposed_data: {
     action?: "DELETE" | "CREATE" | "GROUP_CREATE";
     items?: Array<{
@@ -121,8 +121,10 @@ export type ChangeRequest = {
     responsible_user_name?: string;
     title?: string | null;
     note?: string | null;
-    scope: "occurrence" | "future" | "series";
+    scope?: "occurrence" | "future" | "series";
     recurrence_interval_weeks?: number | null;
+    recurrence_frequency?: "WEEKLY" | "MONTHLY" | null;
+    recurrence_day_of_month?: number | null;
     recurrence_until?: string | null;
   };
   before_data: {

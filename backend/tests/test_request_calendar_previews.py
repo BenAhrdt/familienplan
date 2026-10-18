@@ -7,13 +7,13 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from app.api.v1.router import (create_planning_group, create_stay, decide_change_request,
-    propose_new_stay, propose_stay_change, propose_stay_deletion,
-    request_calendar_previews, withdraw_change_request)
+from app.api.v1.router import (change_requests, create_planning_group, create_stay, decide_change_request,
+    delete_change_request_draft, edit_change_request_draft, propose_new_stay, propose_stay_change,
+    propose_stay_deletion, send_change_request, request_calendar_previews, withdraw_change_request)
 from app.api.v1.integration_router import integration_events, child_location
 from app.core.database import Base
 from app.models.entities import ChangeRequest, Child, PlanStatus, Role, Stay, User
-from app.schemas import ChangeDecision, GroupPlanningCreate, GroupPlanningItem, StayCreate, StayUpdate
+from app.schemas import ChangeDecision, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, StayCreate, StayUpdate
 
 
 @pytest.fixture
@@ -36,6 +36,7 @@ def test_proposed_series_visible_only_to_participants_and_excluded_from_calendar
         starts_at=start, ends_at=start+timedelta(days=1), title='Wochenende',
         recurrence_interval_weeks=1, recurrence_until=start+timedelta(weeks=2)), request, db, sender)
     item = db.get(ChangeRequest, result.id)
+    send_change_request(item.id, request, db, sender)
     assert len(result.calendar_previews) == 3
     assert len(request_calendar_previews(db, item, recipient)) == 3
     assert request_calendar_previews(db, item, other) == []
@@ -64,6 +65,7 @@ def test_same_person_overlap_is_merged_when_new_stay_is_approved(context):
         starts_at=datetime(2026, 12, 26, 10), ends_at=datetime(2026, 12, 31, 14),
         title='Weihnachtsferien',
     ), request, db, sender)
+    send_change_request(result.id, request, db, sender)
     decide_change_request(result.id, ChangeDecision(decision='APPROVE'), request, db, recipient)
 
     confirmed = list(db.scalars(select(Stay).where(Stay.status == PlanStatus.CONFIRMED)))
@@ -126,6 +128,7 @@ def test_change_and_delete_previews_leave_confirmed_stay_untouched_and_withdraw_
                 ends_at=start+timedelta(days=1), status=PlanStatus.CONFIRMED, title='Bestätigt', created_by_id=recipient.id)
     db.add(stay); db.commit()
     result = propose_stay_change(stay.id, StayUpdate(starts_at=start+timedelta(days=2), ends_at=start+timedelta(days=3), responsible_user_id=sender.id, scope='occurrence', title='Vorgeschlagen'), request, db, sender)
+    send_change_request(result.id, request, db, sender)
     assert result.calendar_previews[0]['starts_at'] == start+timedelta(days=2)
     assert stay.starts_at == start and stay.title == 'Bestätigt'
     with pytest.raises(HTTPException):
@@ -134,6 +137,7 @@ def test_change_and_delete_previews_leave_confirmed_stay_untouched_and_withdraw_
     assert db.get(Stay, stay.id).status == PlanStatus.CONFIRMED
     assert request_calendar_previews(db, db.get(ChangeRequest, result.id), sender) == []
     deletion = propose_stay_deletion(stay.id, 'occurrence', request, db, sender)
+    send_change_request(deletion.id, request, db, sender)
     assert deletion.calendar_previews[0]['action'] == 'DELETE'
     assert deletion.calendar_previews[0]['starts_at'] == start
     decide_change_request(deletion.id, ChangeDecision(decision='REJECT', comment='Bleibt bestehen'), request, db, recipient)
@@ -145,6 +149,7 @@ def test_counterproposal_of_new_stay_updates_preview_and_confirms_latest_dates(c
     start = datetime(2026, 9, 10)
     result = propose_new_stay(StayCreate(child_id=child.id, responsible_user_id=sender.id,
         starts_at=start, ends_at=start+timedelta(days=1), title='Erster Vorschlag'), request, db, sender)
+    send_change_request(result.id, request, db, sender)
     result = decide_change_request(result.id, ChangeDecision(decision='COUNTER', counter_proposal=StayUpdate(
         starts_at=start+timedelta(days=2), ends_at=start+timedelta(days=3), responsible_user_id=sender.id,
         title='Gegenvorschlag', scope='series', recurrence_interval_weeks=1,
@@ -165,6 +170,7 @@ def test_group_previews_cover_each_section_and_withdraw_removes_drafts(context):
             ends_at=start+timedelta(days=i*3+1), name=f'Abschnitt {i}', kind='FERIEN') for i in range(2)
     ]), request, 'proposal', db, sender)
     item = db.get(ChangeRequest, result['request_id'])
+    send_change_request(item.id, request, db, sender)
     assert len(request_calendar_previews(db, item, sender)) == 2
     assert len(request_calendar_previews(db, item, recipient)) == 2
     withdraw_change_request(item.id, request, db, sender)
@@ -180,6 +186,7 @@ def test_withdrawn_series_can_be_proposed_again(context):
         starts_at=start, ends_at=start+timedelta(days=1), recurrence_interval_weeks=1,
         recurrence_until=start+timedelta(weeks=2))
     result = propose_new_stay(data, request, db, sender)
+    send_change_request(result.id, request, db, sender)
     withdraw_change_request(result.id, request, db, sender)
     assert len(propose_new_stay(data, request, db, sender).calendar_previews) == 3
 
@@ -206,6 +213,7 @@ def test_history_keeps_closed_requests_without_previews(context):
     start = datetime(2026, 9, 10)
     result = propose_new_stay(StayCreate(child_id=child.id, responsible_user_id=sender.id,
         starts_at=start, ends_at=start+timedelta(days=1)), request, db, sender)
+    send_change_request(result.id, request, db, sender)
     withdraw_change_request(result.id, request, db, sender)
     assert change_requests(db, sender) == []
     history = change_requests(db, sender, include_closed=True)
@@ -222,10 +230,60 @@ def test_counterproposal_can_replace_series_with_one_occurrence_without_leaving_
     result = propose_new_stay(StayCreate(child_id=child.id, responsible_user_id=sender.id,
         starts_at=start, ends_at=start+timedelta(days=1), recurrence_interval_weeks=1,
         recurrence_until=start+timedelta(weeks=2)), request, db, sender)
+    send_change_request(result.id, request, db, sender)
     result = decide_change_request(result.id, ChangeDecision(decision='COUNTER', counter_proposal=StayUpdate(
         starts_at=start, ends_at=start+timedelta(days=1), responsible_user_id=sender.id, scope='occurrence')),
         request, db, recipient)
     assert len(result.calendar_previews) == 1
     assert list(db.scalars(select(RecurrenceRule))) == []
     withdraw_change_request(result.id, request, db, recipient)
+    assert list(db.scalars(select(Stay))) == []
+
+
+def test_draft_is_private_until_sent_and_can_be_edited(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2026, 9, 10)
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=start, ends_at=start + timedelta(days=1), title="Erster Entwurf",
+    ), request, db, sender)
+    assert result.status == PlanStatus.DRAFT
+    assert len(request_calendar_previews(db, result and db.get(ChangeRequest, result.id), sender)) == 1
+    assert request_calendar_previews(db, db.get(ChangeRequest, result.id), recipient) == []
+    assert len(change_requests(db, sender)) == 1
+    assert change_requests(db, recipient) == []
+
+    updated = {**result.proposed_data, "starts_at": (start + timedelta(days=2)).isoformat(), "ends_at": (start + timedelta(days=3)).isoformat(), "title": "Korrigierter Entwurf"}
+    edited = edit_change_request_draft(result.id, DraftChangeRequestUpdate(proposed_data=updated), request, db, sender)
+    assert edited.status == PlanStatus.DRAFT
+    assert edited.proposed_data["title"] == "Korrigierter Entwurf"
+    draft_stay = db.get(Stay, edited.object_id)
+    assert draft_stay.status == PlanStatus.DRAFT
+    assert draft_stay.starts_at == start + timedelta(days=2)
+
+    sent = send_change_request(result.id, request, db, sender)
+    assert sent.status == PlanStatus.PROPOSED
+    assert len(request_calendar_previews(db, db.get(ChangeRequest, result.id), recipient)) == 1
+
+
+def test_group_draft_can_remove_one_entry_and_delete_the_whole_draft(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2026, 9, 10)
+    result = create_planning_group(GroupPlanningCreate(affected_user_id=recipient.id, items=[
+        GroupPlanningItem(child_id=child.id, responsible_user_id=sender.id, starts_at=start,
+            ends_at=start + timedelta(days=1), name="Erster Abschnitt", kind="FERIEN"),
+        GroupPlanningItem(child_id=child.id, responsible_user_id=sender.id, starts_at=start + timedelta(days=3),
+            ends_at=start + timedelta(days=4), name="Zweiter Abschnitt", kind="FEIERTAG"),
+    ]), request, "proposal", db, sender)
+    item = db.get(ChangeRequest, result["request_id"])
+    assert item.status == PlanStatus.DRAFT
+    first = item.proposed_data["items"][0]
+    edited = edit_change_request_draft(item.id, DraftChangeRequestUpdate(proposed_data={
+        **item.proposed_data,
+        "items": [first],
+    }), request, db, sender)
+    assert len(edited.proposed_data["items"]) == 1
+    assert len(list(db.scalars(select(Stay)))) == 1
+    delete_change_request_draft(item.id, request, db, sender)
+    assert db.get(ChangeRequest, item.id) is None
     assert list(db.scalars(select(Stay))) == []

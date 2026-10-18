@@ -846,7 +846,9 @@ function Dashboard({
     };
   }, [childKey, peopleColorKey]);
   const sessionUser = getSessionUser(),
-    requestsToDecide = requests.filter(
+    activeRequests = requests.filter((request) => request.status !== "DRAFT"),
+    draftCount = requests.filter((request) => request.status === "DRAFT" && request.requested_by_id === sessionUser?.id).length,
+    requestsToDecide = activeRequests.filter(
       (request) => request.affected_user_id === sessionUser?.id,
     ).length;
   function itemDate(value: Date) {
@@ -962,15 +964,15 @@ function Dashboard({
             </div>
           )}
         </section>
-        <aside className={`action ${requests.length ? "hasrequests" : ""}`}>
+        <aside className={`action ${activeRequests.length || draftCount ? "hasrequests" : ""}`}>
           <span>
             <CheckCircle2 />
           </span>
           <div>
-            <h3>{requests.length ? `${requests.length} offene ${requests.length === 1 ? "Abstimmung" : "Abstimmungen"}` : "Keine offenen Abstimmungen"}</h3>
-            <p>{requests.length ? (requestsToDecide ? `${requestsToDecide} ${requestsToDecide === 1 ? "Anfrage wartet" : "Anfragen warten"} auf deine Entscheidung.` : "Deine Anfrage wartet noch auf eine Rückmeldung.") : "Neue Anfragen werden hier angezeigt."}</p>
+            <h3>{activeRequests.length ? `${activeRequests.length} offene ${activeRequests.length === 1 ? "Abstimmung" : "Abstimmungen"}` : draftCount ? `${draftCount} ${draftCount === 1 ? "Entwurf" : "Entwürfe"}` : "Keine offenen Abstimmungen"}</h3>
+            <p>{activeRequests.length ? (requestsToDecide ? `${requestsToDecide} ${requestsToDecide === 1 ? "Anfrage wartet" : "Anfragen warten"} auf deine Entscheidung.` : "Deine Anfrage wartet noch auf eine Rückmeldung.") : draftCount ? "Noch nicht versendet – bitte prüfen und freigeben." : "Neue Anfragen werden hier angezeigt."}</p>
           </div>
-          {!!requests.length && <button onClick={() => openCalendar()}>Ansehen</button>}
+          {!!(activeRequests.length || draftCount) && <button onClick={() => openCalendar()}>Ansehen</button>}
         </aside>
       </div>
     </>
@@ -1552,6 +1554,8 @@ function CalendarScreen({
     [editingStaySource, setEditingStaySource] = useState<Stay | null>(null),
     [stayRangeMode, setStayRangeMode] = useState<"full" | "day">("full"),
     [counterRequest, setCounterRequest] = useState<ChangeRequest | null>(null),
+    [editingDraftRequest, setEditingDraftRequest] = useState<ChangeRequest | null>(null),
+    [draftDeleteEditor, setDraftDeleteEditor] = useState<ChangeRequest | null>(null),
     [rejectingRequest, setRejectingRequest] =
       useState<ChangeRequest | null>(null),
     [groupReview, setGroupReview] = useState<ChangeRequest | null>(null),
@@ -1664,7 +1668,10 @@ function CalendarScreen({
       return request && entry ? {request, entry} : null;
     });
   }, [requests]);
-  const pendingEntries = requests.flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
+  const sessionUserId = getSessionUser()?.id;
+  const draftRequests = requests.filter((request) => request.status === "DRAFT" && request.requested_by_id === sessionUserId);
+  const visibleRequests = requests.filter((request) => request.status !== "DRAFT");
+  const pendingEntries = visibleRequests.flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
   const pendingOnDay = (day: Date, end: Date) => availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY")
     ? pendingEntries.filter(({entry}) => new Date(entry.starts_at) < end && new Date(entry.ends_at) > day) : [];
   useEffect(() => {
@@ -1703,6 +1710,111 @@ function CalendarScreen({
         ).then((items) => items.map((item) => ({ ...item, state }))),
       ),
     ).then((values) => setHolidays(values.flat()));
+  }
+  function draftStay(request: ChangeRequest): Stay | null {
+    const proposal = request.proposed_data;
+    const preview = request.calendar_previews?.[0];
+    const before = request.before_data;
+    const startsAt = proposal.starts_at || preview?.starts_at || before.starts_at;
+    const endsAt = proposal.ends_at || preview?.ends_at || before.ends_at;
+    const childId = request.child_id || preview?.child_id;
+    const responsibleId = proposal.responsible_user_id || before.responsible_user_id;
+    if (!startsAt || !endsAt || !childId || !responsibleId) return null;
+    return {
+      id: request.object_id,
+      child_id: childId,
+      responsible_user_id: responsibleId,
+      responsible_display_name: request.affected_user_name,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      status: "DRAFT",
+      title: proposal.title !== undefined ? proposal.title : before.title || null,
+      note: proposal.note !== undefined ? proposal.note : before.note || null,
+      recurrence_rule_id: proposal.recurrence_interval_weeks ? request.id : null,
+      recurrence_interval_weeks: proposal.recurrence_interval_weeks || null,
+      recurrence_frequency: proposal.recurrence_frequency || "WEEKLY",
+      recurrence_day_of_month: proposal.recurrence_day_of_month || null,
+      recurrence_until: proposal.recurrence_until || null,
+    };
+  }
+  function draftRepeatKind(request: ChangeRequest) {
+    const proposal = request.proposed_data;
+    const interval = proposal.recurrence_interval_weeks || 1;
+    if (!proposal.recurrence_interval_weeks) return "once";
+    if (proposal.recurrence_frequency === "MONTHLY") {
+      return proposal.recurrence_day_of_month ? "monthlyDay" : interval === 1 ? "monthlySame" : "monthlyCustom";
+    }
+    return interval <= 4 ? `weekly${interval}` : "weeklyCustom";
+  }
+  function openDraftEditor(request: ChangeRequest) {
+    if (request.proposed_data.action === "GROUP_CREATE") {
+      openGroupReview(request);
+      return;
+    }
+    if (request.proposed_data.action === "DELETE") {
+      setDraftDeleteEditor(request);
+      return;
+    }
+    const stay = draftStay(request);
+    if (!stay) {
+      setError("Dieser Entwurf kann nicht mehr bearbeitet werden.");
+      return;
+    }
+    setEditingDraftRequest(request);
+    setEditingStay(stay);
+    setEditingStaySource(null);
+    setStayRangeMode("full");
+    setEditScope((request.proposed_data.scope || "occurrence") as "occurrence" | "future" | "series");
+    setRepeatKind(draftRepeatKind(request));
+    setSelectedDay(new Date(stay.starts_at));
+    setCounterRequest(null);
+    setError("");
+    setOpen("stay");
+  }
+  async function sendDraft(request: ChangeRequest) {
+    setError("");
+    try {
+      await api(`/change-requests/${request.id}/send`, { method: "POST" });
+      load();
+    } catch (x) {
+      setError((x as Error).message);
+    }
+  }
+  async function deleteDraft(request: ChangeRequest) {
+    if (!confirm("Diesen Entwurf mit allen enthaltenen Einträgen wirklich löschen?")) return;
+    setError("");
+    try {
+      await api(`/change-requests/${request.id}/draft`, { method: "DELETE" });
+      setDraftDeleteEditor(null);
+      setGroupReview(null);
+      load();
+    } catch (x) {
+      setError((x as Error).message);
+    }
+  }
+  async function saveGroupDraft(send = false) {
+    if (!groupReview) return;
+    if (!groupReviewItems.length) {
+      setError("Ein Entwurf muss mindestens einen Zeitraum enthalten.");
+      return;
+    }
+    setGroupReviewBusy(true);
+    setError("");
+    try {
+      const items = groupReviewItems.map(({ comment: _comment, ...item }) => item);
+      await api(`/change-requests/${groupReview.id}/draft`, {
+        method: "PUT",
+        body: JSON.stringify({ proposed_data: { ...groupReview.proposed_data, items } }),
+      });
+      if (send) await api(`/change-requests/${groupReview.id}/send`, { method: "POST" });
+      setGroupReview(null);
+      setGroupReviewItems([]);
+      load();
+    } catch (x) {
+      setError((x as Error).message);
+    } finally {
+      setGroupReviewBusy(false);
+    }
   }
   useEffect(() => {
     const requestId = new URLSearchParams(location.search).get("request");
@@ -1899,6 +2011,35 @@ function CalendarScreen({
             ? new Date(String(f.get("until")) + "T23:59").toISOString()
             : null,
       };
+      if (editingDraftRequest) {
+        const proposedData = editingDraftRequest.proposed_data.action === "CREATE"
+          ? { ...payload, action: "CREATE", scope: repeat ? "series" : "occurrence" }
+          : {
+              starts_at: payload.starts_at,
+              ends_at: payload.ends_at,
+              responsible_user_id: payload.responsible_user_id,
+              title: payload.title,
+              note: payload.note,
+              scope: editScope,
+              preserve_remainder: stayRangeMode === "day",
+              ...(editScope === "series" ? {
+                recurrence_interval_weeks: payload.recurrence_interval_weeks,
+                recurrence_frequency: payload.recurrence_frequency,
+                recurrence_day_of_month: payload.recurrence_day_of_month,
+                recurrence_until: payload.recurrence_until,
+              } : {}),
+            };
+        await api(`/change-requests/${editingDraftRequest.id}/draft`, {
+          method: "PUT",
+          body: JSON.stringify({ proposed_data: proposedData }),
+        });
+        setOpen(null);
+        setEditingStay(null);
+        setEditingDraftRequest(null);
+        setSelectedDay(null);
+        load();
+        return;
+      }
       const stayToChange = editingStay;
       if (stayToChange) {
         const update = {
@@ -2321,11 +2462,36 @@ function CalendarScreen({
           <p>Alle Einträge als Termine mit passender Terminart planen.</p>
         </div>
       </header>
-      {requests.length > 0 && (
+      {draftRequests.length > 0 && (
+        <section className="change-requests draft-requests">
+          <h2>Entwürfe</h2>
+          <p className="muted">Diese Anfragen sind noch nicht versendet. Du kannst sie prüfen, ändern oder vollständig löschen.</p>
+          {error && !open && <p className="error">{error}</p>}
+          {draftRequests.map((request) => {
+            const proposal = request.proposed_data;
+            const firstEntry = proposal.items?.[0] || request.calendar_previews?.[0];
+            const label = proposal.action === "GROUP_CREATE"
+              ? (proposal.title || "Gemeinsame Planung") + " · " + (proposal.items?.length || 0) + " Zeiträume"
+              : proposal.action === "DELETE" ? "Löschung einer Betreuungszeit" : proposal.action === "CREATE" ? "Neue Betreuungszeit" : "Änderung einer Betreuungszeit";
+            return <article key={request.id}>
+              <div>
+                <strong>{label}</strong>
+                <small>{request.affected_user_name} · {firstEntry?.starts_at ? new Date(firstEntry.starts_at).toLocaleString("de-DE") : "Noch keine Zeitangabe"}</small>
+              </div>
+              <div className="request-actions">
+                <button onClick={() => openDraftEditor(request)}>Bearbeiten</button>
+                <button className="secondary" onClick={() => sendDraft(request)}>Anfrage versenden</button>
+                <button className="secondary danger" onClick={() => deleteDraft(request)}>Entwurf löschen</button>
+              </div>
+            </article>;
+          })}
+        </section>
+      )}
+      {visibleRequests.length > 0 && (
         <section className="change-requests">
           <h2>Offene Abstimmungen</h2>
           {error && !open && <p className="error">{error}</p>}
-          {requests.map((request) => {
+          {visibleRequests.map((request) => {
             const proposal = request.proposed_data;
             const before = request.before_data;
             const canDecide = getSessionUser()?.id === request.affected_user_id;
@@ -2476,7 +2642,7 @@ function CalendarScreen({
         {requestHistory.map((item) => <article key={item.id}>
           <h3>{item.proposed_data.title || item.child_name || "Betreuungsanfrage"}</h3>
           <p>{item.requested_by_name} → {item.affected_user_name} · {new Date(item.created_at).toLocaleDateString("de-DE")}</p>
-          <p>{item.status === "CONFIRMED" ? "Bestätigt" : item.status === "REJECTED" ? "Abgelehnt" : item.status === "CANCELLED" ? "Zurückgezogen" : "Bestätigung ausstehend"}</p>
+          <p>{item.status === "DRAFT" ? "Entwurf" : item.status === "CONFIRMED" ? "Bestätigt" : item.status === "REJECTED" ? "Abgelehnt" : item.status === "CANCELLED" ? "Zurückgezogen" : "Bestätigung ausstehend"}</p>
           <p>{item.proposed_data.action === "DELETE" ? "Löschung" : item.proposed_data.action === "GROUP_CREATE" ? "Gruppenplanung" : item.proposed_data.action === "CREATE" ? "Neue Betreuung" : "Änderung"}
             {(item.proposed_data.starts_at || item.before_data.starts_at) && ` · ${new Date((item.proposed_data.starts_at || item.before_data.starts_at)!).toLocaleString("de-DE")} – ${new Date((item.proposed_data.ends_at || item.before_data.ends_at)!).toLocaleString("de-DE")}`}</p>
           {item.proposed_data.items?.map((entry, index) => <p key={index}>{entry.name} · {new Date(entry.starts_at).toLocaleDateString("de-DE")} – {new Date(entry.ends_at).toLocaleDateString("de-DE")}</p>)}
@@ -2917,12 +3083,13 @@ function CalendarScreen({
                 setEditingStaySource(null);
                 setSelectedDay(null);
                 setCounterRequest(null);
+                setEditingDraftRequest(null);
                 onTargetViewClose?.();
               }}
             >
               ×
             </button>
-            <h2>{open === "stay" ? (editingStay ? "Betreuungszeit bearbeiten" : "Betreuungszeit eintragen") : (editingEvent || stayToConvert ? "Termin bearbeiten" : "Termin eintragen")}</h2>
+            <h2>{open === "stay" ? (editingDraftRequest ? "Entwurf bearbeiten" : editingStay ? "Betreuungszeit bearbeiten" : "Betreuungszeit eintragen") : (editingEvent || stayToConvert ? "Termin bearbeiten" : "Termin eintragen")}</h2>
             {error && <p className="error">{error}</p>}
             {open === "event" ? (
               <>
@@ -3328,7 +3495,9 @@ function CalendarScreen({
             )}
             <div className="form-actions">
               <button>
-                {counterRequest
+                {editingDraftRequest
+                  ? "Entwurf speichern"
+                  : counterRequest
                   ? "Gegenvorschlag senden"
                   : editingStay && getSessionUser()?.role !== "ADMIN"
                     ? "Änderung vorschlagen"
@@ -3338,7 +3507,7 @@ function CalendarScreen({
                       ? "Vorschlag senden"
                       : "Speichern"}
               </button>
-              {open === "stay" && editingStay && !counterRequest && (
+              {open === "stay" && editingStay && !counterRequest && !editingDraftRequest && (
                 <button
                   type="button"
                   className="delete-button"
@@ -3673,16 +3842,47 @@ function CalendarScreen({
           </div>
         </div>
       )}
+      {draftDeleteEditor && (
+        <div className="modal decision-modal">
+          <form className="panel" onSubmit={async (event) => {
+            event.preventDefault();
+            const scope = String(new FormData(event.currentTarget).get("scope"));
+            try {
+              await api(`/change-requests/${draftDeleteEditor.id}/draft`, { method: "PUT", body: JSON.stringify({ proposed_data: { action: "DELETE", scope } }) });
+              setDraftDeleteEditor(null);
+              load();
+            } catch (x) {
+              setError((x as Error).message);
+            }
+          }}>
+            <button type="button" className="close" onClick={() => setDraftDeleteEditor(null)}>×</button>
+            <h2>Löschentwurf bearbeiten</h2>
+            <p>Lege fest, welcher Teil der Betreuungszeit vorgeschlagen werden soll.</p>
+            {error && <p className="error">{error}</p>}
+            <label>Umfang<select name="scope" defaultValue={draftDeleteEditor.proposed_data.scope || "occurrence"}>
+              <option value="occurrence">Nur diese Betreuungszeit</option>
+              <option value="future">Diese und alle zukünftigen</option>
+              <option value="series">Gesamte Serie</option>
+            </select></label>
+            <div className="decision-actions"><button>Entwurf speichern</button><button type="button" className="secondary danger" onClick={() => deleteDraft(draftDeleteEditor)}>Entwurf löschen</button></div>
+          </form>
+        </div>
+      )}
       {groupReview && (
         <div className="modal group-review-modal">
           <div className="panel">
             <button type="button" className="close" onClick={() => setGroupReview(null)}>×</button>
-            <h2>Gruppenplanung prüfen</h2>
-            <p><b>{groupReview.proposed_data.title || "Gemeinsame Planung"}</b> von {groupReview.requested_by_name}</p>
+            <h2>{groupReview.status === "DRAFT" ? "Gruppenplanungsentwurf" : "Gruppenplanung prüfen"}</h2>
+            <p>{groupReview.status === "DRAFT" ? <label>Titel<input value={groupReview.proposed_data.title || ""} onChange={(event) => setGroupReview((current) => current ? {...current, proposed_data: {...current.proposed_data, title: event.target.value}} : current)} /></label> : <b>{groupReview.proposed_data.title || "Gemeinsame Planung"}</b>} von {groupReview.requested_by_name}</p>
             {error && <p className="error">{error}</p>}
+            {(() => {
+              const isDraft = groupReview.status === "DRAFT";
+              const canEdit = isDraft
+                ? getSessionUser()?.id === groupReview.requested_by_id
+                : getSessionUser()?.id === groupReview.affected_user_id;
+              return <>
             <div className="groupreviewlist">
               {groupReviewItems.map((item, index) => {
-                const canEdit = getSessionUser()?.id === groupReview.affected_user_id;
                 const startDate = new Date(item.starts_at);
                 const rawEndDate = new Date(item.ends_at);
                 const endAtDayBoundary = rawEndDate.getHours() === 0 && rawEndDate.getMinutes() === 0;
@@ -3698,9 +3898,9 @@ function CalendarScreen({
                 };
                 return (
                   <article key={item.stay_id || index}>
-                    <header><span className="tag">Abschnitt {index + 1}</span><strong>{item.name}</strong></header>
+                    <header><span className="tag">Abschnitt {index + 1}</span>{isDraft && canEdit ? <input value={item.name} onChange={(event) => updateGroupReview(index, { name: event.target.value })} /> : <strong>{item.name}</strong>}</header>
                     <div className="groupreviewfields">
-                      <label>Kind<select disabled value={item.child_id}>{children.map((child) => <option key={child.id} value={child.id}>{child.display_name}</option>)}</select></label>
+                      <label>Kind<select disabled={!canEdit} value={item.child_id} onChange={(e) => updateGroupReview(index, { child_id: Number(e.target.value) })}>{children.map((child) => <option key={child.id} value={child.id}>{child.display_name}</option>)}</select></label>
                       <label>Bei Person<select disabled={!canEdit} value={item.responsible_user_id} onChange={(e) => updateGroupReview(index, { responsible_user_id: Number(e.target.value) })}>{people.map((person) => <option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label>
                       <label>Von<input disabled={!canEdit} type="date" value={dateValue(startDate)} onChange={(e) => updateGroupReview(index, { starts_at: toIso(e.target.value, startTime) })} /></label>
                       <label>Von Uhr<input disabled={!canEdit} type="time" value={startTime} onChange={(e) => updateGroupReview(index, { starts_at: toIso(dateValue(startDate), e.target.value) })} placeholder="ganztägig" /></label>
@@ -3708,18 +3908,27 @@ function CalendarScreen({
                       <label>Bis Uhr<input disabled={!canEdit} type="time" value={endTime} onChange={(e) => updateGroupReview(index, { ends_at: toIso(dateValue(endDate), e.target.value, true) })} placeholder="ganztägig" /></label>
                     </div>
                     <label>Informationen / Notizen (optional)<textarea disabled={!canEdit} value={item.note || ""} onChange={(e) => updateGroupReview(index, { note: e.target.value })} rows={2} /></label>
-                    <label>Kommentar zu diesem Abschnitt<textarea disabled={!canEdit} value={item.comment || ""} onChange={(e) => updateGroupReview(index, { comment: e.target.value })} placeholder="Optional bei Bestätigung oder Gegenvorschlag; bei Ablehnung ist eine Begründung erforderlich." maxLength={1000} /></label>
+                    {!isDraft && <label>Kommentar zu diesem Abschnitt<textarea disabled={!canEdit} value={item.comment || ""} onChange={(e) => updateGroupReview(index, { comment: e.target.value })} placeholder="Optional bei Bestätigung oder Gegenvorschlag; bei Ablehnung ist eine Begründung erforderlich." maxLength={1000} /></label>}
+                    {isDraft && canEdit && <button type="button" className="secondary danger" onClick={() => setGroupReviewItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Eintrag aus dem Entwurf entfernen</button>}
                   </article>
                 );
               })}
             </div>
-            {getSessionUser()?.id === groupReview.affected_user_id ? (
+            {isDraft && canEdit ? (
+              <div className="decision-actions groupreviewactions">
+                <button type="button" disabled={groupReviewBusy} onClick={() => saveGroupDraft()}>{groupReviewBusy ? "Wird gespeichert …" : "Entwurf speichern"}</button>
+                <button type="button" disabled={groupReviewBusy} className="secondary" onClick={() => saveGroupDraft(true)}>Anfrage versenden</button>
+                <button type="button" disabled={groupReviewBusy} className="secondary danger" onClick={() => deleteDraft(groupReview)}>Entwurf löschen</button>
+              </div>
+            ) : getSessionUser()?.id === groupReview.affected_user_id ? (
               <div className="decision-actions groupreviewactions">
                 <button disabled={groupReviewBusy} onClick={() => decideGroup("APPROVE")}>{groupReviewBusy ? "Wird verarbeitet …" : "Gesamte Planung bestätigen"}</button>
                 <button disabled={groupReviewBusy} className="secondary" onClick={() => decideGroup("COUNTER")}>Geänderten Vorschlag senden</button>
                 <button disabled={groupReviewBusy} className="secondary danger" onClick={() => decideGroup("REJECT")}>Planung ablehnen</button>
               </div>
             ) : <p className="hint">Diese Fassung wartet auf die Entscheidung von {groupReview.affected_user_name}.</p>}
+              </>;
+            })()}
           </div>
         </div>
       )}

@@ -26,7 +26,7 @@ from app.integrations import queue_mail
 from app.push import queue_push, vapid_config
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -241,6 +241,8 @@ def recurrence_dates(data: StayCreate) -> list[tuple[datetime, datetime]]:
 AUDIT_PUSH_ALWAYS_EXCLUDED_ACTIONS = {
     "LOGIN_FAILED",
     "NEW_STAY_PROPOSED", "STAY_CHANGE_PROPOSED", "STAY_DELETE_PROPOSED", "GROUP_PLAN_PROPOSED",
+    "NEW_STAY_DRAFT_CREATED", "STAY_CHANGE_DRAFT_CREATED", "STAY_DELETE_DRAFT_CREATED", "GROUP_PLAN_DRAFT_CREATED",
+    "CHANGE_REQUEST_DRAFT_EDITED", "CHANGE_REQUEST_DRAFT_DELETED", "CHANGE_REQUEST_SENT",
     "AUDIT_PUSH_CHANGED",
 }
 AUDIT_PUSH_DEFAULT_EXCLUDED_ACTIONS = {"LOGIN", "LOGOUT", "APP_OPENED"}
@@ -1827,13 +1829,12 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         }
         item = ChangeRequest(
             object_type="stay", object_id=existing.id, requested_by_id=user.id,
-            affected_user_id=affected_id, status=PlanStatus.CHANGE_PROPOSED,
+            affected_user_id=affected_id, status=PlanStatus.DRAFT,
             before_data={"starts_at": existing.starts_at.isoformat(), "ends_at": existing.ends_at.isoformat(), "responsible_user_id": existing.responsible_user_id, "title": existing.title, "note": existing.note},
             proposed_data=proposed,
         )
         db.add(item); db.flush()
-        notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Übergabe der Betreuung vor. {change_request_details(db, item)}", item.id)
-        audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected_id, "scope": "occurrence", "converted_from_create": True})
+        audit(db, request, "STAY_CHANGE_DRAFT_CREATED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected_id, "scope": "occurrence", "converted_from_create": True})
         db.commit(); db.refresh(item)
         return change_request_payload(db, item, user)
 
@@ -1846,17 +1847,16 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         db.add(rule); db.flush()
     created = []
     for starts_at, ends_at in occurrences:
-        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=PlanStatus.PROPOSED, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
+        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=PlanStatus.DRAFT, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
         db.add(stay); created.append(stay)
     db.flush()
     item = ChangeRequest(
         object_type="stay", object_id=created[0].id, requested_by_id=user.id,
-        affected_user_id=affected_id, status=PlanStatus.PROPOSED, before_data={},
-        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None},
+        affected_user_id=affected_id, status=PlanStatus.DRAFT, before_data={},
+        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_frequency": data.recurrence_frequency if rule else None, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None},
     )
     db.add(item); db.flush()
-    notify(db, affected_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine neue Betreuungszeit vor.", item.id)
-    audit(db, request, "NEW_STAY_PROPOSED", user.id, ("change_request", str(item.id)), {"occurrences": len(created)})
+    audit(db, request, "NEW_STAY_DRAFT_CREATED", user.id, ("change_request", str(item.id)), {"occurrences": len(created)})
     db.commit(); db.refresh(item)
     return change_request_payload(db, item, user)
 
@@ -2022,20 +2022,230 @@ def propose_stay_deletion(stay_id: int, scope: str, request: Request, db: Sessio
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diese Löschung gibt es keine andere Person zur Bestätigung")
     item = ChangeRequest(
         object_type="stay", object_id=stay.id, requested_by_id=user.id,
-        affected_user_id=affected_id, status=PlanStatus.PROPOSED,
+        affected_user_id=affected_id, status=PlanStatus.DRAFT,
         before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "title": stay.title, "note": stay.note},
         proposed_data={"action": "DELETE", "scope": scope},
     )
     db.add(item); db.flush()
-    notify(db, affected_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", f"{user.display_name} schlägt vor, eine Betreuungszeit zu löschen.", item.id)
-    audit(db, request, "STAY_DELETE_PROPOSED", user.id, ("change_request", str(item.id)), {"scope": scope})
+    audit(db, request, "STAY_DELETE_DRAFT_CREATED", user.id, ("change_request", str(item.id)), {"scope": scope})
     db.commit(); db.refresh(item)
     return change_request_payload(db, item, user)
 
 
+def request_stay_ids(item: ChangeRequest) -> list[int]:
+    return [int(value) for value in (item.proposed_data or {}).get("stay_ids", [item.object_id]) if value]
+
+
+def delete_request_stays(db: Session, item: ChangeRequest) -> None:
+    rule_ids = set()
+    stay_ids = request_stay_ids(item)
+    if stay_ids:
+        stays = list(db.scalars(select(Stay).where(
+            Stay.id.in_(stay_ids),
+            Stay.status.in_([PlanStatus.DRAFT, PlanStatus.PROPOSED]),
+        )))
+    else:
+        stays = []
+    for stay in stays:
+        if stay.recurrence_rule_id:
+            rule_ids.add(stay.recurrence_rule_id)
+        db.delete(stay)
+    db.flush()
+    for rule_id in rule_ids:
+        if not db.scalar(select(Stay.id).where(or_(Stay.recurrence_rule_id == rule_id, Stay.recurrence_exception_rule_id == rule_id)).limit(1)):
+            rule = db.get(RecurrenceRule, rule_id)
+            if rule:
+                db.delete(rule)
+
+
+def validate_draft_create_conflicts(db: Session, data: StayCreate) -> None:
+    for starts_at, ends_at in recurrence_dates(data):
+        conflict = db.scalar(select(Stay).where(
+            Stay.child_id == data.child_id,
+            Stay.status == PlanStatus.CONFIRMED,
+            Stay.starts_at < ends_at,
+            Stay.ends_at > starts_at,
+            Stay.responsible_user_id != data.responsible_user_id,
+        ).limit(1))
+        if conflict:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Für diesen Zeitraum besteht bereits eine Betreuung bei einer anderen Person")
+
+
+def replace_create_draft(db: Session, item: ChangeRequest, data: dict, user: User) -> None:
+    original = db.get(Stay, item.object_id)
+    if not original:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Der Entwurf ist nicht mehr verfügbar")
+    child_id = int(data.get("child_id") or original.child_id)
+    create_data = StayCreate.model_validate({
+        **data,
+        "child_id": child_id,
+        "status": PlanStatus.DRAFT,
+        "recurrence_frequency": data.get("recurrence_frequency") or "WEEKLY",
+    })
+    assert_child_access(db, user, create_data.child_id, edit=True)
+    assert_person_visible(db, user, create_data.responsible_user_id)
+    validate_draft_create_conflicts(db, create_data)
+    child = db.get(Child, create_data.child_id)
+    affected_id = stay_request_recipient_id(
+        user.id,
+        child.default_responsible_user_id if child else None,
+        proposed_responsible_user_id=create_data.responsible_user_id,
+    )
+    if not affected_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diesen Entwurf gibt es keine andere Person zur Bestätigung")
+    delete_request_stays(db, item)
+    rule = None
+    if create_data.recurrence_interval_weeks:
+        rule = RecurrenceRule(
+            child_id=create_data.child_id,
+            responsible_user_id=create_data.responsible_user_id,
+            rrule=f"FREQ={create_data.recurrence_frequency};INTERVAL={create_data.recurrence_interval_weeks};BYMONTHDAY={create_data.recurrence_day_of_month or create_data.starts_at.day}",
+            starts_at=create_data.starts_at,
+            duration_minutes=int((create_data.ends_at - create_data.starts_at).total_seconds() / 60),
+            until_at=create_data.recurrence_until,
+        )
+        db.add(rule)
+        db.flush()
+    created = []
+    for starts_at, ends_at in recurrence_dates(create_data):
+        stay = Stay(
+            child_id=create_data.child_id,
+            responsible_user_id=create_data.responsible_user_id,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            status=PlanStatus.DRAFT,
+            title=create_data.title,
+            note=create_data.note,
+            created_by_id=user.id,
+            recurrence_rule_id=rule.id if rule else None,
+        )
+        db.add(stay)
+        created.append(stay)
+    db.flush()
+    item.object_id = created[0].id
+    item.affected_user_id = affected_id
+    item.proposed_data = {
+        "action": "CREATE",
+        "stay_ids": [stay.id for stay in created],
+        "starts_at": create_data.starts_at.isoformat(),
+        "ends_at": create_data.ends_at.isoformat(),
+        "responsible_user_id": create_data.responsible_user_id,
+        "title": create_data.title,
+        "note": create_data.note,
+        "scope": "series" if rule else "occurrence",
+        "recurrence_interval_weeks": create_data.recurrence_interval_weeks,
+        "recurrence_frequency": create_data.recurrence_frequency if rule else None,
+        "recurrence_day_of_month": create_data.recurrence_day_of_month if rule else None,
+        "recurrence_until": create_data.recurrence_until.isoformat() if create_data.recurrence_until else None,
+    }
+
+
+def update_group_draft(db: Session, item: ChangeRequest, data: dict, user: User) -> None:
+    raw_items = data.get("items") or []
+    if not raw_items:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ein Entwurf muss mindestens einen Zeitraum enthalten")
+    old_ids = set(request_stay_ids(item))
+    kept_ids = set()
+    normalized_items = []
+    for raw in raw_items:
+        raw = dict(raw)
+        stay_id = int(raw.pop("stay_id", 0) or 0)
+        entry = GroupPlanningItem.model_validate(raw)
+        assert_child_access(db, user, entry.child_id, edit=True)
+        assert_person_visible(db, user, entry.responsible_user_id)
+        if stay_id:
+            if stay_id not in old_ids:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Dieser Zeitraum gehört nicht zu diesem Entwurf")
+            stay = db.get(Stay, stay_id)
+            if not stay or stay.status != PlanStatus.DRAFT:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Ein Zeitraum aus dem Entwurf ist nicht mehr verfügbar")
+        else:
+            stay = Stay(created_by_id=user.id, status=PlanStatus.DRAFT)
+            db.add(stay)
+            db.flush()
+            stay_id = stay.id
+        stay.child_id = entry.child_id
+        stay.responsible_user_id = entry.responsible_user_id
+        stay.starts_at = entry.starts_at
+        stay.ends_at = entry.ends_at
+        stay.title = entry.name
+        stay.note = entry.note
+        kept_ids.add(stay_id)
+        normalized_items.append({**entry.model_dump(mode="json"), "stay_id": stay_id})
+    for stay_id in old_ids - kept_ids:
+        stay = db.get(Stay, stay_id)
+        if stay and stay.status == PlanStatus.DRAFT:
+            db.delete(stay)
+    db.flush()
+    item.object_id = normalized_items[0]["stay_id"]
+    item.proposed_data = {
+        "action": "GROUP_CREATE",
+        "title": str(data.get("title") or item.proposed_data.get("title") or "Gemeinsame Planung"),
+        "stay_ids": [entry["stay_id"] for entry in normalized_items],
+        "items": normalized_items,
+    }
+
+
+def update_draft_request(db: Session, item: ChangeRequest, data: dict, user: User) -> None:
+    action = data.get("action")
+    if item.object_type == "group_plan" or action == "GROUP_CREATE":
+        if item.object_type != "group_plan" or action != "GROUP_CREATE":
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ungültiger Entwurf")
+        update_group_draft(db, item, data, user)
+        return
+    if action == "DELETE":
+        scope = data.get("scope")
+        if scope not in {"occurrence", "future", "series"}:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ungültiger Löschumfang")
+        item.proposed_data = {"action": "DELETE", "scope": scope}
+        return
+    if action == "CREATE":
+        replace_create_draft(db, item, data, user)
+        return
+    original = db.get(Stay, item.object_id)
+    if not original:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Der Entwurf ist nicht mehr verfügbar")
+    update_data = StayUpdate.model_validate(data)
+    assert_child_access(db, user, original.child_id, edit=True)
+    assert_person_visible(db, user, update_data.responsible_user_id)
+    child = db.get(Child, original.child_id)
+    affected_id = stay_request_recipient_id(
+        user.id,
+        child.default_responsible_user_id if child else None,
+        current_responsible_user_id=original.responsible_user_id,
+        proposed_responsible_user_id=update_data.responsible_user_id,
+    )
+    if not affected_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diesen Entwurf gibt es keine andere Person zur Bestätigung")
+    item.affected_user_id = affected_id
+    item.proposed_data = update_data.model_dump(mode="json")
+
+
+def publish_change_request(db: Session, item: ChangeRequest, request: Request, user: User) -> None:
+    action = (item.proposed_data or {}).get("action")
+    item.status = PlanStatus.PROPOSED if action in {"CREATE", "GROUP_CREATE"} else PlanStatus.CHANGE_PROPOSED
+    if action in {"CREATE", "GROUP_CREATE"}:
+        for stay_id in request_stay_ids(item):
+            stay = db.get(Stay, stay_id)
+            if stay and stay.status == PlanStatus.DRAFT:
+                stay.status = PlanStatus.PROPOSED
+    if action == "GROUP_CREATE":
+        title = item.proposed_data.get("title") or "Gemeinsame Planung"
+        notify(db, item.affected_user_id, "GROUP_PLAN_PROPOSAL", "Neue Gruppenplanung", f"{user.display_name} hat die Planung „{title}“ mit {len(item.proposed_data.get('items') or [])} Zeiträumen gesendet.", item.id)
+    elif action == "DELETE":
+        notify(db, item.affected_user_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", f"{user.display_name} schlägt vor, eine Betreuungszeit zu löschen.", item.id)
+    elif action == "CREATE":
+        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine neue Betreuungszeit vor.", item.id)
+    else:
+        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
+    audit(db, request, "CHANGE_REQUEST_SENT", user.id, ("change_request", str(item.id)), {"affected_user_id": item.affected_user_id, "action": action or "UPDATE"})
+
+
 def request_calendar_previews(db: Session, item: ChangeRequest, viewer: User) -> list[dict]:
     """Separate visual proposals from confirmed stays; never used by integrations."""
-    if item.status not in {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED} or viewer.id not in {item.requested_by_id, item.affected_user_id}:
+    if item.status not in {PlanStatus.DRAFT, PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED} or viewer.id not in {item.requested_by_id, item.affected_user_id}:
+        return []
+    if item.status == PlanStatus.DRAFT and viewer.id != item.requested_by_id:
         return []
     if item.object_type not in {"stay", "group_plan"}:
         return []
@@ -2171,14 +2381,13 @@ def create_planning_group(data: GroupPlanningCreate, request: Request, mode: str
             object_id=created[0].id,
             requested_by_id=user.id,
             affected_user_id=affected.id,
-            status=PlanStatus.PROPOSED,
+            status=PlanStatus.DRAFT,
             before_data={},
             proposed_data={"action": "GROUP_CREATE", "title": data.title, "stay_ids": [stay.id for stay in created], "items": item_payloads},
         )
         db.add(group_request)
         db.flush()
-        notify(db, affected.id, "GROUP_PLAN_PROPOSAL", "Neue Gruppenplanung", f"{user.display_name} hat die Planung „{data.title}“ mit {len(created)} Zeiträumen gesendet.", group_request.id)
-        audit(db, request, "GROUP_PLAN_PROPOSED", user.id, ("change_request", str(group_request.id)), {"items": len(created), "affected_user_id": affected.id})
+        audit(db, request, "GROUP_PLAN_DRAFT_CREATED", user.id, ("change_request", str(group_request.id)), {"items": len(created), "affected_user_id": affected.id})
         db.commit()
         return {"mode": mode, "request_id": group_request.id, "created": len(created)}
     audit(db, request, "GROUP_PLAN_CREATED", user.id, ("stay", str(created[0].id)), {"items": len(created)})
@@ -2257,9 +2466,14 @@ def change_requests(db: Session = Depends(get_db), user: User = Depends(current_
         db.commit()
     query = select(ChangeRequest)
     if not include_closed:
-        query = query.where(ChangeRequest.status.in_([PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED]))
-    if user.role != Role.ADMIN:
-        query = query.where((ChangeRequest.affected_user_id == user.id) | (ChangeRequest.requested_by_id == user.id))
+        query = query.where(ChangeRequest.status.in_([PlanStatus.DRAFT, PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED]))
+    if user.role == Role.ADMIN:
+        query = query.where((ChangeRequest.requested_by_id == user.id) | (ChangeRequest.status != PlanStatus.DRAFT))
+    else:
+        query = query.where(
+            (ChangeRequest.requested_by_id == user.id)
+            | ((ChangeRequest.affected_user_id == user.id) & (ChangeRequest.status != PlanStatus.DRAFT))
+        )
     query = query.order_by(ChangeRequest.created_at.desc())
     if include_closed:
         query = query.limit(100)
@@ -2288,12 +2502,52 @@ def propose_stay_change(stay_id: int, data: StayUpdate, request: Request, db: Se
     proposed = data.model_dump(mode="json")
     if "title" not in data.model_fields_set:
         proposed.pop("title")
-    item = ChangeRequest(object_type="stay", object_id=stay.id, requested_by_id=user.id, affected_user_id=affected.id, status=PlanStatus.PROPOSED, before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "title": stay.title, "note": stay.note}, proposed_data=proposed)
+    item = ChangeRequest(object_type="stay", object_id=stay.id, requested_by_id=user.id, affected_user_id=affected.id, status=PlanStatus.DRAFT, before_data={"starts_at": stay.starts_at.isoformat(), "ends_at": stay.ends_at.isoformat(), "responsible_user_id": stay.responsible_user_id, "title": stay.title, "note": stay.note}, proposed_data=proposed)
     db.add(item); db.flush()
-    notify(db, affected.id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
-    audit(db, request, "STAY_CHANGE_PROPOSED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected.id, "scope": data.scope})
+    audit(db, request, "STAY_CHANGE_DRAFT_CREATED", user.id, ("change_request", str(item.id)), {"affected_user_id": affected.id, "scope": data.scope})
     db.commit(); db.refresh(item)
     return change_request_payload(db, item, user)
+
+
+@router.post("/change-requests/{change_id}/send", response_model=ChangeRequestOut, dependencies=[Depends(require_csrf)])
+def send_change_request(change_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
+    if not item or item.status != PlanStatus.DRAFT:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entwurf nicht gefunden")
+    if item.requested_by_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur die anfragende Person kann diesen Entwurf versenden")
+    publish_change_request(db, item, request, user)
+    db.commit()
+    db.refresh(item)
+    return change_request_payload(db, item, user)
+
+
+@router.put("/change-requests/{change_id}/draft", response_model=ChangeRequestOut, dependencies=[Depends(require_csrf)])
+def edit_change_request_draft(change_id: int, data: DraftChangeRequestUpdate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
+    if not item or item.status != PlanStatus.DRAFT:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entwurf nicht gefunden")
+    if item.requested_by_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur die anfragende Person kann diesen Entwurf bearbeiten")
+    update_draft_request(db, item, dict(data.proposed_data), user)
+    audit(db, request, "CHANGE_REQUEST_DRAFT_EDITED", user.id, ("change_request", str(item.id)), {})
+    db.commit()
+    db.refresh(item)
+    return change_request_payload(db, item, user)
+
+
+@router.delete("/change-requests/{change_id}/draft", status_code=204, dependencies=[Depends(require_csrf)])
+def delete_change_request_draft(change_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
+    if not item or item.status != PlanStatus.DRAFT:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entwurf nicht gefunden")
+    if item.requested_by_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur die anfragende Person kann diesen Entwurf löschen")
+    delete_request_stays(db, item)
+    audit(db, request, "CHANGE_REQUEST_DRAFT_DELETED", user.id, ("change_request", str(item.id)), {})
+    db.delete(item)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/change-requests/{change_id}/withdraw", status_code=204, dependencies=[Depends(require_csrf)])
@@ -2303,17 +2557,7 @@ def withdraw_change_request(change_id: int, request: Request, db: Session = Depe
         raise HTTPException(404, "Offene Anfrage nicht gefunden")
     if item.requested_by_id != user.id:
         raise HTTPException(403, "Nur die anfragende Person kann diese Anfrage zurückziehen")
-    rule_ids = set()
-    for stay in db.scalars(select(Stay).where(Stay.id.in_(item.proposed_data.get("stay_ids", [item.object_id])), Stay.status.in_([PlanStatus.DRAFT, PlanStatus.PROPOSED]))):
-        if stay.recurrence_rule_id:
-            rule_ids.add(stay.recurrence_rule_id)
-        db.delete(stay)
-    db.flush()
-    for rule_id in rule_ids:
-        if not db.scalar(select(Stay.id).where(or_(Stay.recurrence_rule_id == rule_id, Stay.recurrence_exception_rule_id == rule_id)).limit(1)):
-            rule = db.get(RecurrenceRule, rule_id)
-            if rule:
-                db.delete(rule)
+    delete_request_stays(db, item)
     item.status = PlanStatus.CANCELLED
     audit(db, request, "STAY_REQUEST_WITHDRAWN", user.id, ("change_request", str(item.id)), {})
     db.commit()

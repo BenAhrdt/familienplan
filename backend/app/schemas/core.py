@@ -277,6 +277,10 @@ class ChangeDecision(BaseModel):
         return self
 
 
+class DraftChangeRequestUpdate(BaseModel):
+    proposed_data: dict
+
+
 class NotificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
