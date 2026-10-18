@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import hmac
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from itsdangerous import BadSignature, URLSafeSerializer
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -18,6 +19,7 @@ from app.models.entities import ApiToken, ApplicationSetting, Birthday, Calendar
 
 router = APIRouter()
 settings = get_settings()
+calendar_feed_fallback_tokens = URLSafeSerializer(settings.secret_key, salt="familienplan-calendar-feed")
 ALL_SCOPES = ["read:children", "read:stays", "read:appointments", "read:birthdays", "read:holidays", "read:private"]
 CALENDAR_FEED_EVENT_TYPES = ["STAY", "GENERAL", "SCHOOL", "SCHOOL_HOLIDAY", "WASTE", "BIRTHDAY", "CLEANING", "PRIVATE", "OTHER"]
 
@@ -158,8 +160,16 @@ def calendar_feeds(db: Session = Depends(get_db), user: User = Depends(current_u
     rows = db.scalars(select(CalendarFeed).where(CalendarFeed.user_id == user.id).order_by(CalendarFeed.id.desc()))
     return {"feeds": [{"id": row.id, "name": row.name, "event_types": row.event_types or CALENDAR_FEED_EVENT_TYPES,
                         "created_at": row.created_at, "last_used_at": row.last_used_at,
-                        "revoked_at": row.revoked_at} for row in rows],
+                        "revoked_at": row.revoked_at, "url": calendar_feed_url(row)} for row in rows],
             "available_event_types": available_calendar_feed_event_types(user)}
+
+
+def calendar_feed_token(row: CalendarFeed) -> str:
+    return row.token_value or calendar_feed_fallback_tokens.dumps({"feed_id": row.id})
+
+
+def calendar_feed_url(row: CalendarFeed) -> str:
+    return f"{settings.app_origin.rstrip('/')}/api/v1/calendar-feeds/{calendar_feed_token(row)}.ics"
 
 
 def available_calendar_feed_event_types(user: User) -> list[str]:
@@ -185,11 +195,11 @@ def create_calendar_feed(data: CalendarFeedCreate, db: Session = Depends(get_db)
     if invalid or not selected.issubset(available):
         raise HTTPException(422, "Der Kalenderfeed darf nur sichtbare Kategorien enthalten")
     secret = new_token()
-    row = CalendarFeed(user_id=user.id, name=name, event_types=sorted(selected), token_hash=token_hash(secret))
+    row = CalendarFeed(user_id=user.id, name=name, event_types=sorted(selected), token_hash=token_hash(secret), token_value=secret)
     db.add(row)
     db.commit()
     db.refresh(row)
-    url = f"{settings.app_origin.rstrip('/')}/api/v1/calendar-feeds/{secret}.ics"
+    url = calendar_feed_url(row)
     return {"id": row.id, "name": row.name, "event_types": row.event_types, "created_at": row.created_at, "last_used_at": row.last_used_at, "url": url}
 
 
@@ -277,6 +287,14 @@ def filter_calendar_feed_events(events: list[dict], event_types: list[str] | Non
 @router.get("/calendar-feeds/{token}.ics", include_in_schema=False)
 def calendar_feed(token: str, db: Session = Depends(get_db)):
     row = db.scalar(select(CalendarFeed).where(CalendarFeed.token_hash == token_hash(token), CalendarFeed.revoked_at.is_(None)))
+    if not row:
+        try:
+            payload = calendar_feed_fallback_tokens.loads(token)
+            feed_id = payload.get("feed_id") if isinstance(payload, dict) else None
+        except BadSignature:
+            feed_id = None
+        if isinstance(feed_id, int):
+            row = db.scalar(select(CalendarFeed).where(CalendarFeed.id == feed_id, CalendarFeed.revoked_at.is_(None)))
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kalenderfeed nicht gefunden")
     user = db.get(User, row.user_id)

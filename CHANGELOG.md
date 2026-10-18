@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.116 – 18. Oktober 2026
+
+- Kalenderfeeds können beliebig oft angelegt werden. Jede aktive Adresse bleibt mit Bezeichnung und URL sichtbar und kann einzeln kopiert werden.
+- „Alle Links kopieren“ kopiert alle aktiven Feed-Adressen einschließlich ihrer Bezeichnungen in einem Schritt.
+- Feed-Adressen bleiben auch für bestehende Kalenderfeeds abrufbar; eine Datenbankmigration speichert neue Feed-Schlüssel dauerhaft und ergänzt kompatible Adressen für bestehende Feeds.
+- Die iPhone-Hilfe erklärt, dass für das Kalenderabo kein Benutzername und Passwort benötigt werden.
+
+Validierung: 83 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.115 – 18. Oktober 2026
 
 - Alle Bestätigungsdialoge verwenden eigene Fenster ohne native System-Popups; ungespeicherte Stundenplanänderungen werden ebenfalls über einen eigenen Dialog verworfen.

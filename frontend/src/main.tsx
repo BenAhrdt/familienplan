@@ -6227,11 +6227,11 @@ type CalendarFeedInfo = {
   id: number;
   name: string;
   event_types: string[];
+  url: string;
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
 };
-type NewCalendarFeed = CalendarFeedInfo & { url: string };
 const calendarFeedEventLabels: Record<string, string> = {
   STAY: "Betreuung",
   GENERAL: "Allgemein",
@@ -6249,7 +6249,6 @@ function CalendarFeedSettings() {
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [name, setName] = useState("Mein FamilienPlan-Kalender");
-  const [newFeed, setNewFeed] = useState<NewCalendarFeed | null>(null);
   const [revoking, setRevoking] = useState<CalendarFeedInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -6260,7 +6259,7 @@ function CalendarFeedSettings() {
       const result = await api<{feeds: CalendarFeedInfo[]; available_event_types: string[]}>("/calendar-feeds");
       setFeeds(result.feeds);
       setAvailableTypes(result.available_event_types);
-      setSelectedTypes((current) => current.length ? current.filter((type) => result.available_event_types.includes(type)) : result.available_event_types);
+      setSelectedTypes((current) => current.filter((type) => result.available_event_types.includes(type)));
     } catch (failure) {
       setError((failure as Error).message);
     }
@@ -6269,28 +6268,36 @@ function CalendarFeedSettings() {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true); setError(""); setMessage(""); setNewFeed(null);
+    setBusy(true); setError(""); setMessage("");
     try {
       if (!selectedTypes.length) throw new Error("Bitte wähle mindestens eine Kategorie aus.");
-      const created = await api<NewCalendarFeed>("/calendar-feeds", { method:"POST", body:JSON.stringify({ name, event_types:selectedTypes }) });
-      setNewFeed(created);
+      await api<CalendarFeedInfo>("/calendar-feeds", { method:"POST", body:JSON.stringify({ name, event_types:selectedTypes }) });
       setName("Mein FamilienPlan-Kalender");
-      setSelectedTypes(availableTypes);
+      setSelectedTypes([]);
+      setMessage("Kalenderadresse erstellt. Sie ist unten dauerhaft sichtbar.");
       await reload();
     } catch (failure) {
       setError((failure as Error).message);
     } finally { setBusy(false); }
   }
 
-  async function copyUrl() {
-    if (!newFeed) return;
+  async function copyText(value: string, successMessage: string) {
     try {
       if (!navigator.clipboard) throw new Error("Das Kopieren wird von diesem Browser nicht unterstützt.");
-      await navigator.clipboard.writeText(newFeed.url);
-      setMessage("Kalenderadresse kopiert.");
+      await navigator.clipboard.writeText(value);
+      setError("");
+      setMessage(successMessage);
     } catch (failure) {
       setError((failure as Error).message);
     }
+  }
+
+  function copyFeedUrl(feed: CalendarFeedInfo) {
+    void copyText(feed.url, `Link für „${feed.name}“ kopiert.`);
+  }
+
+  function copyAllFeedUrls() {
+    void copyText(activeFeeds.map((feed) => `${feed.name}: ${feed.url}`).join("\n"), "Alle Kalenderlinks kopiert.");
   }
 
   async function revoke(feed: CalendarFeedInfo) {
@@ -6298,7 +6305,6 @@ function CalendarFeedSettings() {
     try {
       await api(`/calendar-feeds/${feed.id}`, { method:"DELETE" });
       setRevoking(null);
-      if (newFeed?.id === feed.id) setNewFeed(null);
       await reload();
     } catch (failure) {
       setError((failure as Error).message);
@@ -6309,24 +6315,26 @@ function CalendarFeedSettings() {
   return <section className="password-settings calendar-feed-settings">
     <h2>Kalender auf iPhone und Android</h2>
     <p className="muted">Erzeuge eine schreibgeschützte Kalenderadresse für die Kalender-App deines Geräts. Dafür wird kein Google-Konto benötigt.</p>
-    <p className="hint">iPhone: Einstellungen → Kalender → Account hinzufügen → Andere → Kalenderabo hinzufügen. Android: in einer Kalender-App mit Abo-Funktion als Kalender-URL hinzufügen.</p>
+    <p className="hint">iPhone: Einstellungen → Kalender → Account hinzufügen → Andere → Kalenderabo hinzufügen. Android: in einer Kalender-App mit Abo-Funktion als Kalender-URL hinzufügen. Benutzername und Passwort werden nicht benötigt; falls iPhone die Felder zeigt, lass sie leer.</p>
     {error && <p className="error">{error}</p>}
     {message && <p className="success">{message}</p>}
+    {activeFeeds.length > 0 && <div className="calendar-feed-toolbar"><button type="button" className="secondary" onClick={copyAllFeedUrls}>Alle Links kopieren</button></div>}
     {activeFeeds.map((feed) => <div className="calendar-feed-row" key={feed.id}>
-      <span><strong>{feed.name}</strong><small>{feed.event_types.map((type) => calendarFeedEventLabels[type] || type).join(" · ")} · Erstellt: {new Date(feed.created_at).toLocaleString("de-DE")}{feed.last_used_at ? ` · Zuletzt abgerufen: ${new Date(feed.last_used_at).toLocaleString("de-DE")}` : " · Noch nicht abgerufen"}</small></span>
-      <button type="button" className="danger secondary" disabled={busy} onClick={() => setRevoking(feed)}>Widerrufen</button>
+      <span><strong>{feed.name}</strong><small>{feed.event_types.map((type) => calendarFeedEventLabels[type] || type).join(" · ")} · Erstellt: {new Date(feed.created_at).toLocaleString("de-DE")}{feed.last_used_at ? ` · Zuletzt abgerufen: ${new Date(feed.last_used_at).toLocaleString("de-DE")}` : " · Noch nicht abgerufen"}</small><code className="calendar-feed-url">{feed.url}</code></span>
+      <div className="calendar-feed-actions"><button type="button" className="secondary" onClick={() => copyFeedUrl(feed)}>Link kopieren</button><button type="button" className="danger secondary" disabled={busy} onClick={() => setRevoking(feed)}>Widerrufen</button></div>
     </div>)}
     {!activeFeeds.length && <p className="hint">Noch keine Kalenderadresse eingerichtet.</p>}
     <form className="calendar-feed-form" onSubmit={create}>
       <label>Name der Kalenderadresse<input value={name} maxLength={160} onChange={(event) => setName(event.target.value)} /></label>
-      <fieldset className="calendar-feed-types"><legend>Einträge in diesem Feed</legend>{availableTypes.map((type) => <label className="checkline" key={type}><input type="checkbox" checked={selectedTypes.includes(type)} onChange={(event) => setSelectedTypes((current) => event.target.checked ? [...current, type] : current.filter((item) => item !== type))}/><span>{calendarFeedEventLabels[type] || type}</span></label>)}</fieldset>
+      <MultiSelectPicker
+        title="Einträge in diesem Feed"
+        items={availableTypes.map((type) => ({id:type, label:calendarFeedEventLabels[type] || type}))}
+        values={selectedTypes}
+        onChange={(values) => setSelectedTypes(values.map(String))}
+        hint="Wähle die Rubriken aus, die in diesem Kalender erscheinen sollen."
+      />
       <button type="submit" disabled={busy}>{busy ? "Wird erstellt …" : "Kalenderadresse erstellen"}</button>
     </form>
-    {newFeed && <div className="secret-once calendar-feed-secret">
-      <div><strong>Kalenderadresse einmalig sichern</strong><p>Diese Adresse enthält den privaten Zugriffsschlüssel und wird später nicht erneut angezeigt. Füge sie in der Kalender-App als abonnierter Kalender ein.</p></div>
-      <code>{newFeed.url}</code>
-      <div className="buttonrow"><button type="button" onClick={copyUrl}>Adresse kopieren</button><button type="button" className="secondary" onClick={() => setNewFeed(null)}>Ausblenden</button></div>
-    </div>}
     {revoking && <ConfirmDialog
       title="Kalenderadresse widerrufen?"
       message={`„${revoking.name}“ funktioniert danach auf keinem Gerät mehr. Bereits angezeigte Termine bleiben in der Kalender-App, bis der abonnierte Kalender entfernt oder aktualisiert wird.`}
