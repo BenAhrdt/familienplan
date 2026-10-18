@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.113 – 18. Oktober 2026
+
+- Beim Wechsel von einem Entwurf zu einer normalen Betreuungszeit wird der Entwurfsmodus im Kalender zuverlässig zurückgesetzt.
+- Parallele Nachladevorgänge können keine neuere Entwurfsliste mehr durch ältere Daten ersetzen.
+
+Validierung: 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.112 – 18. Oktober 2026
 
 - Änderungsanfragen für Betreuungszeiten und gemeinsame Planungen werden zunächst als private Entwürfe gespeichert.

@@ -1611,6 +1611,7 @@ function CalendarScreen({
       return new Date(initial.getFullYear(), initial.getMonth(), 1);
     });
   const openedTargetRef = useRef("");
+  const requestLoadVersion = useRef(0);
   const now = new Date(),
     canWriteCalendar = getSessionUser()?.role !== "VIEWER" || customEventTypes.some((type) => type.can_create),
     availableEventTypes = getSessionUser()?.role === "ADMIN"
@@ -1681,10 +1682,15 @@ function CalendarScreen({
     }
   }, [open, eventType, editingEvent]);
   function load() {
+    const currentRequestLoadVersion = ++requestLoadVersion.current;
     api<CalendarEvent[]>(
       `/calendar?from_at=${from.toISOString()}&to_at=${to.toISOString()}`,
     ).then(setEvents);
-    api<ChangeRequest[]>("/change-requests").then(setRequests);
+    api<ChangeRequest[]>("/change-requests").then((nextRequests) => {
+      if (currentRequestLoadVersion === requestLoadVersion.current) {
+        setRequests(nextRequests);
+      }
+    });
     api<Stay[]>("/stay-series").then(setSeries);
     api<CalendarEvent[]>("/calendar-series").then(setEventSeries);
     api<Birthday[]>("/birthdays").then(setCustomBirthdays);
@@ -1882,6 +1888,7 @@ function CalendarScreen({
     });
     setSelectedDay(startsAt);
     setEditingStay(null);
+    setEditingDraftRequest(null);
     setRepeatKind("once");
     setOpen("stay");
     holidayDraftConsumed?.();
@@ -2127,6 +2134,7 @@ function CalendarScreen({
             ? "weekly2"
             : "weeklyCustom",
     );
+    setEditingDraftRequest(null);
     setEditingEvent(event);
     setEventType(event.event_type || "GENERAL");
     setSelectedCustomTypeId(customEventTypes.find((type) => type.name === event.custom_type_label)?.id || "");
@@ -2206,6 +2214,7 @@ function CalendarScreen({
     setEditingStaySource(source);
     setStayRangeMode("full");
     setEditingStay(source);
+    setEditingDraftRequest(null);
     setCounterRequest(null);
     setEditScope("occurrence");
     setError("");
@@ -2310,6 +2319,7 @@ function CalendarScreen({
       title: request.proposed_data.title === undefined ? stay.title : request.proposed_data.title,
       note: request.proposed_data.note ?? null,
     });
+    setEditingDraftRequest(null);
     setCounterRequest(request);
     setError("");
     setOpen("stay");
@@ -2327,6 +2337,7 @@ function CalendarScreen({
           : "weeklyCustom",
     );
     setEditingStay(stay);
+    setEditingDraftRequest(null);
     setSelectedDay(new Date(stay.starts_at));
     setCounterRequest(null);
     setEditScope("series");
@@ -2971,6 +2982,7 @@ function CalendarScreen({
                           });
                           setSelectedDay(day);
                           setEditingStay(null);
+                          setEditingDraftRequest(null);
                           setRepeatKind("once");
                           setOpen("stay");
                         }}
@@ -3119,6 +3131,7 @@ function CalendarScreen({
                       if (type === "STAY") {
                         setEditingStay(null);
                         setEditingStaySource(null);
+                        setEditingDraftRequest(null);
                         setStayRangeMode("full");
                         setCounterRequest(null);
                         setCreateDraft(null);
@@ -3619,6 +3632,7 @@ function CalendarScreen({
                     setSelectedDay(startsAt);
                     setDayCreateChoice(null);
                     setEditingStay(null);
+                    setEditingDraftRequest(null);
                     setCounterRequest(null);
                     setRepeatKind("once");
                     setError("");
@@ -3738,6 +3752,7 @@ function CalendarScreen({
                     setAdminCreateChoice(null);
                     setCreateConflicts([]);
                     setEditingStay(stay);
+                    setEditingDraftRequest(null);
                     setSelectedDay(new Date(stay.starts_at));
                     setEditScope("occurrence");
                     setError("");
@@ -3765,6 +3780,7 @@ function CalendarScreen({
                 onClick={() => {
                   setCreateDraft(adminCreateChoice);
                   setAdminCreateChoice(null);
+                  setEditingDraftRequest(null);
                   setError("");
                   setOpen("stay");
                 }}
