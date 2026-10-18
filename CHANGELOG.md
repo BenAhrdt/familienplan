@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.117 – 18. Oktober 2026
+
+- Automatisch erzeugte Schulferien werden jetzt in ICS-Feeds mit der Rubrik „Ferien / Feiertage“ exportiert; mehrtägige Ferien behalten dabei ihre lokalen Kalenderdaten.
+- ICS-Feeds exportieren keine automatisch erzeugte Standardbetreuung aus „Wohnt bei“ mehr, sondern nur ausdrücklich eingetragene Betreuungszeiten.
+
+Validierung: 85 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.116 – 18. Oktober 2026
 
 - Kalenderfeeds können beliebig oft angelegt werden. Jede aktive Adresse bleibt mit Bezeichnung und URL sichtbar und kann einzeln kopiert werden.

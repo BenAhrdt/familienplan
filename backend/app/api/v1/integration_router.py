@@ -1,9 +1,12 @@
 import hashlib
-from datetime import UTC, datetime, timedelta
+import logging
+from datetime import UTC, date, datetime, time, timedelta
 from types import SimpleNamespace
 import hmac
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import httpx
 from itsdangerous import BadSignature, URLSafeSerializer
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, cast, or_, select
@@ -19,6 +22,7 @@ from app.models.entities import ApiToken, ApplicationSetting, Birthday, Calendar
 
 router = APIRouter()
 settings = get_settings()
+logger = logging.getLogger("familienplan.calendar-feed")
 calendar_feed_fallback_tokens = URLSafeSerializer(settings.secret_key, salt="familienplan-calendar-feed")
 ALL_SCOPES = ["read:children", "read:stays", "read:appointments", "read:birthdays", "read:holidays", "read:private"]
 CALENDAR_FEED_EVENT_TYPES = ["STAY", "GENERAL", "SCHOOL", "SCHOOL_HOLIDAY", "WASTE", "BIRTHDAY", "CLEANING", "PRIVATE", "OTHER"]
@@ -244,9 +248,10 @@ def _ics_datetime(value: datetime) -> str:
 
 
 def _ics_date(value: datetime) -> str:
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return value.astimezone(UTC).strftime("%Y%m%d")
+    # VALUE=DATE represents a calendar date, not an instant in UTC. Converting
+    # a local midnight in Europe/Berlin to UTC would shift it to the previous
+    # day in the exported calendar.
+    return value.date().strftime("%Y%m%d")
 
 
 def calendar_feed_ics(events: list[dict], feed_name: str) -> str:
@@ -284,6 +289,93 @@ def filter_calendar_feed_events(events: list[dict], event_types: list[str] | Non
     return [event for event in events if event.get("event_type") in selected]
 
 
+def _fetch_school_holiday_rows(state: str, year: int) -> list[dict]:
+    response = httpx.get(
+        "https://openholidaysapi.org/SchoolHolidays",
+        params={
+            "countryIsoCode": "DE",
+            "subdivisionCode": f"DE-{state}",
+            "languageIsoCode": "DE",
+            "validFrom": f"{year}-01-01",
+            "validTo": f"{year}-12-31",
+        },
+        timeout=10,
+        headers={"User-Agent": "FamilienPlan/1.0", "Accept": "application/json"},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, list) else []
+
+
+def school_holiday_events(from_at: datetime, to_at: datetime, child_ids: set[int], db: Session) -> list[dict]:
+    """Return the automatically generated school holidays for the feed's visible children."""
+    if not child_ids:
+        return []
+
+    states = {
+        (child.school_state_code or "").strip().upper()
+        for child in db.scalars(select(Child).where(Child.id.in_(child_ids), Child.is_active.is_(True)))
+        if (child.school_state_code or "").strip()
+    }
+    if not states:
+        return []
+
+    timezone = ZoneInfo(settings.app_timezone)
+    local_from = from_at.astimezone(timezone) if from_at.tzinfo else from_at.replace(tzinfo=timezone)
+    local_to = to_at.astimezone(timezone) if to_at.tzinfo else to_at.replace(tzinfo=timezone)
+    years = range(local_from.year, local_to.year + 1)
+    result: list[dict] = []
+
+    for state in sorted(states):
+        for year in years:
+            try:
+                rows = _fetch_school_holiday_rows(state, year)
+            except (httpx.HTTPError, ValueError, TypeError):
+                logger.warning("Schulferien konnten für %s/%s nicht geladen werden", state, year, exc_info=True)
+                continue
+            for row in rows:
+                try:
+                    starts_on = date.fromisoformat(str(row["startDate"]))
+                    ends_on = date.fromisoformat(str(row["endDate"]))
+                    names = row.get("name") or []
+                    title = next((item["text"] for item in names if item.get("language") == "DE"), None)
+                    title = title or (names[0].get("text") if names else None) or "Schulferien"
+                except (KeyError, TypeError, ValueError):
+                    continue
+
+                starts_at = datetime.combine(starts_on, time.min, tzinfo=timezone)
+                ends_at = datetime.combine(ends_on + timedelta(days=1), time.min, tzinfo=timezone)
+                if starts_at >= local_to or ends_at <= local_from:
+                    continue
+                result.append({
+                    "source": f"school-holiday:{state}",
+                    "event_type": "SCHOOL_HOLIDAY",
+                    "id": f"{state}:{starts_on.isoformat()}:{ends_on.isoformat()}:{title}",
+                    "child_id": None,
+                    "title": title,
+                    "description": None,
+                    "starts_at": starts_at,
+                    "ends_at": ends_at,
+                    "all_day": True,
+                })
+    return result
+
+
+def calendar_feed_events(row: CalendarFeed, user: User, start: datetime, end: datetime, db: Session) -> list[dict]:
+    event_types = row.event_types or CALENDAR_FEED_EVENT_TYPES
+    context = (SimpleNamespace(scopes=ALL_SCOPES), user)
+    # "Standardbetreuung" is a calculated fallback from the child's
+    # Wohnort/Betreuung setting, not an explicit calendar entry. Keep it in
+    # the app and REST integration, but do not publish it to subscribed feeds.
+    events = [
+        event for event in integration_events(start, end, context=context, db=db)
+        if event.get("source") != "default"
+    ]
+    if "SCHOOL_HOLIDAY" in event_types:
+        events.extend(school_holiday_events(start, end, allowed_children(context[0], user, db), db))
+    return filter_calendar_feed_events(events, event_types)
+
+
 @router.get("/calendar-feeds/{token}.ics", include_in_schema=False)
 def calendar_feed(token: str, db: Session = Depends(get_db)):
     row = db.scalar(select(CalendarFeed).where(CalendarFeed.token_hash == token_hash(token), CalendarFeed.revoked_at.is_(None)))
@@ -304,8 +396,7 @@ def calendar_feed(token: str, db: Session = Depends(get_db)):
     db.commit()
     start = utcnow() - timedelta(days=30)
     end = start + timedelta(days=366)
-    events = integration_events(start, end, context=(SimpleNamespace(scopes=ALL_SCOPES), user), db=db)
-    events = filter_calendar_feed_events(events, row.event_types)
+    events = calendar_feed_events(row, user, start, end, db)
     return Response(
         content=calendar_feed_ics(events, row.name),
         media_type="text/calendar",
