@@ -6256,6 +6256,7 @@ function CalendarFeedSettings() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedStayVisibility, setSelectedStayVisibility] = useState<string[]>(["OWN"]);
   const [name, setName] = useState("Mein FamilienPlan-Kalender");
+  const [editingFeed, setEditingFeed] = useState<CalendarFeedInfo | null>(null);
   const [revoking, setRevoking] = useState<CalendarFeedInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -6273,16 +6274,34 @@ function CalendarFeedSettings() {
   }
   useEffect(() => { void reload(); }, []);
 
-  async function create(event: FormEvent<HTMLFormElement>) {
+  function startEditing(feed: CalendarFeedInfo) {
+    setEditingFeed(feed);
+    setName(feed.name);
+    setSelectedTypes(feed.event_types);
+    setSelectedStayVisibility(feed.stay_visibility || ["OWN"]);
+    setError("");
+    setMessage("");
+  }
+
+  function resetFeedForm() {
+    setEditingFeed(null);
+    setName("Mein FamilienPlan-Kalender");
+    setSelectedTypes([]);
+    setSelectedStayVisibility(["OWN"]);
+  }
+
+  async function saveFeed(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true); setError(""); setMessage("");
     try {
       if (!selectedTypes.length) throw new Error("Bitte wähle mindestens eine Kategorie aus.");
-      await api<CalendarFeedInfo>("/calendar-feeds", { method:"POST", body:JSON.stringify({ name, event_types:selectedTypes, stay_visibility:selectedStayVisibility }) });
-      setName("Mein FamilienPlan-Kalender");
-      setSelectedTypes([]);
-      setSelectedStayVisibility(["OWN"]);
-      setMessage("Kalenderadresse erstellt. Sie ist unten dauerhaft sichtbar.");
+      const currentFeed = editingFeed;
+      await api<CalendarFeedInfo>(currentFeed ? `/calendar-feeds/${currentFeed.id}` : "/calendar-feeds", {
+        method: currentFeed ? "PUT" : "POST",
+        body:JSON.stringify({ name, event_types:selectedTypes, stay_visibility:selectedStayVisibility }),
+      });
+      resetFeedForm();
+      setMessage(currentFeed ? "Kalenderadresse aktualisiert. Der bestehende Link bleibt gleich." : "Kalenderadresse erstellt. Sie ist unten dauerhaft sichtbar.");
       await reload();
     } catch (failure) {
       setError((failure as Error).message);
@@ -6329,10 +6348,11 @@ function CalendarFeedSettings() {
     {activeFeeds.length > 0 && <div className="calendar-feed-toolbar"><button type="button" className="secondary" onClick={copyAllFeedUrls}>Alle Links kopieren</button></div>}
     {activeFeeds.map((feed) => <div className="calendar-feed-row" key={feed.id}>
       <span><strong>{feed.name}</strong><small>{feed.event_types.map((type) => type === "STAY" ? `${calendarFeedEventLabels[type]} (${(feed.stay_visibility || ["OWN"]).map((visibility) => calendarFeedStayLabels[visibility] || visibility).join(", ")})` : calendarFeedEventLabels[type] || type).join(" · ")} · Erstellt: {new Date(feed.created_at).toLocaleString("de-DE")}{feed.last_used_at ? ` · Zuletzt abgerufen: ${new Date(feed.last_used_at).toLocaleString("de-DE")}` : " · Noch nicht abgerufen"}</small><code className="calendar-feed-url">{feed.url}</code></span>
-      <div className="calendar-feed-actions"><button type="button" className="secondary" onClick={() => copyFeedUrl(feed)}>Link kopieren</button><button type="button" className="danger secondary" disabled={busy} onClick={() => setRevoking(feed)}>Widerrufen</button></div>
+      <div className="calendar-feed-actions"><button type="button" className="secondary" onClick={() => startEditing(feed)}>Bearbeiten</button><button type="button" className="secondary" onClick={() => copyFeedUrl(feed)}>Link kopieren</button><button type="button" className="danger secondary" disabled={busy} onClick={() => setRevoking(feed)}>Widerrufen</button></div>
     </div>)}
     {!activeFeeds.length && <p className="hint">Noch keine Kalenderadresse eingerichtet.</p>}
-    <form className="calendar-feed-form" onSubmit={create}>
+    <form className="calendar-feed-form" onSubmit={saveFeed}>
+      <h3>{editingFeed ? "Kalenderadresse bearbeiten" : "Neue Kalenderadresse"}</h3>
       <label>Name der Kalenderadresse<input value={name} maxLength={160} onChange={(event) => setName(event.target.value)} /></label>
       <MultiSelectPicker
         title="Einträge in diesem Feed"
@@ -6348,7 +6368,10 @@ function CalendarFeedSettings() {
         onChange={(values) => setSelectedStayVisibility(values.map(String))}
         hint="Standardmäßig wird nur Betreuung bei der Person dieses Feeds aufgenommen."
       />}
-      <button type="submit" disabled={busy}>{busy ? "Wird erstellt …" : "Kalenderadresse erstellen"}</button>
+      <div className="calendar-feed-form-actions">
+        <button type="submit" disabled={busy}>{busy ? (editingFeed ? "Wird gespeichert …" : "Wird erstellt …") : (editingFeed ? "Änderungen speichern" : "Kalenderadresse erstellen")}</button>
+        {editingFeed && <button type="button" className="secondary" onClick={resetFeedForm} disabled={busy}>Abbrechen</button>}
+      </div>
     </form>
     {revoking && <ConfirmDialog
       title="Kalenderadresse widerrufen?"

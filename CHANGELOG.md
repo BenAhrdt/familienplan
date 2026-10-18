@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.119 – 18. Oktober 2026
+
+- Bestehende ICS-Feeds können nachträglich bearbeitet werden.
+- Betreuungsauswahl, Kategorien und Bezeichnung lassen sich ändern, ohne dass sich die abonnierte Kalender-URL ändert.
+
+Validierung: 87 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.118 – 18. Oktober 2026
 
 - ICS-Feeds enthalten Betreuung standardmäßig nur dann, wenn das Kind bei der Person des Feed-Besitzers ist.

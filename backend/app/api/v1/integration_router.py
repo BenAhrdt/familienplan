@@ -54,6 +54,20 @@ class CalendarFeedCreate(BaseModel):
         return list(dict.fromkeys(value))
 
 
+class CalendarFeedUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    event_types: list[str] = Field(default_factory=list)
+    stay_visibility: list[str] = Field(default_factory=lambda: ["OWN"])
+
+    @field_validator("stay_visibility")
+    @classmethod
+    def valid_stay_visibility(cls, value: list[str]) -> list[str]:
+        invalid = set(value) - set(CALENDAR_FEED_STAY_VISIBILITY)
+        if invalid:
+            raise ValueError("Unbekannte Betreuungsauswahl")
+        return list(dict.fromkeys(value))
+
+
 class MailConfig(BaseModel):
     enabled: bool = False
     host: str | None = None
@@ -221,6 +235,31 @@ def create_calendar_feed(data: CalendarFeedCreate, db: Session = Depends(get_db)
     return {"id": row.id, "name": row.name, "event_types": row.event_types,
             "stay_visibility": row.stay_visibility if row.stay_visibility is not None else ["OWN"], "created_at": row.created_at,
             "last_used_at": row.last_used_at, "url": url}
+
+
+@router.put("/calendar-feeds/{feed_id}", dependencies=[Depends(require_csrf)])
+def update_calendar_feed(feed_id: int, data: CalendarFeedUpdate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    row = db.scalar(select(CalendarFeed).where(CalendarFeed.id == feed_id, CalendarFeed.user_id == user.id))
+    if not row or row.revoked_at is not None:
+        raise HTTPException(404, "Kalenderfeed nicht gefunden")
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(422, "Bitte gib einen Namen für den Kalenderfeed ein")
+    available = set(available_calendar_feed_event_types(user))
+    selected = set(data.event_types) or available
+    invalid = selected - set(CALENDAR_FEED_EVENT_TYPES)
+    if invalid or not selected.issubset(available):
+        raise HTTPException(422, "Der Kalenderfeed darf nur sichtbare Kategorien enthalten")
+    if set(data.stay_visibility) - set(CALENDAR_FEED_STAY_VISIBILITY):
+        raise HTTPException(422, "Die Betreuungsauswahl ist ungültig")
+    row.name = name
+    row.event_types = sorted(selected)
+    row.stay_visibility = data.stay_visibility
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "name": row.name, "event_types": row.event_types,
+            "stay_visibility": row.stay_visibility if row.stay_visibility is not None else ["OWN"], "created_at": row.created_at,
+            "last_used_at": row.last_used_at, "url": calendar_feed_url(row)}
 
 
 @router.delete("/calendar-feeds/{feed_id}", status_code=204, dependencies=[Depends(require_csrf)])

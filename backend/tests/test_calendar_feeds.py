@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.api.v1 import integration_router
-from app.api.v1.integration_router import CalendarFeedCreate, calendar_feed_events, calendar_feed_ics, create_calendar_feed, filter_calendar_feed_events
+from app.api.v1.integration_router import CalendarFeedCreate, CalendarFeedUpdate, calendar_feed_events, calendar_feed_ics, create_calendar_feed, filter_calendar_feed_events, update_calendar_feed
 from app.core.database import Base
 from app.models.entities import CalendarFeed, Child, Role, User
 
@@ -25,6 +25,28 @@ def test_calendar_feed_is_named_and_secret_is_returned_only_on_creation():
         assert result["url"].endswith(".ics")
         assert "/calendar-feeds/" in result["url"]
         assert db.scalar(CalendarFeed.__table__.select().where(CalendarFeed.id == result["id"])) is not None
+
+
+def test_calendar_feed_can_update_visibility_without_changing_url():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as db:
+        user = User(username="person", display_name="Person", email="person@example.test", password_hash="x")
+        db.add(user)
+        db.commit()
+
+        created = create_calendar_feed(CalendarFeedCreate(name="iPhone"), db=db, user=user)
+        updated = update_calendar_feed(
+            created["id"],
+            CalendarFeedUpdate(name="iPhone zuhause", event_types=["STAY"], stay_visibility=["OWN", "STANDARD"]),
+            db=db,
+            user=user,
+        )
+
+        assert updated["name"] == "iPhone zuhause"
+        assert updated["event_types"] == ["STAY"]
+        assert updated["stay_visibility"] == ["OWN", "STANDARD"]
+        assert updated["url"] == created["url"]
 
 
 def test_calendar_feed_ics_escapes_values_and_keeps_all_day_events():

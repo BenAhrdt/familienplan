@@ -194,6 +194,8 @@ html.api-pending::after {
 .calendar-feed-row .secondary { margin-top:0; }
 .calendar-feed-form { display:grid; grid-template-columns:minmax(12rem,1fr) minmax(18rem,1.5fr) auto; align-items:end; gap:.8rem; margin-top:1rem; }
 .password-settings .calendar-feed-form { display:grid; }
+.calendar-feed-form > h3 { grid-column:1 / -1; margin:0; }
+.calendar-feed-form-actions { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; grid-column:1 / -1; }
 .calendar-feed-form label { flex:1; }
 .calendar-feed-form button { flex:0 0 auto; }
 .calendar-feed-form .multi-select-field { margin-top:0; }
