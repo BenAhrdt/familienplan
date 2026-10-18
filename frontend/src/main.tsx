@@ -1,5 +1,6 @@
 import { EventDateFields } from "./event-dates";
 import { TimetableOverview, TimetableManagement } from "./timetable";
+import { ConfirmDialog } from "./confirm-dialog";
 import { birthdayOccursOnDay } from "./birthdays";
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -1403,6 +1404,7 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
+  const [attachmentDeleteChoice, setAttachmentDeleteChoice] = useState<CalendarEventAttachment | null>(null);
   const loadAttachments = () => api<CalendarEventAttachment[]>(`/calendar/${event.id}/attachments`).then((result) => {
     setItems(result);
     onCountChange?.(result.length);
@@ -1447,9 +1449,9 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
   }
 
   async function removeAttachment(item: CalendarEventAttachment) {
-    if (!window.confirm(`„${item.original_name}“ wirklich löschen?`)) return;
     try {
       await api(`/calendar/${event.id}/attachments/${item.id}`, { method:"DELETE" });
+      setAttachmentDeleteChoice(null);
       await loadAttachments();
     } catch (failure) { setAttachmentError((failure as Error).message); }
   }
@@ -1485,7 +1487,7 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
       <button type="button" className="attachment-open" onClick={() => setViewerItem(item)} title="Dokument öffnen">
         <Download size={17}/><span><strong>{item.original_name}</strong><small>{(item.size / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits:1 })} MB</small></span>
       </button>
-      {editable && <button type="button" className="attachment-delete" onClick={() => removeAttachment(item)} aria-label={`${item.original_name} löschen`}><Trash2 size={17}/></button>}
+      {editable && <button type="button" className="attachment-delete" onClick={() => setAttachmentDeleteChoice(item)} aria-label={`${item.original_name} löschen`}><Trash2 size={17}/></button>}
     </li>)}</ul> : <p className="attachment-empty">Noch keine Dokumente angehängt.</p>}
     {editable && <label className={`attachment-dropzone${dragging ? " dragging" : ""}${busy ? " busy" : ""}`}
       onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()}
@@ -1496,6 +1498,14 @@ function EventAttachments({ event, editable, onCountChange }: { event: CalendarE
       <input type="file" multiple disabled={busy} accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.odt,.txt" onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ""; }}/>
     </label>}
     {attachmentError && <p className="error">{attachmentError}</p>}
+    {attachmentDeleteChoice && <ConfirmDialog
+      title="Dokument löschen?"
+      message={`„${attachmentDeleteChoice.original_name}“ wird dauerhaft gelöscht.`}
+      confirmLabel="Dokument löschen"
+      danger
+      onCancel={() => setAttachmentDeleteChoice(null)}
+      onConfirm={() => removeAttachment(attachmentDeleteChoice)}
+    />}
     {viewerItem && createPortal(<div className="attachment-viewer" role="dialog" aria-modal="true" aria-label={viewerItem.original_name}>
       <header>
         <button type="button" onClick={closeViewer} aria-label="Zurück zum Termin"><ChevronLeft size={22}/> Zurück</button>
@@ -1556,6 +1566,7 @@ function CalendarScreen({
     [counterRequest, setCounterRequest] = useState<ChangeRequest | null>(null),
     [editingDraftRequest, setEditingDraftRequest] = useState<ChangeRequest | null>(null),
     [draftDeleteEditor, setDraftDeleteEditor] = useState<ChangeRequest | null>(null),
+    [draftDeleteChoice, setDraftDeleteChoice] = useState<ChangeRequest | null>(null),
     [rejectingRequest, setRejectingRequest] =
       useState<ChangeRequest | null>(null),
     [groupReview, setGroupReview] = useState<ChangeRequest | null>(null),
@@ -1787,10 +1798,10 @@ function CalendarScreen({
     }
   }
   async function deleteDraft(request: ChangeRequest) {
-    if (!confirm("Diesen Entwurf mit allen enthaltenen Einträgen wirklich löschen?")) return;
     setError("");
     try {
       await api(`/change-requests/${request.id}/draft`, { method: "DELETE" });
+      setDraftDeleteChoice(null);
       setDraftDeleteEditor(null);
       setGroupReview(null);
       load();
@@ -3947,7 +3958,7 @@ function CalendarScreen({
               <option value="future">Diese und alle zukünftigen</option>
               <option value="series">Gesamte Serie</option>
             </select></label>
-            <div className="decision-actions"><button>Entwurf speichern</button><button type="button" className="secondary danger" onClick={() => deleteDraft(draftDeleteEditor)}>Entwurf löschen</button></div>
+            <div className="decision-actions"><button>Entwurf speichern</button><button type="button" className="secondary danger" onClick={() => setDraftDeleteChoice(draftDeleteEditor)}>Entwurf löschen</button></div>
           </form>
         </div>
       )}
@@ -4001,7 +4012,7 @@ function CalendarScreen({
               <div className="decision-actions groupreviewactions">
                 <button type="button" disabled={groupReviewBusy} onClick={() => saveGroupDraft()}>{groupReviewBusy ? "Wird gespeichert …" : "Entwurf speichern"}</button>
                 <button type="button" disabled={groupReviewBusy} className="secondary" onClick={() => saveGroupDraft(true)}>Anfrage versenden</button>
-                <button type="button" disabled={groupReviewBusy} className="secondary danger" onClick={() => deleteDraft(groupReview)}>Entwurf löschen</button>
+                <button type="button" disabled={groupReviewBusy} className="secondary danger" onClick={() => setDraftDeleteChoice(groupReview)}>Entwurf löschen</button>
               </div>
             ) : getSessionUser()?.id === groupReview.affected_user_id ? (
               <div className="decision-actions groupreviewactions">
@@ -4015,6 +4026,14 @@ function CalendarScreen({
           </div>
         </div>
       )}
+      {draftDeleteChoice && <ConfirmDialog
+        title="Entwurf löschen?"
+        message="Der gesamte Entwurf mit allen enthaltenen Einträgen wird dauerhaft gelöscht. Die andere Person erhält keine Benachrichtigung."
+        confirmLabel="Entwurf löschen"
+        danger
+        onCancel={() => setDraftDeleteChoice(null)}
+        onConfirm={() => deleteDraft(draftDeleteChoice)}
+      />}
       {rejectingRequest && (
         <div className="modal decision-modal">
           <form
@@ -4553,6 +4572,7 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
     [error, setError] = useState(""),
     [calendars, setCalendars] = useState<WasteCalendarSetting[]>([]),
     [calendarSettings, setCalendarSettings] = useState<WasteCalendarSetting | null>(null),
+    [calendarDeleteChoice, setCalendarDeleteChoice] = useState<WasteCalendarSetting | null>(null),
     [calendarOpen, setCalendarOpen] = useState(false),
     [syncing, setSyncing] = useState(false),
     [syncMessage, setSyncMessage] = useState("");
@@ -4607,6 +4627,15 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
       await loadCalendars();
       window.dispatchEvent(new Event("familienplan:data-changed"));
       setSyncMessage(calendar.hidden_for_me ? `„${calendar.name}“ wird wieder im Kalender angezeigt.` : `„${calendar.name}“ ist für dich ausgeblendet.`);
+    } catch (x) { setError((x as Error).message); }
+  }
+  async function deleteCalendar(calendar: WasteCalendarSetting) {
+    try {
+      await api(`/waste-calendars/${calendar.id}`, {method:"DELETE"});
+      setCalendarDeleteChoice(null);
+      setCalendarOpen(false);
+      setCalendarSettings(null);
+      await loadCalendars();
     } catch (x) { setError((x as Error).message); }
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -4672,8 +4701,16 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
       <fieldset className="waste-type-colors"><legend>Farben der Abfallarten</legend>{Object.entries(wasteTypeLabels).map(([type, label]) => <label key={type}><span>{label}</span><div className="themepicker"><input type="color" name={`type_color_${type}`} value={calendarSettings.type_colors[type]} onChange={(event) => setCalendarSettings({...calendarSettings, type_colors: {...calendarSettings.type_colors, [type]: event.target.value}})}/><code>{calendarSettings.type_colors[type].toUpperCase()}</code></div></label>)}</fieldset>
       <fieldset className="waste-type-colors"><legend>Importierte Abfallarten</legend>{calendarSettings.waste_types.length ? calendarSettings.waste_types.map((type) => <label className="check" key={type.id}><input type="checkbox" checked={type.enabled} onChange={(event) => setCalendarSettings({...calendarSettings, waste_types:calendarSettings.waste_types.map((item) => item.id === type.id ? {...item,enabled:event.target.checked} : item)})}/><span>{type.label}</span></label>) : <p className="hint">Die verfügbaren Abfallarten werden bei der ersten Synchronisierung erkannt. Danach kannst du sie hier einzeln ein- oder ausschalten.</p>}</fieldset>
       <MultiSelectPicker key={`waste-visible-${calendarSettings.id || "new"}`} title="Sichtbar für" name="visible_to_user_ids" items={people.filter((person) => person.role !== "ADMIN").map((person) => ({id:person.id,label:person.display_name,color:person.color}))} values={calendarSettings.visible_to_user_ids} hint="Administratoren sehen die Termine immer."/>
-      <div className="modalactions"><button>Einstellungen speichern</button>{calendarSettings.id && calendarSettings.can_delete && <button type="button" className="danger secondary" onClick={async () => { if (!confirm(`Abfallkalender „${calendarSettings.name}“ wirklich löschen? Alle importierten Termine dieses Kalenders werden entfernt.`)) return; await api(`/waste-calendars/${calendarSettings.id}`, {method:"DELETE"}); setCalendarOpen(false); setCalendarSettings(null); await loadCalendars(); }}>Kalender löschen</button>}</div>
+      <div className="modalactions"><button>Einstellungen speichern</button>{calendarSettings.id && calendarSettings.can_delete && <button type="button" className="danger secondary" onClick={() => setCalendarDeleteChoice(calendarSettings)}>Kalender löschen</button>}</div>
     </form></div>}
+    {calendarDeleteChoice && <ConfirmDialog
+      title="Abfallkalender löschen?"
+      message={`Abfallkalender „${calendarDeleteChoice.name}“ und alle importierten Termine dieses Kalenders werden dauerhaft gelöscht.`}
+      confirmLabel="Kalender löschen"
+      danger
+      onCancel={() => setCalendarDeleteChoice(null)}
+      onConfirm={() => deleteCalendar(calendarDeleteChoice)}
+    />}
   </>;
 }
 
@@ -6186,6 +6223,121 @@ function PushNotificationSettings() {
   </section>;
 }
 
+type CalendarFeedInfo = {
+  id: number;
+  name: string;
+  event_types: string[];
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+};
+type NewCalendarFeed = CalendarFeedInfo & { url: string };
+const calendarFeedEventLabels: Record<string, string> = {
+  STAY: "Betreuung",
+  GENERAL: "Allgemein",
+  SCHOOL: "Schule",
+  SCHOOL_HOLIDAY: "Ferien / Feiertage",
+  WASTE: "Abfall",
+  BIRTHDAY: "Geburtstage",
+  CLEANING: "Putzfrau",
+  PRIVATE: "Privat",
+  OTHER: "Sonstiges",
+};
+
+function CalendarFeedSettings() {
+  const [feeds, setFeeds] = useState<CalendarFeedInfo[]>([]);
+  const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [name, setName] = useState("Mein FamilienPlan-Kalender");
+  const [newFeed, setNewFeed] = useState<NewCalendarFeed | null>(null);
+  const [revoking, setRevoking] = useState<CalendarFeedInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function reload() {
+    try {
+      const result = await api<{feeds: CalendarFeedInfo[]; available_event_types: string[]}>("/calendar-feeds");
+      setFeeds(result.feeds);
+      setAvailableTypes(result.available_event_types);
+      setSelectedTypes((current) => current.length ? current.filter((type) => result.available_event_types.includes(type)) : result.available_event_types);
+    } catch (failure) {
+      setError((failure as Error).message);
+    }
+  }
+  useEffect(() => { void reload(); }, []);
+
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true); setError(""); setMessage(""); setNewFeed(null);
+    try {
+      if (!selectedTypes.length) throw new Error("Bitte wähle mindestens eine Kategorie aus.");
+      const created = await api<NewCalendarFeed>("/calendar-feeds", { method:"POST", body:JSON.stringify({ name, event_types:selectedTypes }) });
+      setNewFeed(created);
+      setName("Mein FamilienPlan-Kalender");
+      setSelectedTypes(availableTypes);
+      await reload();
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally { setBusy(false); }
+  }
+
+  async function copyUrl() {
+    if (!newFeed) return;
+    try {
+      if (!navigator.clipboard) throw new Error("Das Kopieren wird von diesem Browser nicht unterstützt.");
+      await navigator.clipboard.writeText(newFeed.url);
+      setMessage("Kalenderadresse kopiert.");
+    } catch (failure) {
+      setError((failure as Error).message);
+    }
+  }
+
+  async function revoke(feed: CalendarFeedInfo) {
+    setBusy(true); setError("");
+    try {
+      await api(`/calendar-feeds/${feed.id}`, { method:"DELETE" });
+      setRevoking(null);
+      if (newFeed?.id === feed.id) setNewFeed(null);
+      await reload();
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally { setBusy(false); }
+  }
+
+  const activeFeeds = feeds.filter((feed) => !feed.revoked_at);
+  return <section className="password-settings calendar-feed-settings">
+    <h2>Kalender auf iPhone und Android</h2>
+    <p className="muted">Erzeuge eine schreibgeschützte Kalenderadresse für die Kalender-App deines Geräts. Dafür wird kein Google-Konto benötigt.</p>
+    <p className="hint">iPhone: Einstellungen → Kalender → Account hinzufügen → Andere → Kalenderabo hinzufügen. Android: in einer Kalender-App mit Abo-Funktion als Kalender-URL hinzufügen.</p>
+    {error && <p className="error">{error}</p>}
+    {message && <p className="success">{message}</p>}
+    {activeFeeds.map((feed) => <div className="calendar-feed-row" key={feed.id}>
+      <span><strong>{feed.name}</strong><small>{feed.event_types.map((type) => calendarFeedEventLabels[type] || type).join(" · ")} · Erstellt: {new Date(feed.created_at).toLocaleString("de-DE")}{feed.last_used_at ? ` · Zuletzt abgerufen: ${new Date(feed.last_used_at).toLocaleString("de-DE")}` : " · Noch nicht abgerufen"}</small></span>
+      <button type="button" className="danger secondary" disabled={busy} onClick={() => setRevoking(feed)}>Widerrufen</button>
+    </div>)}
+    {!activeFeeds.length && <p className="hint">Noch keine Kalenderadresse eingerichtet.</p>}
+    <form className="calendar-feed-form" onSubmit={create}>
+      <label>Name der Kalenderadresse<input value={name} maxLength={160} onChange={(event) => setName(event.target.value)} /></label>
+      <fieldset className="calendar-feed-types"><legend>Einträge in diesem Feed</legend>{availableTypes.map((type) => <label className="checkline" key={type}><input type="checkbox" checked={selectedTypes.includes(type)} onChange={(event) => setSelectedTypes((current) => event.target.checked ? [...current, type] : current.filter((item) => item !== type))}/><span>{calendarFeedEventLabels[type] || type}</span></label>)}</fieldset>
+      <button type="submit" disabled={busy}>{busy ? "Wird erstellt …" : "Kalenderadresse erstellen"}</button>
+    </form>
+    {newFeed && <div className="secret-once calendar-feed-secret">
+      <div><strong>Kalenderadresse einmalig sichern</strong><p>Diese Adresse enthält den privaten Zugriffsschlüssel und wird später nicht erneut angezeigt. Füge sie in der Kalender-App als abonnierter Kalender ein.</p></div>
+      <code>{newFeed.url}</code>
+      <div className="buttonrow"><button type="button" onClick={copyUrl}>Adresse kopieren</button><button type="button" className="secondary" onClick={() => setNewFeed(null)}>Ausblenden</button></div>
+    </div>}
+    {revoking && <ConfirmDialog
+      title="Kalenderadresse widerrufen?"
+      message={`„${revoking.name}“ funktioniert danach auf keinem Gerät mehr. Bereits angezeigte Termine bleiben in der Kalender-App, bis der abonnierte Kalender entfernt oder aktualisiert wird.`}
+      confirmLabel="Adresse widerrufen"
+      danger
+      onCancel={() => setRevoking(null)}
+      onConfirm={() => revoke(revoking)}
+    />}
+  </section>;
+}
+
 function SettingsScreen({
   user,
   people,
@@ -6369,6 +6521,7 @@ function SettingsScreen({
           <button>Passwort ändern</button>
         </form>
         <PushNotificationSettings />
+        <CalendarFeedSettings />
       </section>}
       {settingsSection === "calendar" && <section id="settings-calendar" className="themebox settings-card">
         <h2>Meine Kalenderfarben</h2>

@@ -183,6 +183,24 @@ html.api-pending::after {
 .integration-row small { color:var(--muted); overflow-wrap:anywhere; }
 .secret-once { margin:1rem 0; padding:1rem; border:1px solid var(--green); border-radius:10px; background:color-mix(in srgb,var(--green) 8%,white); display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; }
 .secret-once code { overflow-wrap:anywhere; flex:1; }
+.calendar-feed-settings { margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+.calendar-feed-settings h2 { margin-bottom:.35rem; }
+.calendar-feed-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.8rem 0; border-top:1px solid var(--line); }
+.calendar-feed-row > span { min-width:0; display:flex; flex-direction:column; gap:.2rem; }
+.calendar-feed-row small { color:var(--muted); overflow-wrap:anywhere; }
+.calendar-feed-row .secondary { margin-top:0; }
+.calendar-feed-form { display:grid; grid-template-columns:minmax(12rem,1fr) minmax(18rem,1.5fr) auto; align-items:end; gap:.8rem; margin-top:1rem; }
+.password-settings .calendar-feed-form { display:grid; }
+.calendar-feed-form label { flex:1; }
+.calendar-feed-form button { flex:0 0 auto; }
+.calendar-feed-types { display:flex; flex-wrap:wrap; gap:.35rem .8rem; min-height:3.1rem; margin:0; padding:.55rem .8rem; border:1px solid var(--line); border-radius:9px; }
+.calendar-feed-types legend { padding:0 .3rem; color:var(--muted); font-size:.8rem; font-weight:700; }
+.calendar-feed-types .checkline { display:flex; flex-direction:row; align-items:center; gap:.35rem; margin:0; color:var(--ink); font-size:.8rem; font-weight:500; }
+.calendar-feed-types input { width:1rem; height:1rem; accent-color:var(--green); }
+.calendar-feed-secret { display:grid; grid-template-columns:1fr; align-items:start; }
+.calendar-feed-secret p { margin:.3rem 0 0; color:var(--muted); }
+.calendar-feed-secret .buttonrow { display:flex; gap:.65rem; flex-wrap:wrap; }
+@media(max-width:760px){.calendar-feed-form{grid-template-columns:1fr}.calendar-feed-types{min-width:0}}
 .impersonation-banner { position:fixed; z-index:80; left:50%; top:.7rem; transform:translateX(-50%); display:flex; align-items:center; gap:1rem; padding:.55rem .8rem; border:1px solid #9a7411; border-radius:10px; background:#fff2c7; color:#5f4808; box-shadow:0 6px 24px #1d2f2830; }
 .impersonation-banner button { padding:.45rem .65rem; border-radius:7px; background:#795d00; color:white; font-weight:750; }
 .pending-invitation { display:grid; gap:.65rem; padding:1rem; border:1px solid #d7b75c; border-radius:10px; background:#fff9e8; }

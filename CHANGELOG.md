@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.115 – 18. Oktober 2026
+
+- Alle Bestätigungsdialoge verwenden eigene Fenster ohne native System-Popups; ungespeicherte Stundenplanänderungen werden ebenfalls über einen eigenen Dialog verworfen.
+- Persönliche schreibgeschützte `.ics`-Kalenderfeeds können für iPhone und Android erzeugt und widerrufen werden.
+- Jeder Feed kann eigene Kategorien enthalten, sodass unterschiedliche Geräte getrennte Kalender für Betreuung, Abfall, Geburtstage, Ferien und weitere sichtbare Einträge abonnieren können.
+- Feed-Kategorien werden anhand der Benutzerrechte angeboten und serverseitig geprüft.
+
+Validierung: 83 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.114 – 18. Oktober 2026
 
 - Entwürfe für Änderungsanfragen zeigen jetzt ebenfalls den bisherigen und den vorgeschlagenen Stand.

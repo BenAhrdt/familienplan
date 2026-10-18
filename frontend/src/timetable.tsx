@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, Child } from "./api";
 import "./timetable.css";
 import { Copy, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "./confirm-dialog";
 
 import { copyDay, copyLesson, type Lesson } from "./timetable-copy";
 
@@ -82,6 +83,7 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
   const [copyFrom, setCopyFrom] = useState(0);
   const [copyTo, setCopyTo] = useState(1);
   const [dayOff, setDayOff] = useState("");
+  const [discarding, setDiscarding] = useState(false);
   useEffect(() => {
     let active = true;
     api<Snapshot>(`/children/${child.id}/timetable`, {cache:"no-store"}).then(result => {
@@ -89,16 +91,15 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
     }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [child.id]);
-  useEffect(() => {
-    const prevent = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } };
-    window.addEventListener("beforeunload", prevent);
-    return () => window.removeEventListener("beforeunload", prevent);
-  }, [dirty]);
   function change(next: Plan) { setPlan(next); setDirty(true); setNotice(""); }
   function changeLesson(index: number, value: Partial<Lesson>) {
     change({...plan, lessons: plan.lessons.map((lesson,i) => i === index ? {...lesson,...value} : lesson)});
   }
-  function dismiss() { if (!busy && (!dirty || confirm("Ungespeicherte Änderungen verwerfen?"))) close(); }
+  function dismiss() {
+    if (busy) return;
+    if (dirty) setDiscarding(true);
+    else close();
+  }
   function duplicateDay() {
     try { change({...plan, lessons: copyDay(plan.lessons, copyFrom, copyTo)}); setError(""); }
     catch (e) { setError((e as Error).message); }
@@ -168,5 +169,12 @@ function TimetableEditor({ child, close }: { child: Child; close: () => void }) 
         <div className="modalactions"><button type="submit">Stundenplan speichern</button><button type="button" className="secondary" onClick={dismiss}>Schließen</button></div>
       </fieldset></form>
     </>}
-  </div></div>;
+  </div>{discarding && <ConfirmDialog
+    title="Änderungen verwerfen?"
+    message="Die ungespeicherten Änderungen am Stundenplan werden verworfen."
+    confirmLabel="Änderungen verwerfen"
+    danger
+    onCancel={() => setDiscarding(false)}
+    onConfirm={() => { setDiscarding(false); close(); }}
+  />}</div>;
 }

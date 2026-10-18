@@ -1,20 +1,25 @@
-from datetime import datetime, timedelta
+import hashlib
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 import hmac
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import admin, current_user, require_csrf
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import new_token, token_hash, utcnow
 from app.integrations import mail_config, queue_mail
-from app.models.entities import ApiToken, ApplicationSetting, Birthday, CalendarEvent, Child, ChildUserPermission, OutboxMessage, PlanStatus, Role, Stay, User
+from app.models.entities import ApiToken, ApplicationSetting, Birthday, CalendarEvent, CalendarFeed, Child, ChildUserPermission, OutboxMessage, PlanStatus, Role, Stay, User
 
 router = APIRouter()
+settings = get_settings()
 ALL_SCOPES = ["read:children", "read:stays", "read:appointments", "read:birthdays", "read:holidays", "read:private"]
+CALENDAR_FEED_EVENT_TYPES = ["STAY", "GENERAL", "SCHOOL", "SCHOOL_HOLIDAY", "WASTE", "BIRTHDAY", "CLEANING", "PRIVATE", "OTHER"]
 
 
 class TokenCreate(BaseModel):
@@ -26,6 +31,11 @@ class TokenCreate(BaseModel):
 
 class PersonTokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
+
+
+class CalendarFeedCreate(BaseModel):
+    name: str = Field(default="Mein FamilienPlan-Kalender", min_length=1, max_length=160)
+    event_types: list[str] = Field(default_factory=list)
 
 
 class MailConfig(BaseModel):
@@ -141,6 +151,148 @@ def revoke_token(token_id: int, db: Session = Depends(get_db), _: User = Depends
     row = db.get(ApiToken, token_id)
     if not row: raise HTTPException(404, "API-Schlüssel nicht gefunden")
     row.revoked_at = utcnow(); db.commit()
+
+
+@router.get("/calendar-feeds")
+def calendar_feeds(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    rows = db.scalars(select(CalendarFeed).where(CalendarFeed.user_id == user.id).order_by(CalendarFeed.id.desc()))
+    return {"feeds": [{"id": row.id, "name": row.name, "event_types": row.event_types or CALENDAR_FEED_EVENT_TYPES,
+                        "created_at": row.created_at, "last_used_at": row.last_used_at,
+                        "revoked_at": row.revoked_at} for row in rows],
+            "available_event_types": available_calendar_feed_event_types(user)}
+
+
+def available_calendar_feed_event_types(user: User) -> list[str]:
+    if user.role == Role.ADMIN:
+        return list(CALENDAR_FEED_EVENT_TYPES)
+    allowed = set(user.allowed_event_types or [])
+    allowed.add("PRIVATE")
+    if "SCHOOL" in allowed:
+        allowed.add("SCHOOL_HOLIDAY")
+    if "OTHER" in allowed:
+        allowed.add("OTHER")
+    return [event_type for event_type in CALENDAR_FEED_EVENT_TYPES if event_type in allowed]
+
+
+@router.post("/calendar-feeds", status_code=201, dependencies=[Depends(require_csrf)])
+def create_calendar_feed(data: CalendarFeedCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(422, "Bitte gib einen Namen für den Kalenderfeed ein")
+    available = set(available_calendar_feed_event_types(user))
+    selected = set(data.event_types) or available
+    invalid = selected - set(CALENDAR_FEED_EVENT_TYPES)
+    if invalid or not selected.issubset(available):
+        raise HTTPException(422, "Der Kalenderfeed darf nur sichtbare Kategorien enthalten")
+    secret = new_token()
+    row = CalendarFeed(user_id=user.id, name=name, event_types=sorted(selected), token_hash=token_hash(secret))
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    url = f"{settings.app_origin.rstrip('/')}/api/v1/calendar-feeds/{secret}.ics"
+    return {"id": row.id, "name": row.name, "event_types": row.event_types, "created_at": row.created_at, "last_used_at": row.last_used_at, "url": url}
+
+
+@router.delete("/calendar-feeds/{feed_id}", status_code=204, dependencies=[Depends(require_csrf)])
+def revoke_calendar_feed(feed_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    row = db.scalar(select(CalendarFeed).where(CalendarFeed.id == feed_id, CalendarFeed.user_id == user.id))
+    if not row or row.revoked_at is not None:
+        raise HTTPException(404, "Kalenderfeed nicht gefunden")
+    row.revoked_at = utcnow()
+    db.commit()
+
+
+def _ics_escape(value: object) -> str:
+    return (str(value or "")
+            .replace("\\", "\\\\")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
+            .replace("\r\n", "\\n")
+            .replace("\n", "\\n")
+            .replace("\r", "\\n"))
+
+
+def _fold_ics_line(line: str) -> str:
+    chunks: list[str] = []
+    current = ""
+    limit = 75
+    for character in line:
+        if current and len((current + character).encode("utf-8")) > limit:
+            chunks.append(current)
+            current = " " + character
+            limit = 74
+        else:
+            current += character
+    chunks.append(current)
+    return "\r\n".join(chunks)
+
+
+def _ics_datetime(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _ics_date(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y%m%d")
+
+
+def calendar_feed_ics(events: list[dict], feed_name: str) -> str:
+    now = utcnow()
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//FamilienPlan//Familienkalender//DE",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_ics_escape(feed_name)}",
+    ]
+    for event in events:
+        identity = "|".join(str(event.get(key, "")) for key in ("source", "event_type", "id", "child_id", "starts_at", "ends_at"))
+        uid = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32] + "@familienplan"
+        lines.extend(["BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{_ics_datetime(now)}"])
+        starts_at = event["starts_at"]
+        ends_at = event["ends_at"]
+        if event.get("all_day"):
+            lines.extend([f"DTSTART;VALUE=DATE:{_ics_date(starts_at)}", f"DTEND;VALUE=DATE:{_ics_date(ends_at)}"])
+        else:
+            lines.extend([f"DTSTART:{_ics_datetime(starts_at)}", f"DTEND:{_ics_datetime(ends_at)}"])
+        lines.append(f"SUMMARY:{_ics_escape(event.get('title') or 'FamilienPlan')}")
+        if event.get("description"):
+            lines.append(f"DESCRIPTION:{_ics_escape(event['description'])}")
+        if event.get("event_type"):
+            lines.append(f"CATEGORIES:{_ics_escape(event['event_type'])}")
+        lines.extend([f"X-FAMILIENPLAN-EVENT-TYPE:{_ics_escape(event.get('event_type'))}", "END:VEVENT"])
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_fold_ics_line(line) for line in lines) + "\r\n"
+
+
+def filter_calendar_feed_events(events: list[dict], event_types: list[str] | None) -> list[dict]:
+    selected = set(event_types or CALENDAR_FEED_EVENT_TYPES)
+    return [event for event in events if event.get("event_type") in selected]
+
+
+@router.get("/calendar-feeds/{token}.ics", include_in_schema=False)
+def calendar_feed(token: str, db: Session = Depends(get_db)):
+    row = db.scalar(select(CalendarFeed).where(CalendarFeed.token_hash == token_hash(token), CalendarFeed.revoked_at.is_(None)))
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kalenderfeed nicht gefunden")
+    user = db.get(User, row.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kalenderfeed nicht gefunden")
+    row.last_used_at = utcnow()
+    db.commit()
+    start = utcnow() - timedelta(days=30)
+    end = start + timedelta(days=366)
+    events = integration_events(start, end, context=(SimpleNamespace(scopes=ALL_SCOPES), user), db=db)
+    events = filter_calendar_feed_events(events, row.event_types)
+    return Response(
+        content=calendar_feed_ics(events, row.name),
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'inline; filename="familienplan.ics"', "Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/integrations/v1/status")
