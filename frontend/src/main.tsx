@@ -6227,6 +6227,7 @@ type CalendarFeedInfo = {
   id: number;
   name: string;
   event_types: string[];
+  stay_visibility: string[];
   url: string;
   created_at: string;
   last_used_at: string | null;
@@ -6243,11 +6244,17 @@ const calendarFeedEventLabels: Record<string, string> = {
   PRIVATE: "Privat",
   OTHER: "Sonstiges",
 };
+const calendarFeedStayLabels: Record<string, string> = {
+  OWN: "Bei mir",
+  STANDARD: "Standardbetreuung",
+  OTHER: "Bei anderen",
+};
 
 function CalendarFeedSettings() {
   const [feeds, setFeeds] = useState<CalendarFeedInfo[]>([]);
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedStayVisibility, setSelectedStayVisibility] = useState<string[]>(["OWN"]);
   const [name, setName] = useState("Mein FamilienPlan-Kalender");
   const [revoking, setRevoking] = useState<CalendarFeedInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -6271,9 +6278,10 @@ function CalendarFeedSettings() {
     setBusy(true); setError(""); setMessage("");
     try {
       if (!selectedTypes.length) throw new Error("Bitte wähle mindestens eine Kategorie aus.");
-      await api<CalendarFeedInfo>("/calendar-feeds", { method:"POST", body:JSON.stringify({ name, event_types:selectedTypes }) });
+      await api<CalendarFeedInfo>("/calendar-feeds", { method:"POST", body:JSON.stringify({ name, event_types:selectedTypes, stay_visibility:selectedStayVisibility }) });
       setName("Mein FamilienPlan-Kalender");
       setSelectedTypes([]);
+      setSelectedStayVisibility(["OWN"]);
       setMessage("Kalenderadresse erstellt. Sie ist unten dauerhaft sichtbar.");
       await reload();
     } catch (failure) {
@@ -6320,7 +6328,7 @@ function CalendarFeedSettings() {
     {message && <p className="success">{message}</p>}
     {activeFeeds.length > 0 && <div className="calendar-feed-toolbar"><button type="button" className="secondary" onClick={copyAllFeedUrls}>Alle Links kopieren</button></div>}
     {activeFeeds.map((feed) => <div className="calendar-feed-row" key={feed.id}>
-      <span><strong>{feed.name}</strong><small>{feed.event_types.map((type) => calendarFeedEventLabels[type] || type).join(" · ")} · Erstellt: {new Date(feed.created_at).toLocaleString("de-DE")}{feed.last_used_at ? ` · Zuletzt abgerufen: ${new Date(feed.last_used_at).toLocaleString("de-DE")}` : " · Noch nicht abgerufen"}</small><code className="calendar-feed-url">{feed.url}</code></span>
+      <span><strong>{feed.name}</strong><small>{feed.event_types.map((type) => type === "STAY" ? `${calendarFeedEventLabels[type]} (${(feed.stay_visibility || ["OWN"]).map((visibility) => calendarFeedStayLabels[visibility] || visibility).join(", ")})` : calendarFeedEventLabels[type] || type).join(" · ")} · Erstellt: {new Date(feed.created_at).toLocaleString("de-DE")}{feed.last_used_at ? ` · Zuletzt abgerufen: ${new Date(feed.last_used_at).toLocaleString("de-DE")}` : " · Noch nicht abgerufen"}</small><code className="calendar-feed-url">{feed.url}</code></span>
       <div className="calendar-feed-actions"><button type="button" className="secondary" onClick={() => copyFeedUrl(feed)}>Link kopieren</button><button type="button" className="danger secondary" disabled={busy} onClick={() => setRevoking(feed)}>Widerrufen</button></div>
     </div>)}
     {!activeFeeds.length && <p className="hint">Noch keine Kalenderadresse eingerichtet.</p>}
@@ -6333,6 +6341,13 @@ function CalendarFeedSettings() {
         onChange={(values) => setSelectedTypes(values.map(String))}
         hint="Wähle die Rubriken aus, die in diesem Kalender erscheinen sollen."
       />
+      {selectedTypes.includes("STAY") && <MultiSelectPicker
+        title="Betreuung einbeziehen"
+        items={Object.entries(calendarFeedStayLabels).map(([id, label]) => ({id, label}))}
+        values={selectedStayVisibility}
+        onChange={(values) => setSelectedStayVisibility(values.map(String))}
+        hint="Standardmäßig wird nur Betreuung bei der Person dieses Feeds aufgenommen."
+      />}
       <button type="submit" disabled={busy}>{busy ? "Wird erstellt …" : "Kalenderadresse erstellen"}</button>
     </form>
     {revoking && <ConfirmDialog

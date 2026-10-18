@@ -317,6 +317,7 @@ class CalendarFeed(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(160))
     event_types: Mapped[list[str]] = mapped_column(JSON, default=list)
+    stay_visibility: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     token_value: Mapped[str | None] = mapped_column(String(512))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

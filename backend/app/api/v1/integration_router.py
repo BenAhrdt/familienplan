@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 import httpx
 from itsdangerous import BadSignature, URLSafeSerializer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
@@ -26,6 +26,7 @@ logger = logging.getLogger("familienplan.calendar-feed")
 calendar_feed_fallback_tokens = URLSafeSerializer(settings.secret_key, salt="familienplan-calendar-feed")
 ALL_SCOPES = ["read:children", "read:stays", "read:appointments", "read:birthdays", "read:holidays", "read:private"]
 CALENDAR_FEED_EVENT_TYPES = ["STAY", "GENERAL", "SCHOOL", "SCHOOL_HOLIDAY", "WASTE", "BIRTHDAY", "CLEANING", "PRIVATE", "OTHER"]
+CALENDAR_FEED_STAY_VISIBILITY = ["OWN", "STANDARD", "OTHER"]
 
 
 class TokenCreate(BaseModel):
@@ -42,6 +43,15 @@ class PersonTokenCreate(BaseModel):
 class CalendarFeedCreate(BaseModel):
     name: str = Field(default="Mein FamilienPlan-Kalender", min_length=1, max_length=160)
     event_types: list[str] = Field(default_factory=list)
+    stay_visibility: list[str] = Field(default_factory=lambda: ["OWN"])
+
+    @field_validator("stay_visibility")
+    @classmethod
+    def valid_stay_visibility(cls, value: list[str]) -> list[str]:
+        invalid = set(value) - set(CALENDAR_FEED_STAY_VISIBILITY)
+        if invalid:
+            raise ValueError("Unbekannte Betreuungsauswahl")
+        return list(dict.fromkeys(value))
 
 
 class MailConfig(BaseModel):
@@ -163,6 +173,7 @@ def revoke_token(token_id: int, db: Session = Depends(get_db), _: User = Depends
 def calendar_feeds(db: Session = Depends(get_db), user: User = Depends(current_user)):
     rows = db.scalars(select(CalendarFeed).where(CalendarFeed.user_id == user.id).order_by(CalendarFeed.id.desc()))
     return {"feeds": [{"id": row.id, "name": row.name, "event_types": row.event_types or CALENDAR_FEED_EVENT_TYPES,
+                        "stay_visibility": row.stay_visibility if row.stay_visibility is not None else ["OWN"],
                         "created_at": row.created_at, "last_used_at": row.last_used_at,
                         "revoked_at": row.revoked_at, "url": calendar_feed_url(row)} for row in rows],
             "available_event_types": available_calendar_feed_event_types(user)}
@@ -198,13 +209,18 @@ def create_calendar_feed(data: CalendarFeedCreate, db: Session = Depends(get_db)
     invalid = selected - set(CALENDAR_FEED_EVENT_TYPES)
     if invalid or not selected.issubset(available):
         raise HTTPException(422, "Der Kalenderfeed darf nur sichtbare Kategorien enthalten")
+    if set(data.stay_visibility) - set(CALENDAR_FEED_STAY_VISIBILITY):
+        raise HTTPException(422, "Die Betreuungsauswahl ist ungültig")
     secret = new_token()
-    row = CalendarFeed(user_id=user.id, name=name, event_types=sorted(selected), token_hash=token_hash(secret), token_value=secret)
+    row = CalendarFeed(user_id=user.id, name=name, event_types=sorted(selected), stay_visibility=data.stay_visibility,
+                       token_hash=token_hash(secret), token_value=secret)
     db.add(row)
     db.commit()
     db.refresh(row)
     url = calendar_feed_url(row)
-    return {"id": row.id, "name": row.name, "event_types": row.event_types, "created_at": row.created_at, "last_used_at": row.last_used_at, "url": url}
+    return {"id": row.id, "name": row.name, "event_types": row.event_types,
+            "stay_visibility": row.stay_visibility if row.stay_visibility is not None else ["OWN"], "created_at": row.created_at,
+            "last_used_at": row.last_used_at, "url": url}
 
 
 @router.delete("/calendar-feeds/{feed_id}", status_code=204, dependencies=[Depends(require_csrf)])
@@ -363,13 +379,35 @@ def school_holiday_events(from_at: datetime, to_at: datetime, child_ids: set[int
 
 def calendar_feed_events(row: CalendarFeed, user: User, start: datetime, end: datetime, db: Session) -> list[dict]:
     event_types = row.event_types or CALENDAR_FEED_EVENT_TYPES
+    stay_visibility = set(row.stay_visibility if row.stay_visibility is not None else ["OWN"])
     context = (SimpleNamespace(scopes=ALL_SCOPES), user)
-    # "Standardbetreuung" is a calculated fallback from the child's
-    # Wohnort/Betreuung setting, not an explicit calendar entry. Keep it in
-    # the app and REST integration, but do not publish it to subscribed feeds.
+    # A care feed defaults to the periods in which the child is with the feed
+    # owner. Standard care and care by other people can be opted in per feed.
+    events = integration_events(start, end, context=context, db=db)
+    stay_child_ids = {
+        event["child_id"] for event in events
+        if event.get("event_type") == "STAY" and event.get("child_id") is not None
+    }
+    default_responsible_by_child = {
+        child.id: child.default_responsible_user_id
+        for child in db.scalars(select(Child).where(Child.id.in_(stay_child_ids)))
+    } if stay_child_ids else {}
+    def stay_visibility_for(event: dict) -> set[str]:
+        responsible_id = event.get("responsible_user_id")
+        default_id = default_responsible_by_child.get(event.get("child_id"))
+        visibility: set[str] = set()
+        if responsible_id == user.id:
+            visibility.add("OWN")
+        if responsible_id == default_id:
+            visibility.add("STANDARD")
+        if responsible_id != user.id and responsible_id != default_id:
+            visibility.add("OTHER")
+        return visibility
+
     events = [
-        event for event in integration_events(start, end, context=context, db=db)
-        if event.get("source") != "default"
+        event for event in events
+        if event.get("event_type") != "STAY"
+        or stay_visibility_for(event) & stay_visibility
     ]
     if "SCHOOL_HOLIDAY" in event_types:
         events.extend(school_holiday_events(start, end, allowed_children(context[0], user, db), db))

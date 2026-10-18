@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.118 – 18. Oktober 2026
+
+- ICS-Feeds enthalten Betreuung standardmäßig nur dann, wenn das Kind bei der Person des Feed-Besitzers ist.
+- Beim Anlegen eines Feeds können zusätzlich Standardbetreuung und Betreuung bei anderen Personen ausgewählt werden.
+- Die Einstellung wird pro Feed gespeichert; bestehende Feeds verwenden automatisch weiterhin nur „Bei mir“.
+
+Validierung: 86 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.117 – 18. Oktober 2026
 
 - Automatisch erzeugte Schulferien werden jetzt in ICS-Feeds mit der Rubrik „Ferien / Feiertage“ exportiert; mehrtägige Ferien behalten dabei ihre lokalen Kalenderdaten.

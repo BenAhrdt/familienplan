@@ -21,6 +21,7 @@ def test_calendar_feed_is_named_and_secret_is_returned_only_on_creation():
 
         assert result["name"] == "iPhone"
         assert "STAY" in result["event_types"]
+        assert result["stay_visibility"] == ["OWN"]
         assert result["url"].endswith(".ics")
         assert "/calendar-feeds/" in result["url"]
         assert db.scalar(CalendarFeed.__table__.select().where(CalendarFeed.id == result["id"])) is not None
@@ -60,21 +61,73 @@ def test_calendar_feed_can_filter_visible_event_types_per_device():
     assert [item["title"] for item in filter_calendar_feed_events(events, ["STAY", "GENERAL"])] == ["Betreuung", "Allgemein"]
 
 
-def test_calendar_feed_omits_generated_standard_care(monkeypatch):
+def test_calendar_feed_uses_owner_as_default_for_generated_standard_care(monkeypatch):
     monkeypatch.setattr(
         integration_router,
         "integration_events",
         lambda *args, **kwargs: [
-            {"event_type": "STAY", "source": "default", "title": "Standardbetreuung"},
-            {"event_type": "STAY", "source": "stay", "title": "Herbstferien"},
+            {"event_type": "STAY", "source": "default", "child_id": 1, "responsible_user_id": 2, "title": "Standardbetreuung"},
+            {"event_type": "STAY", "source": "stay", "child_id": 1, "responsible_user_id": 1, "title": "Bei mir"},
         ],
     )
-    feed = CalendarFeed(name="Betreuung", event_types=["STAY"])
-    user = User(username="person", display_name="Person", email="person@example.test", password_hash="x")
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = User(username="person", display_name="Person", email="person@example.test", password_hash="x")
+        default_person = User(username="standard", display_name="Standard", email="standard@example.test", password_hash="x")
+        db.add_all([user, default_person]); db.flush()
+        db.add(Child(id=1, first_name="Rika", display_name="Rika", default_responsible_user_id=default_person.id)); db.commit()
 
-    events = calendar_feed_events(feed, user, datetime(2026, 10, 1), datetime(2026, 10, 20), None)
+        feed = CalendarFeed(name="Betreuung", event_types=["STAY"], stay_visibility=["OWN"])
+        events = calendar_feed_events(feed, user, datetime(2026, 10, 1), datetime(2026, 10, 20), db)
 
-    assert [item["title"] for item in events] == ["Herbstferien"]
+        assert [item["title"] for item in events] == ["Bei mir"]
+
+        feed.stay_visibility = ["STANDARD"]
+        events = calendar_feed_events(feed, user, datetime(2026, 10, 1), datetime(2026, 10, 20), db)
+
+        assert [item["title"] for item in events] == ["Standardbetreuung"]
+
+
+def test_calendar_feed_selects_own_standard_and_other_stays(monkeypatch):
+    monkeypatch.setattr(
+        integration_router,
+        "integration_events",
+        lambda *args, **kwargs: [
+            {"event_type": "STAY", "source": "stay", "child_id": 1, "responsible_user_id": 2, "title": "Bei Standardperson"},
+            {"event_type": "STAY", "source": "stay", "child_id": 1, "responsible_user_id": 1, "title": "Bei mir"},
+            {"event_type": "STAY", "source": "stay", "child_id": 1, "responsible_user_id": 3, "title": "Bei anderer Person"},
+        ],
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = User(username="person", display_name="Person", email="person@example.test", password_hash="x")
+        default_person = User(username="standard", display_name="Standard", email="standard@example.test", password_hash="x")
+        other_person = User(username="other", display_name="Andere", email="other@example.test", password_hash="x")
+        db.add_all([user, default_person, other_person]); db.flush()
+        db.add(Child(id=1, first_name="Rika", display_name="Rika", default_responsible_user_id=default_person.id)); db.commit()
+
+        feed = CalendarFeed(name="Betreuung", event_types=["STAY"], stay_visibility=["OWN"])
+        events = calendar_feed_events(
+            feed,
+            user,
+            datetime(2026, 10, 1),
+            datetime(2026, 10, 20),
+            db,
+        )
+        assert [item["title"] for item in events] == ["Bei mir"]
+
+        feed.stay_visibility = ["STANDARD", "OTHER"]
+        events = calendar_feed_events(
+            feed,
+            user,
+            datetime(2026, 10, 1),
+            datetime(2026, 10, 20),
+            db,
+        )
+
+        assert [item["title"] for item in events] == ["Bei Standardperson", "Bei anderer Person"]
 
 
 def test_calendar_feed_includes_generated_school_holidays(monkeypatch):
