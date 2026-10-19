@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.123 – 19. Oktober 2026
+
+- Explizit markierte Entwürfe werden ohne zusätzliche Sammelwartezeit in die E-Mail-Versandwarteschlange gestellt.
+
+Validierung: 97 Backend-Tests erfolgreich.
+
 ## 0.1.122 – 19. Oktober 2026
 
 - Parallele Betreuungszeiten werden nicht mehr als Konflikt markiert und bleiben beim Bearbeiten und Bestätigen erhalten.

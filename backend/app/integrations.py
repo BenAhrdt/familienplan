@@ -178,7 +178,10 @@ def queue_mail_batch(db, user_id: int, event_key: str, event_type: str, entries:
         })
     if not normalized:
         return
-    is_digest = event_type in {"notification.created", "notification.digest"}
+    # The batch endpoint has already collected the selected entries, so there
+    # is no remaining digest window to wait for. Automatic single notifications
+    # keep their delay in queue_mail above.
+    is_digest = event_type == "notification.created"
     if subject is None:
         if is_digest:
             subject = f"{len(normalized)} neue Anfragen in FamilienPlan"

@@ -570,6 +570,8 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
     assert result == {"sent": 2, "mail_count": 1}
     digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
     assert digest is not None
+    available_at = digest.available_at if digest.available_at.tzinfo else digest.available_at.replace(tzinfo=timezone.utc)
+    assert available_at <= datetime.now(timezone.utc) + timedelta(seconds=5)
     assert len(digest.payload["entries"]) == 2
     assert len(digest.payload["decision_batch_actions"]) == 2
     assert all(len(entry["decision_actions"]) == 1 for entry in digest.payload["entries"])
