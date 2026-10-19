@@ -1785,7 +1785,7 @@ def stay_request_recipient_id(
 
 
 @router.post("/stay-proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
-def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user), parallel: bool = False):
     if "STAY" not in (user.allowed_event_types or []):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Betreuung ist für dich nicht freigeschaltet")
     assert_child_access(db, user, data.child_id, edit=True)
@@ -1815,7 +1815,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         )):
             if stay.responsible_user_id != data.responsible_user_id:
                 overlapping_other[stay.id] = stay
-    if overlapping_other:
+    if overlapping_other and not parallel:
         if len(occurrences) != 1 or len(overlapping_other) != 1:
             raise HTTPException(status.HTTP_409_CONFLICT, "Für diesen Zeitraum bestehen bereits Betreuungen. Bitte ändere die vorhandenen Einträge einzeln.")
         existing = next(iter(overlapping_other.values()))
@@ -1853,7 +1853,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
     item = ChangeRequest(
         object_type="stay", object_id=created[0].id, requested_by_id=user.id,
         affected_user_id=affected_id, status=PlanStatus.DRAFT, before_data={},
-        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_frequency": data.recurrence_frequency if rule else None, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None},
+        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_frequency": data.recurrence_frequency if rule else None, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None, "parallel": parallel},
     )
     db.add(item); db.flush()
     audit(db, request, "NEW_STAY_DRAFT_CREATED", user.id, ("change_request", str(item.id)), {"occurrences": len(created)})
@@ -2084,7 +2084,8 @@ def replace_create_draft(db: Session, item: ChangeRequest, data: dict, user: Use
     })
     assert_child_access(db, user, create_data.child_id, edit=True)
     assert_person_visible(db, user, create_data.responsible_user_id)
-    validate_draft_create_conflicts(db, create_data)
+    if not data.get("parallel", False):
+        validate_draft_create_conflicts(db, create_data)
     child = db.get(Child, create_data.child_id)
     affected_id = stay_request_recipient_id(
         user.id,
@@ -2137,6 +2138,7 @@ def replace_create_draft(db: Session, item: ChangeRequest, data: dict, user: Use
         "recurrence_frequency": create_data.recurrence_frequency if rule else None,
         "recurrence_day_of_month": create_data.recurrence_day_of_month if rule else None,
         "recurrence_until": create_data.recurrence_until.isoformat() if create_data.recurrence_until else None,
+        "parallel": bool(data.get("parallel", False)),
     }
 
 
@@ -2223,6 +2225,7 @@ def update_draft_request(db: Session, item: ChangeRequest, data: dict, user: Use
 
 def publish_change_request(db: Session, item: ChangeRequest, request: Request, user: User) -> None:
     action = (item.proposed_data or {}).get("action")
+    email_body = current_change_request_email_body(db, item)
     item.status = PlanStatus.PROPOSED if action in {"CREATE", "GROUP_CREATE"} else PlanStatus.CHANGE_PROPOSED
     if action in {"CREATE", "GROUP_CREATE"}:
         for stay_id in request_stay_ids(item):
@@ -2230,14 +2233,13 @@ def publish_change_request(db: Session, item: ChangeRequest, request: Request, u
             if stay and stay.status == PlanStatus.DRAFT:
                 stay.status = PlanStatus.PROPOSED
     if action == "GROUP_CREATE":
-        title = item.proposed_data.get("title") or "Gemeinsame Planung"
-        notify(db, item.affected_user_id, "GROUP_PLAN_PROPOSAL", "Neue Gruppenplanung", f"{user.display_name} hat die Planung „{title}“ mit {len(item.proposed_data.get('items') or [])} Zeiträumen gesendet.", item.id)
+        notify(db, item.affected_user_id, "GROUP_PLAN_PROPOSAL", "Neue Gruppenplanung", email_body, item.id)
     elif action == "DELETE":
-        notify(db, item.affected_user_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", f"{user.display_name} schlägt vor, eine Betreuungszeit zu löschen.", item.id)
+        notify(db, item.affected_user_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", email_body, item.id)
     elif action == "CREATE":
-        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine neue Betreuungszeit vor.", item.id)
+        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", email_body, item.id)
     else:
-        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", f"{user.display_name} schlägt eine Änderung vor. {change_request_details(db, item)}", item.id)
+        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", email_body, item.id)
     audit(db, request, "CHANGE_REQUEST_SENT", user.id, ("change_request", str(item.id)), {"affected_user_id": item.affected_user_id, "action": action or "UPDATE"})
 
 
@@ -2355,8 +2357,27 @@ def _format_request_datetime(value) -> str:
 def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_self: bool = False) -> str:
     """Build a mail body from the request as it exists at resend time."""
     requester = db.get(User, item.requested_by_id)
+    before = item.before_data or {}
     proposed = item.proposed_data or {}
     action = proposed.get("action")
+
+    def stay_lines(data: dict, include_scope: bool = False) -> list[str]:
+        stay = db.get(Stay, item.object_id)
+        child = db.get(Child, stay.child_id) if stay else None
+        person = db.get(User, data.get("responsible_user_id"))
+        lines = [
+            f"Kind: {child.display_name if child else 'unbekannt'}",
+            f"Bei: {person.display_name if person else 'unbekannt'}",
+            f"Zeitraum: {_format_request_datetime(data.get('starts_at'))} – {_format_request_datetime(data.get('ends_at'))}",
+        ]
+        if data.get("title"):
+            lines.append(f"Titel: {data['title']}")
+        if data.get("note"):
+            lines.append(f"Notiz: {data['note']}")
+        if include_scope and data.get("scope"):
+            lines.append(f"Umfang: {data['scope']}")
+        return lines
+
     if action == "GROUP_CREATE":
         lines = [
             f"{requester.display_name if requester else 'Eine Person'} hat die aktuelle Version der Planung „{proposed.get('title') or 'Gemeinsame Planung'}“ zur Bestätigung gesendet.",
@@ -2373,12 +2394,45 @@ def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_
             if entry.get("note"):
                 lines.append(f"  Notiz: {entry['note']}")
         body = "\n".join(lines)
+    elif action == "CREATE":
+        body = "\n".join([
+            f"{requester.display_name if requester else 'Eine Person'} schlägt eine neue Betreuungszeit vor.",
+            "",
+            "Angefragt:",
+            *stay_lines(proposed, include_scope=True),
+        ])
+    elif action == "DELETE":
+        body = "\n".join([
+            f"{requester.display_name if requester else 'Eine Person'} schlägt die Löschung einer Betreuungszeit vor.",
+            "",
+            "Aktuell:",
+            *stay_lines(before, include_scope=True),
+        ])
     else:
-        label = {
-            "DELETE": "schlägt die Löschung einer Betreuungszeit vor",
-            "CREATE": "schlägt eine neue Betreuungszeit vor",
-        }.get(action, "schlägt eine Änderung vor")
-        body = f"{requester.display_name if requester else 'Eine Person'} {label}. {change_request_details(db, item)}"
+        changes = []
+        if before.get("responsible_user_id") != proposed.get("responsible_user_id"):
+            old_person = db.get(User, before.get("responsible_user_id"))
+            new_person = db.get(User, proposed.get("responsible_user_id"))
+            changes.append(f"Person: {old_person.display_name if old_person else 'unbekannt'} → {new_person.display_name if new_person else 'unbekannt'}")
+        if before.get("starts_at") != proposed.get("starts_at") or before.get("ends_at") != proposed.get("ends_at"):
+            changes.append(f"Zeitraum: {_format_request_datetime(before.get('starts_at'))} – {_format_request_datetime(before.get('ends_at'))} → {_format_request_datetime(proposed.get('starts_at'))} – {_format_request_datetime(proposed.get('ends_at'))}")
+        if before.get("title") != proposed.get("title"):
+            changes.append(f"Titel: {before.get('title') or '–'} → {proposed.get('title') or '–'}")
+        if before.get("note") != proposed.get("note"):
+            changes.append(f"Notiz: {before.get('note') or '–'} → {proposed.get('note') or '–'}")
+        change_lines = [f"• {change}" for change in changes] or ["• Details siehe oben"]
+        body = "\n".join([
+            f"{requester.display_name if requester else 'Eine Person'} schlägt eine Änderung vor.",
+            "",
+            "Aktuell:",
+            *stay_lines(before),
+            "",
+            "Angefragt:",
+            *stay_lines(proposed, include_scope=True),
+            "",
+            "Änderung:",
+            *change_lines,
+        ])
     if copy_to_self:
         body += "\n\nDies ist eine Kopie ohne aktive Entscheidungslinks."
     return body

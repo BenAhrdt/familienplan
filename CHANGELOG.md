@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.121 – 19. Oktober 2026
+
+- Betreuungsanfrage-E-Mails zeigen bei neuen Anfragen Kind, Betreuungsperson, Zeitraum sowie Titel und Notiz.
+- Änderungsanfragen enthalten den aktuellen und angefragten Stand sowie eine kurze Zusammenfassung der Änderungen.
+- Zusätzliche kurze Betreuungszeiten können parallel zu einem bestehenden langen Betreuungseintrag vorgeschlagen werden, ohne diesen zu ersetzen.
+
+Validierung: 95 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.120 – 19. Oktober 2026
 
 - Offene Änderungsanfragen können per zufälligem, passwortlosem Link direkt aus der E-Mail bestätigt oder abgelehnt werden.

@@ -2030,6 +2030,7 @@ function CalendarScreen({
           repeat && f.get("until")
             ? new Date(String(f.get("until")) + "T23:59").toISOString()
             : null,
+        parallel: editingDraftRequest?.proposed_data.parallel === true || (!editingStay && !editingDraftRequest && f.get("parallel") === "on"),
       };
       if (editingDraftRequest) {
         const proposedData = editingDraftRequest.proposed_data.action === "CREATE"
@@ -2106,7 +2107,8 @@ function CalendarScreen({
           setOpen(null);
           return;
         }
-        await api("/stay-proposals", {
+        const proposalPath = payload.parallel ? "/stay-proposals?parallel=true" : "/stay-proposals";
+        await api(proposalPath, {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -2412,7 +2414,8 @@ function CalendarScreen({
     if (!adminCreateChoice) return;
     setError("");
     try {
-      await api(asProposal ? "/stay-proposals" : "/stays", {
+      const proposalPath = asProposal && adminCreateChoice.parallel === true ? "/stay-proposals?parallel=true" : "/stay-proposals";
+      await api(asProposal ? proposalPath : "/stays", {
         method: "POST",
         body: JSON.stringify(adminCreateChoice),
       });
@@ -3592,6 +3595,19 @@ function CalendarScreen({
                         : ""
                     }
                   />
+                )}
+                {!editingStay && !editingDraftRequest && (
+                  <>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        name="parallel"
+                        defaultChecked={createDraft?.parallel === true}
+                      />
+                      <span>Zusätzliche Betreuung parallel eintragen</span>
+                    </label>
+                    <p className="hint">Die bestehende Betreuung bleibt erhalten. Der neue Zeitraum wird zusätzlich der ausgewählten Person zugeordnet.</p>
+                  </>
                 )}
                 {editingStay?.recurrence_rule_id && (
                   <label>

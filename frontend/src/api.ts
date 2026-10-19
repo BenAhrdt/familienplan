@@ -126,6 +126,7 @@ export type ChangeRequest = {
     recurrence_frequency?: "WEEKLY" | "MONTHLY" | null;
     recurrence_day_of_month?: number | null;
     recurrence_until?: string | null;
+    parallel?: boolean;
   };
   before_data: {
     starts_at?: string;

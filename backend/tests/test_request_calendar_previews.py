@@ -123,6 +123,30 @@ def test_different_person_overlap_remains_a_handover_conflict(context):
     assert result.before_data['responsible_user_id'] == recipient.id
 
 
+def test_parallel_different_person_overlap_keeps_existing_stay(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2026, 9, 10)
+    existing = Stay(child_id=child.id, responsible_user_id=sender.id,
+                    starts_at=start, ends_at=start + timedelta(days=1),
+                    status=PlanStatus.CONFIRMED, created_by_id=sender.id)
+    db.add(existing); db.commit()
+
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=other.id,
+        starts_at=start, ends_at=start + timedelta(hours=4), title="PMA",
+    ), request, db, sender, parallel=True)
+    item = db.get(ChangeRequest, result.id)
+    assert item.proposed_data["action"] == "CREATE"
+    assert item.affected_user_id == other.id
+    assert db.get(Stay, existing.id).status == PlanStatus.CONFIRMED
+    assert db.get(Stay, item.object_id).status == PlanStatus.DRAFT
+
+    send_change_request(item.id, request, db, sender)
+    decide_change_request(item.id, ChangeDecision(decision="APPROVE"), request, db, other)
+    assert db.get(Stay, existing.id).status == PlanStatus.CONFIRMED
+    assert db.get(Stay, item.object_id).status == PlanStatus.CONFIRMED
+
+
 def test_change_and_delete_previews_leave_confirmed_stay_untouched_and_withdraw_preserves_it(context):
     db, (sender, recipient, other), child, request = context
     start = datetime(2026, 9, 10)
@@ -397,6 +421,8 @@ def test_notification_digest_contains_per_request_and_batch_decision_links(conte
     assert {action["label"] for action in payload["decision_batch_actions"]} == {"Alle bestätigen", "Alle ablehnen"}
     assert all("/api/v1/public/decision/" in entry["decision_actions"][0]["approve_url"] for entry in payload["entries"])
     assert payload["event_type"] == "notification.digest"
+    assert "Angefragt:" in payload["entries"][0]["body"]
+    assert "01.12.2026 00:00" in payload["entries"][0]["body"]
 
     sent = []
 
@@ -448,6 +474,38 @@ def test_notification_digest_contains_group_entry_links(context, monkeypatch):
     assert {action["item_index"] for action in actions} == {0, 1}
     assert {action["label"] for action in actions} == {"Abschnitt 1: Ferien", "Abschnitt 2: Feiertag"}
     assert {action["label"] for action in digest.payload["decision_batch_actions"]} == {"Alle bestätigen", "Alle ablehnen"}
+
+
+def test_notification_email_shows_current_and_requested_change(context, monkeypatch):
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    })
+    original = Stay(
+        child_id=child.id, responsible_user_id=recipient.id,
+        starts_at=datetime(2026, 12, 10), ends_at=datetime(2026, 12, 11),
+        status=PlanStatus.CONFIRMED, title="Aktueller Termin", created_by_id=recipient.id,
+    )
+    db.add(original)
+    db.commit()
+    result = propose_stay_change(original.id, StayUpdate(
+        starts_at=datetime(2026, 12, 12), ends_at=datetime(2026, 12, 13),
+        responsible_user_id=sender.id, title="Neuer Termin", note="PMA", scope="occurrence",
+    ), request, db, sender)
+    send_change_request(result.id, request, db, sender)
+
+    digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
+    assert digest is not None
+    body = digest.payload["entries"][0]["body"]
+    assert "Aktuell:" in body
+    assert "Angefragt:" in body
+    assert "10.12.2026 00:00" in body
+    assert "12.12.2026 00:00" in body
+    assert "Person: recipient → sender" in body
 
 
 def test_resend_uses_current_request_and_copy_has_no_decision_links(context, monkeypatch):
