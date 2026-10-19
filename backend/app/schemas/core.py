@@ -281,6 +281,10 @@ class DraftChangeRequestUpdate(BaseModel):
     proposed_data: dict
 
 
+class ChangeRequestEmailResend(BaseModel):
+    copy_to_self: bool = False
+
+
 class NotificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

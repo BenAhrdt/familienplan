@@ -9,11 +9,13 @@ from starlette.requests import Request
 
 from app.api.v1.router import (change_requests, create_planning_group, create_stay, decide_change_request,
     delete_change_request_draft, edit_change_request_draft, propose_new_stay, propose_stay_change,
-    propose_stay_deletion, send_change_request, request_calendar_previews, withdraw_change_request)
+    propose_stay_deletion, public_decision_page, public_decision_submit, send_change_request,
+    request_calendar_previews, resend_change_request, withdraw_change_request)
+from app.core.security import new_token, token_hash
 from app.api.v1.integration_router import integration_events, child_location
 from app.core.database import Base
-from app.models.entities import ChangeRequest, Child, PlanStatus, Role, Stay, User
-from app.schemas import ChangeDecision, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, StayCreate, StayUpdate
+from app.models.entities import ChangeRequest, Child, OutboxMessage, PlanStatus, PublicDecisionToken, Role, Stay, User
+from app.schemas import ChangeDecision, ChangeRequestEmailResend, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, StayCreate, StayUpdate
 
 
 @pytest.fixture
@@ -264,6 +266,231 @@ def test_draft_is_private_until_sent_and_can_be_edited(context):
     sent = send_change_request(result.id, request, db, sender)
     assert sent.status == PlanStatus.PROPOSED
     assert len(request_calendar_previews(db, db.get(ChangeRequest, result.id), recipient)) == 1
+
+
+def test_public_email_decision_confirms_request_without_login(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2026, 11, 5)
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=start, ends_at=start + timedelta(days=1), title="E-Mail-Link",
+    ), request, db, sender)
+    send_change_request(result.id, request, db, sender)
+
+    raw = new_token()
+    link = PublicDecisionToken(
+        token_hash=token_hash(raw), recipient_user_id=recipient.id,
+        change_request_ids=[result.id], decision="APPROVE",
+    )
+    db.add(link)
+    db.commit()
+
+    page = public_decision_page(raw, db)
+    assert page.status_code == 200
+    assert "Bestätigen" in page.body.decode()
+
+    done = public_decision_submit(raw, request, "Per E-Mail bestätigt", db)
+    assert done.status_code == 200
+    assert "bestätigt" in done.body.decode()
+    assert db.get(ChangeRequest, result.id).status == PlanStatus.CONFIRMED
+    assert db.get(PublicDecisionToken, link.id).used_at is not None
+    assert public_decision_page(raw, db).status_code == 200
+    assert "bereits bestätigt" in public_decision_page(raw, db).body.decode()
+
+
+def test_public_email_batch_decision_rejects_all_requests(context):
+    db, (sender, recipient, other), child, request = context
+    first = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2026, 11, 10), ends_at=datetime(2026, 11, 11),
+    ), request, db, sender)
+    second = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2026, 11, 12), ends_at=datetime(2026, 11, 13),
+    ), request, db, sender)
+    send_change_request(first.id, request, db, sender)
+    send_change_request(second.id, request, db, sender)
+
+    raw = new_token()
+    link = PublicDecisionToken(
+        token_hash=token_hash(raw), recipient_user_id=recipient.id,
+        change_request_ids=[first.id, second.id], decision="REJECT",
+    )
+    db.add(link)
+    db.commit()
+
+    page = public_decision_page(raw, db)
+    assert page.status_code == 200
+    assert "Folgende Anfragen werden abgelehnt" in page.body.decode()
+    assert page.body.decode().count("<li") == 2
+    done = public_decision_submit(raw, request, "Die Zeiträume passen nicht", db)
+    assert done.status_code == 200
+    assert db.get(ChangeRequest, first.id).status == PlanStatus.REJECTED
+    assert db.get(ChangeRequest, second.id).status == PlanStatus.REJECTED
+    assert db.get(PublicDecisionToken, link.id).used_at is not None
+
+
+def test_public_email_decides_group_entries_individually(context):
+    db, (sender, recipient, other), child, request = context
+    start = datetime(2027, 1, 10)
+    result = create_planning_group(GroupPlanningCreate(affected_user_id=recipient.id, items=[
+        GroupPlanningItem(child_id=child.id, responsible_user_id=sender.id, starts_at=start,
+            ends_at=start + timedelta(days=1), name="Erster Abschnitt", kind="FERIEN"),
+        GroupPlanningItem(child_id=child.id, responsible_user_id=sender.id, starts_at=start + timedelta(days=2),
+            ends_at=start + timedelta(days=3), name="Zweiter Abschnitt", kind="FEIERTAG"),
+    ]), request, "proposal", db, sender)
+    item = db.get(ChangeRequest, result["request_id"])
+    send_change_request(item.id, request, db, sender)
+    first_stay_id, second_stay_id = item.proposed_data["stay_ids"]
+
+    raw = new_token()
+    db.add(PublicDecisionToken(
+        token_hash=token_hash(raw), recipient_user_id=recipient.id,
+        change_request_ids=[item.id], target_items=[{"request_id": item.id, "item_index": 0}], decision="APPROVE",
+    ))
+    db.commit()
+    public_decision_submit(raw, request, "", db)
+    assert db.get(ChangeRequest, item.id).status == PlanStatus.PROPOSED
+    assert db.get(Stay, first_stay_id).status == PlanStatus.CONFIRMED
+    assert db.get(Stay, second_stay_id).status == PlanStatus.PROPOSED
+
+    raw = new_token()
+    db.add(PublicDecisionToken(
+        token_hash=token_hash(raw), recipient_user_id=recipient.id,
+        change_request_ids=[item.id], target_items=[
+            {"request_id": item.id, "item_index": 0},
+            {"request_id": item.id, "item_index": 1},
+        ], decision="APPROVE",
+    ))
+    db.commit()
+    public_decision_submit(raw, request, "", db)
+    assert db.get(ChangeRequest, item.id).status == PlanStatus.CONFIRMED
+    assert db.get(Stay, first_stay_id).status == PlanStatus.CONFIRMED
+    assert db.get(Stay, second_stay_id).status == PlanStatus.CONFIRMED
+
+
+def test_notification_digest_contains_per_request_and_batch_decision_links(context, monkeypatch):
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    })
+    first = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2026, 12, 1), ends_at=datetime(2026, 12, 2),
+    ), request, db, sender)
+    second = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2026, 12, 3), ends_at=datetime(2026, 12, 4),
+    ), request, db, sender)
+    send_change_request(first.id, request, db, sender)
+    send_change_request(second.id, request, db, sender)
+
+    digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
+    assert digest is not None
+    payload = digest.payload
+    assert len(payload["entries"]) == 2
+    assert all(len(entry["decision_actions"]) == 1 for entry in payload["entries"])
+    assert {action["label"] for action in payload["decision_batch_actions"]} == {"Alle bestätigen", "Alle ablehnen"}
+    assert all("/api/v1/public/decision/" in entry["decision_actions"][0]["approve_url"] for entry in payload["entries"])
+    assert payload["event_type"] == "notification.digest"
+
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def send_message(self, message):
+            sent.append(message)
+
+    monkeypatch.setattr(integrations.smtplib, "SMTP", FakeSMTP)
+    integrations._send_mail({
+        "host": "smtp.example.test", "port": 587, "username": None, "password": None,
+        "from_address": "FamilienPlan <noreply@example.test>", "security": "none",
+    }, recipient.email, payload)
+    html = sent[0].get_body(preferencelist=("html",)).get_content()
+    assert "Bestätigen" in html
+    assert "Ablehnen" in html
+    assert "Alle bestätigen" in html
+    assert "Alle ablehnen" in html
+
+
+def test_notification_digest_contains_group_entry_links(context, monkeypatch):
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    })
+    result = create_planning_group(GroupPlanningCreate(affected_user_id=recipient.id, items=[
+        GroupPlanningItem(child_id=child.id, responsible_user_id=sender.id, starts_at=datetime(2027, 2, 1),
+            ends_at=datetime(2027, 2, 2), name="Ferien", kind="FERIEN"),
+        GroupPlanningItem(child_id=child.id, responsible_user_id=sender.id, starts_at=datetime(2027, 2, 3),
+            ends_at=datetime(2027, 2, 4), name="Feiertag", kind="FEIERTAG"),
+    ]), request, "proposal", db, sender)
+    send_change_request(result["request_id"], request, db, sender)
+
+    digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
+    actions = digest.payload["entries"][0]["decision_actions"]
+    assert len(actions) == 2
+    assert {action["item_index"] for action in actions} == {0, 1}
+    assert {action["label"] for action in actions} == {"Abschnitt 1: Ferien", "Abschnitt 2: Feiertag"}
+    assert {action["label"] for action in digest.payload["decision_batch_actions"]} == {"Alle bestätigen", "Alle ablehnen"}
+
+
+def test_resend_uses_current_request_and_copy_has_no_decision_links(context, monkeypatch):
+    import app.api.v1.router as router
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    config = {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    }
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: config)
+    monkeypatch.setattr(router, "mail_config", lambda _db: config)
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2026, 12, 1), ends_at=datetime(2026, 12, 2),
+    ), request, db, sender)
+    send_change_request(result.id, request, db, sender)
+    item = db.get(ChangeRequest, result.id)
+    item.proposed_data = {**item.proposed_data, "starts_at": datetime(2026, 12, 8).isoformat(), "ends_at": datetime(2026, 12, 9).isoformat()}
+    db.flush()
+
+    resend_change_request(result.id, ChangeRequestEmailResend(), request, db, sender)
+    active_mail = db.scalar(select(OutboxMessage).where(
+        OutboxMessage.event_type == "notification.resend",
+        OutboxMessage.recipient_key == recipient.email,
+    ))
+    assert active_mail is not None
+    assert "08.12.2026" in active_mail.payload["body"]
+    assert len(active_mail.payload["entries"][0]["decision_actions"]) == 1
+    assert "/api/v1/public/decision/" in active_mail.payload["entries"][0]["decision_actions"][0]["approve_url"]
+    token_count = len(list(db.scalars(select(PublicDecisionToken))))
+
+    resend_change_request(result.id, ChangeRequestEmailResend(copy_to_self=True), request, db, sender)
+    copy_mail = db.scalar(select(OutboxMessage).where(
+        OutboxMessage.event_type == "notification.resend",
+        OutboxMessage.recipient_key == sender.email,
+    ))
+    assert copy_mail is not None
+    assert copy_mail.payload["entries"][0]["decision_actions"] == []
+    assert "ohne aktive Entscheidungslinks" in copy_mail.payload["body"]
+    assert len(list(db.scalars(select(PublicDecisionToken)))) == token_count
 
 
 def test_group_draft_can_remove_one_entry_and_delete_the_whole_draft(context):

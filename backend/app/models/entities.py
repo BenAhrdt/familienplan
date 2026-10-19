@@ -254,6 +254,18 @@ class ChangeRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class PublicDecisionToken(Base):
+    __tablename__ = "public_decision_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    recipient_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    change_request_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    target_items: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    decision: Mapped[str] = mapped_column(String(30))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Approval(Base):
     __tablename__ = "approvals"
     id: Mapped[int] = mapped_column(primary_key=True)

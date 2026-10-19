@@ -2,6 +2,16 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.120 – 19. Oktober 2026
+
+- Offene Änderungsanfragen können per zufälligem, passwortlosem Link direkt aus der E-Mail bestätigt oder abgelehnt werden.
+- E-Mails enthalten bei mehreren Anfragen einzelne Entscheidungsbuttons sowie „Alle bestätigen“ und „Alle ablehnen“.
+- Gruppenplanungen können abschnittsweise entschieden werden; bereits entschiedene Abschnitte bleiben für weitere Links geschlossen.
+- Offene Abstimmungen können erneut mit dem aktuellen Anfrageinhalt gesendet werden.
+- Eine Kopie an die eigene E-Mail-Adresse enthält aus Sicherheitsgründen keine aktiven Entscheidungslinks.
+
+Validierung: 93 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.119 – 18. Oktober 2026
 
 - Bestehende ICS-Feeds können nachträglich bearbeitet werden.

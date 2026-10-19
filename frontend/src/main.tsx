@@ -1681,6 +1681,8 @@ function CalendarScreen({
     });
   }, [requests]);
   const sessionUserId = getSessionUser()?.id;
+  const [requestResendBusy, setRequestResendBusy] = useState<string | null>(null);
+  const [requestNotice, setRequestNotice] = useState("");
   const draftRequests = requests.filter((request) => request.status === "DRAFT" && request.requested_by_id === sessionUserId);
   const visibleRequests = requests.filter((request) => request.status !== "DRAFT");
   const pendingEntries = visibleRequests.flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
@@ -2275,6 +2277,37 @@ function CalendarScreen({
       setError((x as Error).message);
     }
   }
+  async function resendRequest(request: ChangeRequest, copyToSelf: boolean) {
+    const busyKey = `${request.id}:${copyToSelf ? "copy" : "resend"}`;
+    setRequestResendBusy(busyKey);
+    setRequestNotice("");
+    setError("");
+    try {
+      await api(`/change-requests/${request.id}/resend`, {
+        method: "POST",
+        body: JSON.stringify({ copy_to_self: copyToSelf }),
+      });
+      setRequestNotice(copyToSelf ? "Die Kopie wurde an deine E-Mail-Adresse gesendet." : "Die aktuelle Anfrage wurde erneut gesendet.");
+    } catch (x) {
+      setError((x as Error).message);
+    } finally {
+      setRequestResendBusy(null);
+    }
+  }
+  function requestMailActions(request: ChangeRequest) {
+    const canResend = getSessionUser()?.role === "ADMIN" || request.requested_by_id === sessionUserId || request.affected_user_id === sessionUserId;
+    if (!canResend) return null;
+    const resendBusy = requestResendBusy === `${request.id}:resend`;
+    const copyBusy = requestResendBusy === `${request.id}:copy`;
+    return <>
+      <button type="button" className="secondary" onClick={() => resendRequest(request, false)} disabled={requestResendBusy !== null}>
+        {resendBusy ? "Wird gesendet …" : "Nochmals senden"}
+      </button>
+      <button type="button" className="secondary" onClick={() => resendRequest(request, true)} disabled={requestResendBusy !== null}>
+        {copyBusy ? "Wird gesendet …" : "Kopie an mich"}
+      </button>
+    </>;
+  }
   function openGroupReview(request: ChangeRequest) {
     setGroupReview(request);
     setGroupReviewItems((request.proposed_data.items || []).map((item) => ({ ...item })));
@@ -2579,6 +2612,7 @@ function CalendarScreen({
       {visibleRequests.length > 0 && (
         <section className="change-requests">
           <h2>Offene Abstimmungen</h2>
+          {requestNotice && <p className="success">{requestNotice}</p>}
           {error && !open && <p className="error">{error}</p>}
           {visibleRequests.map((request) => {
             const proposal = request.proposed_data;
@@ -2688,6 +2722,7 @@ function CalendarScreen({
                     <button onClick={() => openGroupReview(request)}>
                       {canDecide ? "Planung prüfen" : "Details ansehen"}
                     </button>
+                    {requestMailActions(request)}
                     {!canDecide && <span className="tag">Wartet auf {request.affected_user_name}</span>}
                   </div>
                 ) : canDecide ? (
@@ -2709,11 +2744,13 @@ function CalendarScreen({
                     >
                       Ablehnen
                     </button>
+                    {requestMailActions(request)}
                   </div>
                 ) : (
-                  <span className="tag">
-                    Wartet auf {request.affected_user_name}
-                  </span>
+                  <div className="request-actions">
+                    <span className="tag">Wartet auf {request.affected_user_name}</span>
+                    {requestMailActions(request)}
+                  </div>
                 )}
               </article>
             );

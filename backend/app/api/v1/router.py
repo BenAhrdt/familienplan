@@ -4,6 +4,7 @@ import hashlib
 import re
 import time
 import uuid
+from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
@@ -11,8 +12,8 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -22,11 +23,11 @@ from app.api.dependencies import admin, assert_child_access, current_user, requi
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
-from app.integrations import queue_mail
+from app.integrations import mail_config, queue_mail
 from app.push import queue_push, vapid_config
 from app.version import VERSION
-from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PublicDecisionToken, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
+from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestEmailResend, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -325,10 +326,9 @@ def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_
     db.add(notification)
     db.flush()
     event_key = f"notification:{notification.id}"
-    from app.integrations import mail_config
     app_url = mail_config(db).get("app_url") or settings.app_origin
     action_url = f"{app_url}/calendar?request={request_id}" if request_id else f"{app_url}/calendar"
-    queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url)
+    queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url, [request_id] if request_id else None)
     queue_push(db, user_id, event_key, title, body, action_url)
     return notification
 
@@ -2252,13 +2252,18 @@ def request_calendar_previews(db: Session, item: ChangeRequest, viewer: User) ->
     data = item.proposed_data or {}
     action = data.get("action", "UPDATE")
     stay = db.get(Stay, item.object_id)
-    if not stay:
-        return []
     entries = []
     if action in {"CREATE", "GROUP_CREATE"}:
-        for target in db.scalars(select(Stay).where(Stay.id.in_(data.get("stay_ids", [item.object_id]))).order_by(Stay.starts_at, Stay.id)):
+        stay_ids = data.get("stay_ids", [item.object_id])
+        if action == "GROUP_CREATE":
+            stay_ids = [entry.get("stay_id") for entry in data.get("items", []) if not entry.get("email_decision") and entry.get("stay_id")]
+        if not stay_ids:
+            return []
+        for target in db.scalars(select(Stay).where(Stay.id.in_(stay_ids)).order_by(Stay.starts_at, Stay.id)):
             entries.append((target, target.starts_at, target.ends_at, target.responsible_user_id, target.title, target.note))
     else:
+        if not stay:
+            return []
         targets = stay_scope_targets(db, stay, data.get("scope", "occurrence"))
         if action == "DELETE":
             entries = [(x, x.starts_at, x.ends_at, x.responsible_user_id, x.title, x.note) for x in targets]
@@ -2338,6 +2343,245 @@ def change_request_details(db: Session, item: ChangeRequest) -> str:
         if before.get("note") != proposed.get("note"):
             parts.append(f"Notiz: {before.get('note') or '–'} → {proposed.get('note') or '–'}")
     return " · ".join(parts)
+
+
+def _format_request_datetime(value) -> str:
+    if not value:
+        return "–"
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    return parsed.strftime("%d.%m.%Y %H:%M")
+
+
+def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_self: bool = False) -> str:
+    """Build a mail body from the request as it exists at resend time."""
+    requester = db.get(User, item.requested_by_id)
+    proposed = item.proposed_data or {}
+    action = proposed.get("action")
+    if action == "GROUP_CREATE":
+        lines = [
+            f"{requester.display_name if requester else 'Eine Person'} hat die aktuelle Version der Planung „{proposed.get('title') or 'Gemeinsame Planung'}“ zur Bestätigung gesendet.",
+        ]
+        for index, entry in enumerate(proposed.get("items") or []):
+            child = db.get(Child, entry.get("child_id"))
+            person = db.get(User, entry.get("responsible_user_id"))
+            state = " (bereits entschieden)" if entry.get("email_decision") else ""
+            lines.append(
+                f"Abschnitt {index + 1}: {entry.get('name') or 'Zeitraum'} · "
+                f"{child.display_name if child else 'Kind'} bei {person.display_name if person else 'unbekannt'} · "
+                f"{_format_request_datetime(entry.get('starts_at'))} – {_format_request_datetime(entry.get('ends_at'))}{state}"
+            )
+            if entry.get("note"):
+                lines.append(f"  Notiz: {entry['note']}")
+        body = "\n".join(lines)
+    else:
+        label = {
+            "DELETE": "schlägt die Löschung einer Betreuungszeit vor",
+            "CREATE": "schlägt eine neue Betreuungszeit vor",
+        }.get(action, "schlägt eine Änderung vor")
+        body = f"{requester.display_name if requester else 'Eine Person'} {label}. {change_request_details(db, item)}"
+    if copy_to_self:
+        body += "\n\nDies ist eine Kopie ohne aktive Entscheidungslinks."
+    return body
+
+
+PUBLIC_DECISION_STATUSES = {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED}
+
+
+def _public_decision_token(db: Session, raw_token: str) -> PublicDecisionToken | None:
+    if not raw_token or len(raw_token) > 200:
+        return None
+    return db.scalar(select(PublicDecisionToken).where(PublicDecisionToken.token_hash == token_hash(raw_token)))
+
+
+def _public_open_targets(db: Session, link: PublicDecisionToken) -> list[dict]:
+    if link.used_at or link.decision not in {"APPROVE", "REJECT"}:
+        return []
+    recipient = db.get(User, link.recipient_user_id)
+    raw_targets = link.target_items or [{"request_id": request_id} for request_id in (link.change_request_ids or [])]
+    if not recipient or not recipient.is_active or not raw_targets:
+        return []
+    open_targets = []
+    for raw_target in raw_targets:
+        try:
+            request_id = int(raw_target["request_id"])
+            item_index = raw_target.get("item_index")
+            item_index = int(item_index) if item_index is not None else None
+        except (KeyError, TypeError, ValueError):
+            continue
+        item = db.scalar(select(ChangeRequest).where(
+            ChangeRequest.id == request_id,
+            ChangeRequest.affected_user_id == recipient.id,
+            ChangeRequest.status.in_(PUBLIC_DECISION_STATUSES),
+        ))
+        if not item:
+            continue
+        if item_index is None:
+            open_targets.append({"request": item, "item_index": None})
+            continue
+        proposed = item.proposed_data or {}
+        entries = proposed.get("items") or []
+        if proposed.get("action") != "GROUP_CREATE" or item_index < 0 or item_index >= len(entries):
+            continue
+        entry = entries[item_index]
+        stay = db.get(Stay, entry.get("stay_id"))
+        if entry.get("email_decision") or not stay or stay.status != PlanStatus.PROPOSED:
+            continue
+        open_targets.append({"request": item, "item_index": item_index})
+    return open_targets
+
+
+def _public_target_details(db: Session, target: dict) -> str:
+    item = target["request"]
+    item_index = target.get("item_index")
+    if item_index is None:
+        return change_request_details(db, item)
+    entry = (item.proposed_data or {}).get("items", [])[item_index]
+    child = db.get(Child, entry.get("child_id"))
+    person = db.get(User, entry.get("responsible_user_id"))
+
+    def format_date(value):
+        if not value:
+            return "–"
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        return parsed.strftime("%d.%m.%Y %H:%M")
+
+    return f"Abschnitt {item_index + 1}: {entry.get('name') or 'Zeitraum'} · {child.display_name if child else 'Kind'} bei {person.display_name if person else 'Person'} · {format_date(entry.get('starts_at'))} – {format_date(entry.get('ends_at'))}"
+
+
+def _public_decision_page(
+    title: str,
+    message: str,
+    link: PublicDecisionToken | None = None,
+    items: list[dict] | None = None,
+    db: Session | None = None,
+) -> HTMLResponse:
+    safe_title = html_escape(title)
+    safe_message = html_escape(message)
+    form = ""
+    if link and items and db:
+        action_label = "Bestätigen" if link.decision == "APPROVE" else "Ablehnen"
+        details = "".join(
+            f'<li style="margin:0 0 10px"><strong>{html_escape(_public_target_details(db, target))}</strong></li>'
+            for target in items
+        )
+        comment = ""
+        if link.decision == "REJECT":
+            comment = '<label style="display:block;margin:20px 0 8px;font-weight:bold">Begründung<textarea name="comment" required style="display:block;box-sizing:border-box;width:100%;min-height:90px;margin-top:6px;padding:10px;border:1px solid #cfd8d2;border-radius:8px;font:inherit">Per E-Mail abgelehnt</textarea></label>'
+        else:
+            comment = '<label style="display:block;margin:20px 0 8px;font-weight:bold">Kommentar (optional)<textarea name="comment" style="display:block;box-sizing:border-box;width:100%;min-height:90px;margin-top:6px;padding:10px;border:1px solid #cfd8d2;border-radius:8px;font:inherit"></textarea></label>'
+        color = "#3b8f63" if link.decision == "APPROVE" else "#a6463a"
+        form = f'<form method="post"><p>Folgende {"Anfrage" if len(items) == 1 else "Anfragen"} werden {"bestätigt" if link.decision == "APPROVE" else "abgelehnt"}:</p><ul style="padding-left:22px">{details}</ul>{comment}<button type="submit" style="border:0;background:{color};color:white;font-weight:bold;padding:13px 18px;border-radius:9px;font-size:16px;cursor:pointer">{action_label}</button></form>'
+    html = f'''<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_title} – FamilienPlan</title></head>
+<body style="margin:0;background:#f5f6f2;font-family:Arial,sans-serif;color:#23332e"><main style="max-width:620px;margin:30px auto;padding:16px"><section style="background:white;border:1px solid #dfe5e0;border-radius:14px;padding:28px;box-shadow:0 8px 30px #23332e12"><h1 style="font-family:Georgia,serif;font-size:28px;margin-top:0">{safe_title}</h1><p style="line-height:1.6;white-space:pre-line">{safe_message}</p>{form}<p style="margin:26px 0 0;color:#708079;font-size:12px">Dieser Link benötigt kein Passwort und funktioniert nur, solange die Anfrage offen ist.</p></section></main></body></html>'''
+    return HTMLResponse(html)
+
+
+def _decide_public_group_item(
+    db: Session,
+    item: ChangeRequest,
+    item_index: int,
+    decision: str,
+    comment: str,
+    request: Request,
+    user: User,
+) -> None:
+    proposed = dict(item.proposed_data or {})
+    entries = [dict(entry) for entry in (proposed.get("items") or [])]
+    if proposed.get("action") != "GROUP_CREATE" or item_index < 0 or item_index >= len(entries):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dieser Planungsabschnitt ist nicht mehr verfügbar")
+    entry = entries[item_index]
+    if entry.get("email_decision"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dieser Planungsabschnitt wurde bereits entschieden")
+    stay = db.get(Stay, entry.get("stay_id"))
+    if not stay or stay.status != PlanStatus.PROPOSED:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dieser Planungsabschnitt ist nicht mehr verfügbar")
+    db.add(Approval(change_request_id=item.id, user_id=user.id, decision=f"{decision}_ITEM", comment=comment or None))
+    entry["email_decision"] = decision
+    if comment:
+        entry["email_comment"] = comment
+    if decision == "APPROVE":
+        request.state.approved_change = True
+        stay.status = PlanStatus.CONFIRMED
+        db.flush()
+        entry["approved_stay_id"] = merge_same_person_stay(db, stay).id
+    else:
+        db.delete(stay)
+    entries[item_index] = entry
+    proposed["items"] = entries
+    item.proposed_data = proposed
+    pending = [entry for entry in entries if not entry.get("email_decision")]
+    if not pending:
+        approved = any(entry.get("email_decision") == "APPROVE" for entry in entries)
+        item.status = PlanStatus.CONFIRMED if approved else PlanStatus.REJECTED
+        details = change_request_details(db, item)
+        if approved:
+            notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt", f"{user.display_name} hat die offenen Abschnitte deines Vorschlags bestätigt. {details}")
+        else:
+            notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt", f"{user.display_name} hat die Gruppenplanung abgelehnt. {details} · Begründung: {comment or 'Per E-Mail abgelehnt'}")
+    db.flush()
+
+
+@router.get("/public/decision/{token}", include_in_schema=False)
+def public_decision_page(token: str, db: Session = Depends(get_db)):
+    link = _public_decision_token(db, token)
+    if not link:
+        return _public_decision_page("Link nicht gültig", "Dieser Entscheidungslink ist nicht gültig oder nicht mehr verfügbar.")
+    items = _public_open_targets(db, link)
+    if not items:
+        return _public_decision_page("Anfrage erledigt", "Diese Anfrage wurde bereits bestätigt, abgelehnt oder zurückgezogen. Der Link ist damit nicht mehr verwendbar.")
+    return _public_decision_page("E-Mail-Entscheidung", f"Bitte prüfe die Anfrage und bestätige deine Entscheidung.", link, items, db)
+
+
+@router.post("/public/decision/{token}", include_in_schema=False)
+def public_decision_submit(token: str, request: Request, comment: str = Form(""), db: Session = Depends(get_db)):
+    link = _public_decision_token(db, token)
+    if not link:
+        return _public_decision_page("Link nicht gültig", "Dieser Entscheidungslink ist nicht gültig oder nicht mehr verfügbar.")
+    items = _public_open_targets(db, link)
+    if not items:
+        return _public_decision_page("Anfrage erledigt", "Diese Anfrage wurde bereits bestätigt, abgelehnt oder zurückgezogen. Der Link ist damit nicht mehr verwendbar.")
+    recipient = db.get(User, link.recipient_user_id)
+    decision_comment = (comment or "").strip()
+    if link.decision == "REJECT" and not decision_comment:
+        decision_comment = "Per E-Mail abgelehnt"
+    processed = 0
+    for target in items:
+        item = target["request"]
+        item_index = target.get("item_index")
+        try:
+            if item_index is None:
+                decide_change_request(
+                    item.id,
+                    ChangeDecision(decision=link.decision, comment=decision_comment or None),
+                    request,
+                    db,
+                    recipient,
+                )
+            else:
+                _decide_public_group_item(db, item, item_index, link.decision, decision_comment, request, recipient)
+            audit(
+                db,
+                request,
+                "CHANGE_REQUEST_APPROVED_BY_EMAIL" if link.decision == "APPROVE" else "CHANGE_REQUEST_REJECTED_BY_EMAIL",
+                recipient.id,
+                ("change_request", str(item.id)),
+                {"source": "email_link", "public_decision_token_id": link.id, "item_index": item_index},
+            )
+            db.commit()
+            processed += 1
+        except HTTPException:
+            db.rollback()
+    link = db.get(PublicDecisionToken, link.id)
+    remaining = _public_open_targets(db, link) if link else []
+    if not remaining:
+        link.used_at = utcnow()
+    db.commit()
+    if processed == 0:
+        return _public_decision_page("Keine Änderung durchgeführt", "Die offenen Anfragen konnten nicht mehr verarbeitet werden. Bitte öffne FamilienPlan für weitere Details.")
+    result = "bestätigt" if link.decision == "APPROVE" else "abgelehnt"
+    count_text = "Die Anfrage wurde" if processed == 1 else f"{processed} Anfragen wurden"
+    return _public_decision_page("Entscheidung gespeichert", f"{count_text} per E-Mail {result}. Du kannst dieses Fenster schließen.")
 
 
 @router.post("/planning-groups", dependencies=[Depends(require_csrf)])
@@ -2522,6 +2766,45 @@ def send_change_request(change_id: int, request: Request, db: Session = Depends(
     return change_request_payload(db, item, user)
 
 
+@router.post("/change-requests/{change_id}/resend", status_code=202, dependencies=[Depends(require_csrf)])
+def resend_change_request(change_id: int, data: ChangeRequestEmailResend, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
+    if not item or item.status not in PUBLIC_DECISION_STATUSES:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Offene Anfrage nicht gefunden")
+    if user.role != Role.ADMIN and user.id not in {item.requested_by_id, item.affected_user_id}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst diese Anfrage nicht erneut senden")
+
+    recipient_id = user.id if data.copy_to_self else item.affected_user_id
+    recipient = db.get(User, recipient_id)
+    if not recipient or recipient.is_pending or not recipient.email:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diese Person ist keine E-Mail-Adresse hinterlegt")
+    config = mail_config(db)
+    app_url = config.get("app_url") or settings.app_origin
+    action_url = f"{app_url}/calendar?request={item.id}"
+    subject_prefix = "Kopie: " if data.copy_to_self else "Erneute Anfrage: "
+    action = (item.proposed_data or {}).get("action")
+    subject = subject_prefix + ({
+        "GROUP_CREATE": "Gruppenplanung",
+        "DELETE": "Betreuungszeit löschen",
+    }.get(action, "Betreuungsanfrage"))
+    queue_mail(
+        db,
+        recipient_id,
+        f"notification-resend:{item.id}:{user.id}:{uuid.uuid4().hex}",
+        "notification.resend",
+        subject,
+        current_change_request_email_body(db, item, copy_to_self=data.copy_to_self),
+        action_url,
+        None if data.copy_to_self else [item.id],
+    )
+    audit(db, request, "CHANGE_REQUEST_RESENT", user.id, ("change_request", str(item.id)), {
+        "recipient_user_id": recipient_id,
+        "copy_to_self": data.copy_to_self,
+    })
+    db.commit()
+    return {"queued": True, "copy_to_self": data.copy_to_self}
+
+
 @router.put("/change-requests/{change_id}/draft", response_model=ChangeRequestOut, dependencies=[Depends(require_csrf)])
 def edit_change_request_draft(change_id: int, data: DraftChangeRequestUpdate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
@@ -2581,7 +2864,8 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         is_group = item.proposed_data.get("action") == "GROUP_CREATE"
         notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt" if is_group else "Betreuungsanfrage bestätigt", f"{user.display_name} hat deinen Vorschlag bestätigt. {details}{f' · Kommentare: {decision_comment}' if decision_comment else ''}")
         if item.proposed_data.get("action") == "GROUP_CREATE":
-            proposed_stays = [db.get(Stay, stay_id) for stay_id in item.proposed_data.get("stay_ids", [])]
+            pending_ids = [entry.get("stay_id") for entry in item.proposed_data.get("items", []) if not entry.get("email_decision") and entry.get("stay_id")]
+            proposed_stays = [db.get(Stay, stay_id) for stay_id in pending_ids]
             for stay in proposed_stays:
                 if stay:
                     stay.status = PlanStatus.CONFIRMED
@@ -2620,10 +2904,13 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
     elif data.decision == "REJECT":
         item.status = PlanStatus.REJECTED
         if item.proposed_data.get("action") == "GROUP_CREATE":
-            for stay_id in item.proposed_data.get("stay_ids", []):
+            pending_ids = [entry.get("stay_id") for entry in item.proposed_data.get("items", []) if not entry.get("email_decision") and entry.get("stay_id")]
+            for stay_id in pending_ids:
                 stay = db.get(Stay, stay_id)
                 if stay:
                     db.delete(stay)
+            if any(entry.get("email_decision") == "APPROVE" for entry in item.proposed_data.get("items", [])):
+                item.status = PlanStatus.CONFIRMED
         elif item.proposed_data.get("action") == "CREATE":
             rule_ids = set()
             for stay_id in item.proposed_data.get("stay_ids", [item.object_id]):
