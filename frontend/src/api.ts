@@ -85,6 +85,7 @@ export type Stay = {
   status: string;
   title: string | null;
   note: string | null;
+  parallel: boolean;
   recurrence_rule_id: number | null;
   recurrence_interval_weeks: number | null;
   recurrence_frequency: "WEEKLY" | "MONTHLY";

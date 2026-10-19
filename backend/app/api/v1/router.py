@@ -23,11 +23,11 @@ from app.api.dependencies import admin, assert_child_access, current_user, requi
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
-from app.integrations import mail_config, queue_mail
+from app.integrations import mail_config, queue_mail, queue_mail_batch
 from app.push import queue_push, vapid_config
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PublicDecisionToken, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
-from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestEmailResend, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
+from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestEmailBatch, ChangeRequestEmailResend, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
 router = APIRouter()
@@ -321,14 +321,15 @@ def audit_app_opened(db: Session, request: Request, user: User, session: UserSes
     return True
 
 
-def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None):
+def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None, queue_email: bool = True):
     notification = Notification(user_id=user_id, kind=kind, title=title, body=body)
     db.add(notification)
     db.flush()
     event_key = f"notification:{notification.id}"
     app_url = mail_config(db).get("app_url") or settings.app_origin
     action_url = f"{app_url}/calendar?request={request_id}" if request_id else f"{app_url}/calendar"
-    queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url, [request_id] if request_id else None)
+    if queue_email:
+        queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url, [request_id] if request_id else None)
     queue_push(db, user_id, event_key, title, body, action_url)
     return notification
 
@@ -1603,6 +1604,7 @@ def merge_same_person_stay(db: Session, stay: Stay) -> Stay:
     canonical.starts_at, canonical.ends_at = range_start, range_end
     canonical.title = preferred_title or canonical.title
     canonical.note = preferred_note or canonical.note
+    canonical.parallel = any(item.parallel for item in component.values())
     if canonical_original_rule_id:
         canonical.recurrence_exception_rule_id = canonical_original_rule_id
         canonical.recurrence_original_start = canonical_original_start
@@ -1630,7 +1632,7 @@ def stay_payload(db: Session, stay: Stay) -> dict:
         "id": stay.id, "child_id": stay.child_id, "responsible_user_id": stay.responsible_user_id,
         "responsible_display_name": responsible.display_name if responsible else None,
         "starts_at": stay.starts_at, "ends_at": stay.ends_at, "status": stay.status,
-        "title": stay.title, "note": stay.note, "created_by_id": stay.created_by_id, "recurrence_rule_id": rule.id if rule else None,
+        "title": stay.title, "note": stay.note, "parallel": stay.parallel, "created_by_id": stay.created_by_id, "recurrence_rule_id": rule.id if rule else None,
         "recurrence_interval_weeks": int(interval_match.group(1)) if interval_match else (1 if rule else None), "recurrence_frequency": ("MONTHLY" if rule and "FREQ=MONTHLY" in rule.rrule else "WEEKLY"), "recurrence_day_of_month": int(day_match.group(1)) if day_match else None, "recurrence_until": rule.until_at if rule else None,
     }
 
@@ -1696,7 +1698,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
                         existing.append(overlap_stay)
                         existing_starts.add(backward_cursor)
                     elif not overlap_stay:
-                        new_stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=backward_cursor, ends_at=backward_end, status=PlanStatus.CONFIRMED, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=matching_rule.id)
+                        new_stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=backward_cursor, ends_at=backward_end, status=PlanStatus.CONFIRMED, title=data.title, note=data.note, parallel=data.parallel, created_by_id=user.id, recurrence_rule_id=matching_rule.id)
                         db.add(new_stay); existing.append(new_stay); existing_starts.add(backward_cursor)
                     extended_backward = True
                     backward_cursor += step
@@ -1709,7 +1711,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
             while cursor_start <= data.recurrence_until:
                 cursor_end = cursor_start + timedelta(minutes=matching_rule.duration_minutes)
                 if cursor_start > previous_until and cursor_start not in existing_starts:
-                    db.add(Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=cursor_start, ends_at=cursor_end, status=PlanStatus.CONFIRMED, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=matching_rule.id))
+                    db.add(Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=cursor_start, ends_at=cursor_end, status=PlanStatus.CONFIRMED, title=data.title, note=data.note, parallel=data.parallel, created_by_id=user.id, recurrence_rule_id=matching_rule.id))
                     added += 1
                 cursor_start += step
             if added == 0 and not extended_backward and matching_rule.until_at and data.recurrence_until <= matching_rule.until_at:
@@ -1733,7 +1735,7 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
         db.add(rule); db.flush()
     created = []
     for starts_at, ends_at in occurrences:
-        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=data.status, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
+        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=data.status, title=data.title, note=data.note, parallel=data.parallel, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
         db.add(stay); created.append(stay)
     db.flush()
     merged = []
@@ -1752,6 +1754,8 @@ def create_stay(data: StayCreate, request: Request, db: Session = Depends(get_db
 def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
     assert_child_access(db, user, data.child_id, edit=True)
     assert_person_visible(db, user, data.responsible_user_id)
+    if data.parallel:
+        return []
     occurrences = recurrence_dates(data)
     found: dict[int, Stay] = {}
     for starts_at, ends_at in occurrences:
@@ -1759,7 +1763,7 @@ def stay_conflicts(data: StayCreate, db: Session = Depends(get_db), user: User =
             Stay.child_id == data.child_id, Stay.status == PlanStatus.CONFIRMED,
             Stay.starts_at < ends_at, Stay.ends_at > starts_at,
         )):
-            if stay.responsible_user_id != data.responsible_user_id:
+            if stay.responsible_user_id != data.responsible_user_id and not stay.parallel:
                 found[stay.id] = stay
     visible_ids = None if user.role == Role.ADMIN else visible_person_ids(user)
     return [
@@ -1786,6 +1790,7 @@ def stay_request_recipient_id(
 
 @router.post("/stay-proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
 def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user), parallel: bool = False):
+    parallel = parallel or data.parallel
     if "STAY" not in (user.allowed_event_types or []):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Die Terminart Betreuung ist für dich nicht freigeschaltet")
     assert_child_access(db, user, data.child_id, edit=True)
@@ -1813,7 +1818,7 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
             Stay.starts_at < ends_at,
             Stay.ends_at > starts_at,
         )):
-            if stay.responsible_user_id != data.responsible_user_id:
+            if stay.responsible_user_id != data.responsible_user_id and not stay.parallel:
                 overlapping_other[stay.id] = stay
     if overlapping_other and not parallel:
         if len(occurrences) != 1 or len(overlapping_other) != 1:
@@ -1847,13 +1852,13 @@ def propose_new_stay(data: StayCreate, request: Request, db: Session = Depends(g
         db.add(rule); db.flush()
     created = []
     for starts_at, ends_at in occurrences:
-        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=PlanStatus.DRAFT, title=data.title, note=data.note, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
+        stay = Stay(child_id=data.child_id, responsible_user_id=data.responsible_user_id, starts_at=starts_at, ends_at=ends_at, status=PlanStatus.DRAFT, title=data.title, note=data.note, parallel=parallel or data.parallel, created_by_id=user.id, recurrence_rule_id=rule.id if rule else None)
         db.add(stay); created.append(stay)
     db.flush()
     item = ChangeRequest(
         object_type="stay", object_id=created[0].id, requested_by_id=user.id,
         affected_user_id=affected_id, status=PlanStatus.DRAFT, before_data={},
-        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_frequency": data.recurrence_frequency if rule else None, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None, "parallel": parallel},
+        proposed_data={"action": "CREATE", "stay_ids": [stay.id for stay in created], "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "responsible_user_id": data.responsible_user_id, "title": data.title, "note": data.note, "scope": "series" if rule else "occurrence", "recurrence_interval_weeks": data.recurrence_interval_weeks, "recurrence_frequency": data.recurrence_frequency if rule else None, "recurrence_until": data.recurrence_until.isoformat() if data.recurrence_until else None, "parallel": parallel or data.parallel},
     )
     db.add(item); db.flush()
     audit(db, request, "NEW_STAY_DRAFT_CREATED", user.id, ("change_request", str(item.id)), {"occurrences": len(created)})
@@ -1925,6 +1930,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
                 ends_at=ends_at,
                 status=stay.status,
                 title=data.title, note=data.note,
+                parallel=stay.parallel,
                 created_by_id=stay.created_by_id,
                 recurrence_rule_id=rule.id,
             )
@@ -1965,6 +1971,7 @@ def update_stay(stay_id: int, data: StayUpdate, request: Request, db: Session = 
                 ends_at=remainder_end,
                 status=original_status,
                 title=original_title, note=original_note,
+                parallel=stay.parallel,
                 created_by_id=original_created_by_id,
                 recurrence_rule_id=None,
             ))
@@ -2059,6 +2066,8 @@ def delete_request_stays(db: Session, item: ChangeRequest) -> None:
 
 
 def validate_draft_create_conflicts(db: Session, data: StayCreate) -> None:
+    if data.parallel:
+        return
     for starts_at, ends_at in recurrence_dates(data):
         conflict = db.scalar(select(Stay).where(
             Stay.child_id == data.child_id,
@@ -2066,6 +2075,7 @@ def validate_draft_create_conflicts(db: Session, data: StayCreate) -> None:
             Stay.starts_at < ends_at,
             Stay.ends_at > starts_at,
             Stay.responsible_user_id != data.responsible_user_id,
+            Stay.parallel.is_(False),
         ).limit(1))
         if conflict:
             raise HTTPException(status.HTTP_409_CONFLICT, "Für diesen Zeitraum besteht bereits eine Betreuung bei einer anderen Person")
@@ -2117,6 +2127,7 @@ def replace_create_draft(db: Session, item: ChangeRequest, data: dict, user: Use
             status=PlanStatus.DRAFT,
             title=create_data.title,
             note=create_data.note,
+            parallel=create_data.parallel,
             created_by_id=user.id,
             recurrence_rule_id=rule.id if rule else None,
         )
@@ -2138,7 +2149,7 @@ def replace_create_draft(db: Session, item: ChangeRequest, data: dict, user: Use
         "recurrence_frequency": create_data.recurrence_frequency if rule else None,
         "recurrence_day_of_month": create_data.recurrence_day_of_month if rule else None,
         "recurrence_until": create_data.recurrence_until.isoformat() if create_data.recurrence_until else None,
-        "parallel": bool(data.get("parallel", False)),
+        "parallel": create_data.parallel,
     }
 
 
@@ -2223,7 +2234,15 @@ def update_draft_request(db: Session, item: ChangeRequest, data: dict, user: Use
     item.proposed_data = update_data.model_dump(mode="json")
 
 
-def publish_change_request(db: Session, item: ChangeRequest, request: Request, user: User) -> None:
+def change_request_email_subject(item: ChangeRequest, prefix: str = "") -> str:
+    action = (item.proposed_data or {}).get("action")
+    return prefix + {
+        "GROUP_CREATE": "Neue Gruppenplanung",
+        "DELETE": "Betreuungszeit löschen",
+    }.get(action, "Neue Betreuungsanfrage")
+
+
+def publish_change_request(db: Session, item: ChangeRequest, request: Request, user: User, queue_email: bool = True) -> None:
     action = (item.proposed_data or {}).get("action")
     email_body = current_change_request_email_body(db, item)
     item.status = PlanStatus.PROPOSED if action in {"CREATE", "GROUP_CREATE"} else PlanStatus.CHANGE_PROPOSED
@@ -2233,13 +2252,11 @@ def publish_change_request(db: Session, item: ChangeRequest, request: Request, u
             if stay and stay.status == PlanStatus.DRAFT:
                 stay.status = PlanStatus.PROPOSED
     if action == "GROUP_CREATE":
-        notify(db, item.affected_user_id, "GROUP_PLAN_PROPOSAL", "Neue Gruppenplanung", email_body, item.id)
+        notify(db, item.affected_user_id, "GROUP_PLAN_PROPOSAL", change_request_email_subject(item), email_body, item.id, queue_email=queue_email)
     elif action == "DELETE":
-        notify(db, item.affected_user_id, "STAY_DELETE_PROPOSAL", "Betreuungszeit löschen", email_body, item.id)
-    elif action == "CREATE":
-        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", email_body, item.id)
+        notify(db, item.affected_user_id, "STAY_DELETE_PROPOSAL", change_request_email_subject(item), email_body, item.id, queue_email=queue_email)
     else:
-        notify(db, item.affected_user_id, "STAY_PROPOSAL", "Neue Betreuungsanfrage", email_body, item.id)
+        notify(db, item.affected_user_id, "STAY_PROPOSAL", change_request_email_subject(item), email_body, item.id, queue_email=queue_email)
     audit(db, request, "CHANGE_REQUEST_SENT", user.id, ("change_request", str(item.id)), {"affected_user_id": item.affected_user_id, "action": action or "UPDATE"})
 
 
@@ -2322,24 +2339,18 @@ def change_request_details(db: Session, item: ChangeRequest) -> str:
         return f"{proposed.get('title') or 'Gruppenplanung'} · {len(proposed.get('items') or [])} Zeiträume"
     parts = [child.display_name if child else "Betreuung"]
 
-    def format_date(value):
-        if not value:
-            return "–"
-        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
-        return parsed.strftime("%d.%m.%Y %H:%M")
-
     if proposed.get("action") == "DELETE":
-        parts.append(f"Löschung: {format_date(before.get('starts_at'))} – {format_date(before.get('ends_at'))}")
+        parts.append(f"Löschung: {_format_request_datetime(before.get('starts_at'))} – {_format_request_datetime(before.get('ends_at'))}")
     elif proposed.get("action") == "CREATE":
         person = db.get(User, proposed.get("responsible_user_id"))
         parts.append(f"neu bei {person.display_name if person else 'unbekannt'}")
-        parts.append(f"{format_date(proposed.get('starts_at'))} – {format_date(proposed.get('ends_at'))}")
+        parts.append(f"{_format_request_datetime(proposed.get('starts_at'))} – {_format_request_datetime(proposed.get('ends_at'))}")
     else:
         if before.get("responsible_user_id") != proposed.get("responsible_user_id"):
             old_person, new_person = db.get(User, before.get("responsible_user_id")), db.get(User, proposed.get("responsible_user_id"))
             parts.append(f"Person: {old_person.display_name if old_person else 'unbekannt'} → {new_person.display_name if new_person else 'unbekannt'}")
         if before.get("starts_at") != proposed.get("starts_at") or before.get("ends_at") != proposed.get("ends_at"):
-            parts.append(f"Zeitraum: {format_date(before.get('starts_at'))} – {format_date(before.get('ends_at'))} → {format_date(proposed.get('starts_at'))} – {format_date(proposed.get('ends_at'))}")
+            parts.append(f"Zeitraum: {_format_request_datetime(before.get('starts_at'))} – {_format_request_datetime(before.get('ends_at'))} → {_format_request_datetime(proposed.get('starts_at'))} – {_format_request_datetime(proposed.get('ends_at'))}")
         if "title" in proposed and before.get("title") != proposed.get("title"):
             parts.append(f"Titel: {before.get('title') or '–'} → {proposed.get('title') or '–'}")
         if before.get("note") != proposed.get("note"):
@@ -2351,6 +2362,8 @@ def _format_request_datetime(value) -> str:
     if not value:
         return "–"
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(ZoneInfo(settings.app_timezone))
     return parsed.strftime("%d.%m.%Y %H:%M")
 
 
@@ -2438,6 +2451,18 @@ def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_
     return body
 
 
+def change_request_email_entry(db: Session, item: ChangeRequest, copy_to_self: bool = False, resend: bool = True) -> dict:
+    config = mail_config(db)
+    app_url = config.get("app_url") or settings.app_origin
+    return {
+        "subject": change_request_email_subject(item, "Kopie: " if copy_to_self else ("Erneute Anfrage: " if resend else "")),
+        "body": current_change_request_email_body(db, item, copy_to_self=copy_to_self) + "\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.",
+        "action_url": f"{app_url}/calendar?request={item.id}",
+        "decision_request_ids": [] if copy_to_self else [item.id],
+        "copy_to_self": copy_to_self,
+    }
+
+
 PUBLIC_DECISION_STATUSES = {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED}
 
 
@@ -2493,13 +2518,7 @@ def _public_target_details(db: Session, target: dict) -> str:
     child = db.get(Child, entry.get("child_id"))
     person = db.get(User, entry.get("responsible_user_id"))
 
-    def format_date(value):
-        if not value:
-            return "–"
-        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
-        return parsed.strftime("%d.%m.%Y %H:%M")
-
-    return f"Abschnitt {item_index + 1}: {entry.get('name') or 'Zeitraum'} · {child.display_name if child else 'Kind'} bei {person.display_name if person else 'Person'} · {format_date(entry.get('starts_at'))} – {format_date(entry.get('ends_at'))}"
+    return f"Abschnitt {item_index + 1}: {entry.get('name') or 'Zeitraum'} · {child.display_name if child else 'Kind'} bei {person.display_name if person else 'Person'} · {_format_request_datetime(entry.get('starts_at'))} – {_format_request_datetime(entry.get('ends_at'))}"
 
 
 def _public_decision_page(
@@ -2820,6 +2839,34 @@ def send_change_request(change_id: int, request: Request, db: Session = Depends(
     return change_request_payload(db, item, user)
 
 
+@router.post("/change-requests/send-batch", status_code=202, dependencies=[Depends(require_csrf)])
+def send_change_requests_batch(data: ChangeRequestEmailBatch, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    request_ids = list(dict.fromkeys(data.request_ids))
+    items = list(db.scalars(select(ChangeRequest).where(ChangeRequest.id.in_(request_ids)).order_by(ChangeRequest.id).with_for_update()))
+    if len(items) != len(request_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mindestens ein Entwurf wurde nicht gefunden")
+    for item in items:
+        if item.status != PlanStatus.DRAFT:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Mindestens ein Entwurf wurde bereits versendet")
+        if item.requested_by_id != user.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur die anfragende Person kann diese Entwürfe versenden")
+    grouped: dict[int, list[dict]] = {}
+    for item in items:
+        publish_change_request(db, item, request, user, queue_email=False)
+        grouped.setdefault(item.affected_user_id, []).append(change_request_email_entry(db, item, resend=False))
+    for recipient_id, entries in grouped.items():
+        queue_mail_batch(
+            db,
+            recipient_id,
+            f"notification-batch:{user.id}:{uuid.uuid4().hex}",
+            "notification.digest",
+            entries,
+            subject=entries[0]["subject"] if len(entries) == 1 else f"{len(entries)} neue Anfragen in FamilienPlan",
+        )
+    db.commit()
+    return {"sent": len(items), "mail_count": len(grouped)}
+
+
 @router.post("/change-requests/{change_id}/resend", status_code=202, dependencies=[Depends(require_csrf)])
 def resend_change_request(change_id: int, data: ChangeRequestEmailResend, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     item = db.scalar(select(ChangeRequest).where(ChangeRequest.id == change_id).with_for_update())
@@ -2857,6 +2904,48 @@ def resend_change_request(change_id: int, data: ChangeRequestEmailResend, reques
     })
     db.commit()
     return {"queued": True, "copy_to_self": data.copy_to_self}
+
+
+@router.post("/change-requests/resend-batch", status_code=202, dependencies=[Depends(require_csrf)])
+def resend_change_requests_batch(data: ChangeRequestEmailBatch, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    request_ids = list(dict.fromkeys(data.request_ids))
+    items = list(db.scalars(select(ChangeRequest).where(ChangeRequest.id.in_(request_ids)).order_by(ChangeRequest.id).with_for_update()))
+    if len(items) != len(request_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mindestens eine offene Anfrage wurde nicht gefunden")
+    for item in items:
+        if item.status not in PUBLIC_DECISION_STATUSES:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Mindestens eine Anfrage ist nicht mehr offen")
+        if user.role != Role.ADMIN and user.id not in {item.requested_by_id, item.affected_user_id}:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Du darfst mindestens eine dieser Anfragen nicht erneut senden")
+    grouped: dict[int, list[dict]] = {}
+    recipient_id = user.id if data.copy_to_self else None
+    if data.copy_to_self:
+        grouped[user.id] = [change_request_email_entry(db, item, copy_to_self=True) for item in items]
+    else:
+        for item in items:
+            grouped.setdefault(item.affected_user_id, []).append(change_request_email_entry(db, item))
+    for target_id, entries in grouped.items():
+        target = db.get(User, target_id)
+        if not target or target.is_pending or not target.email:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für mindestens eine Zielperson ist keine E-Mail-Adresse hinterlegt")
+        queue_mail_batch(
+            db,
+            target_id,
+            f"notification-resend-batch:{user.id}:{uuid.uuid4().hex}",
+            "notification.resend",
+            entries,
+            subject=entries[0]["subject"] if len(entries) == 1 else (
+                f"Kopie: {len(entries)} Betreuungsanfragen" if data.copy_to_self else f"{len(entries)} erneute Betreuungsanfragen"
+            ),
+        )
+    for item in items:
+        audit(db, request, "CHANGE_REQUEST_RESENT", user.id, ("change_request", str(item.id)), {
+            "recipient_user_id": recipient_id if data.copy_to_self else item.affected_user_id,
+            "copy_to_self": data.copy_to_self,
+            "batch": True,
+        })
+    db.commit()
+    return {"queued": len(items), "mail_count": len(grouped), "copy_to_self": data.copy_to_self}
 
 
 @router.put("/change-requests/{change_id}/draft", response_model=ChangeRequestOut, dependencies=[Depends(require_csrf)])
@@ -3035,6 +3124,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                 target = original if index == 0 else Stay(child_id=original.child_id, created_by_id=original.created_by_id)
                 target.starts_at, target.ends_at = start, end
                 target.responsible_user_id, target.title, target.note = counter.responsible_user_id, template.title, counter.note
+                target.parallel = bool(item.proposed_data.get("parallel", False))
                 target.status = PlanStatus.PROPOSED
                 target.recurrence_rule_id = rule.id if rule and counter.recurrence_interval_weeks else None
                 db.add(target)
@@ -3044,7 +3134,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                 or_(Stay.recurrence_rule_id == rule.id, Stay.recurrence_exception_rule_id == rule.id)
             ).limit(1)):
                 db.delete(rule)
-            item.proposed_data = {**counter.model_dump(mode="json"), "action": "CREATE", "stay_ids": new_ids}
+            item.proposed_data = {**counter.model_dump(mode="json"), "action": "CREATE", "stay_ids": new_ids, "parallel": bool(item.proposed_data.get("parallel", False))}
         else:
             item.proposed_data = data.counter_proposal.model_dump(mode="json") if hasattr(data.counter_proposal, "model_dump") else data.counter_proposal
         item.status = PlanStatus.CHANGE_PROPOSED

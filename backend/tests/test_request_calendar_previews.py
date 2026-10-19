@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -10,12 +10,13 @@ from starlette.requests import Request
 from app.api.v1.router import (change_requests, create_planning_group, create_stay, decide_change_request,
     delete_change_request_draft, edit_change_request_draft, propose_new_stay, propose_stay_change,
     propose_stay_deletion, public_decision_page, public_decision_submit, send_change_request,
-    request_calendar_previews, resend_change_request, withdraw_change_request)
+    request_calendar_previews, resend_change_request, resend_change_requests_batch,
+    send_change_requests_batch, withdraw_change_request)
 from app.core.security import new_token, token_hash
 from app.api.v1.integration_router import integration_events, child_location
 from app.core.database import Base
 from app.models.entities import ChangeRequest, Child, OutboxMessage, PlanStatus, PublicDecisionToken, Role, Stay, User
-from app.schemas import ChangeDecision, ChangeRequestEmailResend, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, StayCreate, StayUpdate
+from app.schemas import ChangeDecision, ChangeRequestEmailBatch, ChangeRequestEmailResend, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, StayCreate, StayUpdate
 
 
 @pytest.fixture
@@ -145,6 +146,7 @@ def test_parallel_different_person_overlap_keeps_existing_stay(context):
     decide_change_request(item.id, ChangeDecision(decision="APPROVE"), request, db, other)
     assert db.get(Stay, existing.id).status == PlanStatus.CONFIRMED
     assert db.get(Stay, item.object_id).status == PlanStatus.CONFIRMED
+    assert db.get(Stay, item.object_id).parallel is True
 
 
 def test_change_and_delete_previews_leave_confirmed_stay_untouched_and_withdraw_preserves_it(context):
@@ -506,6 +508,88 @@ def test_notification_email_shows_current_and_requested_change(context, monkeypa
     assert "10.12.2026 00:00" in body
     assert "12.12.2026 00:00" in body
     assert "Person: recipient → sender" in body
+
+
+def test_aware_request_times_are_localized_and_approval_keeps_the_requested_instants(context, monkeypatch):
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    })
+    original_start = datetime(2026, 10, 23, 14, tzinfo=timezone.utc)
+    original_end = datetime(2026, 10, 23, 16, tzinfo=timezone.utc)
+    requested_end = datetime(2026, 10, 23, 15, tzinfo=timezone.utc)
+    original = Stay(
+        child_id=child.id, responsible_user_id=recipient.id,
+        starts_at=original_start, ends_at=original_end,
+        status=PlanStatus.CONFIRMED, title="Testeintrag 2", created_by_id=recipient.id,
+    )
+    db.add(original)
+    db.commit()
+
+    result = propose_stay_change(original.id, StayUpdate(
+        starts_at=original_start, ends_at=requested_end,
+        responsible_user_id=recipient.id, title="Testeintrag 2", scope="occurrence",
+    ), request, db, sender)
+    send_change_request(result.id, request, db, sender)
+
+    digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
+    assert digest is not None
+    body = digest.payload["entries"][0]["body"]
+    assert "23.10.2026 16:00" in body
+    assert "23.10.2026 17:00" in body
+
+    decide_change_request(result.id, ChangeDecision(decision="APPROVE"), request, db, recipient)
+    confirmed = db.get(Stay, original.id)
+    assert confirmed is not None
+    assert confirmed.starts_at == original_start
+    assert confirmed.ends_at == requested_end
+
+
+def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkeypatch):
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    })
+    first = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2027, 3, 1), ends_at=datetime(2027, 3, 2),
+    ), request, db, sender)
+    second = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2027, 3, 3), ends_at=datetime(2027, 3, 4),
+    ), request, db, sender)
+    result = send_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id]), request, db, sender)
+    assert result == {"sent": 2, "mail_count": 1}
+    digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
+    assert digest is not None
+    assert len(digest.payload["entries"]) == 2
+    assert len(digest.payload["decision_batch_actions"]) == 2
+    assert all(len(entry["decision_actions"]) == 1 for entry in digest.payload["entries"])
+
+    result = resend_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id]), request, db, sender)
+    assert result == {"queued": 2, "mail_count": 1, "copy_to_self": False}
+    resend = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.resend"))
+    assert resend is not None
+    assert len(resend.payload["entries"]) == 2
+    assert len(resend.payload["decision_batch_actions"]) == 2
+
+    result = resend_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id], copy_to_self=True), request, db, sender)
+    assert result == {"queued": 2, "mail_count": 1, "copy_to_self": True}
+    copies = list(db.scalars(select(OutboxMessage).where(
+        OutboxMessage.event_type == "notification.resend",
+        OutboxMessage.recipient_key == sender.email,
+    )))
+    assert len(copies) == 1
+    assert len(copies[0].payload["entries"]) == 2
+    assert all(entry["decision_actions"] == [] for entry in copies[0].payload["entries"])
 
 
 def test_resend_uses_current_request_and_copy_has_no_decision_links(context, monkeypatch):

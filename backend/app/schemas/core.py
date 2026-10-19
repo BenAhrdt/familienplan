@@ -189,6 +189,7 @@ class StayCreate(BaseModel):
     status: PlanStatus = PlanStatus.DRAFT
     title: str | None = Field(default=None, max_length=300)
     note: str | None = None
+    parallel: bool = False
     recurrence_interval_weeks: int | None = Field(default=None, ge=1, le=52)
     recurrence_frequency: str = Field(default="WEEKLY", pattern="^(WEEKLY|MONTHLY)$")
     recurrence_day_of_month: int | None = Field(default=None, ge=1, le=31)
@@ -282,6 +283,11 @@ class DraftChangeRequestUpdate(BaseModel):
 
 
 class ChangeRequestEmailResend(BaseModel):
+    copy_to_self: bool = False
+
+
+class ChangeRequestEmailBatch(BaseModel):
+    request_ids: list[int] = Field(min_length=1, max_length=100)
     copy_to_self: bool = False
 
 

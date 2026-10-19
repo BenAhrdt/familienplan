@@ -160,6 +160,34 @@
 .request-actions button.danger {
   color: #9a3727;
 }
+.request-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.15rem;
+}
+.request-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.request-select input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--green);
+}
+.change-requests article > div:first-child > .request-select {
+  margin-bottom: 0.35rem;
+}
 .decision-actions {
   display: flex;
   gap: 0.7rem;

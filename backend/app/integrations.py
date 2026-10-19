@@ -158,6 +158,53 @@ def queue_mail(
                          event_type=event_type, payload={"subject": subject, "body": body, "action_url": action_url, "event_type": event_type}))
 
 
+def queue_mail_batch(db, user_id: int, event_key: str, event_type: str, entries: list[dict], subject: str | None = None):
+    """Queue one mail containing several request entries for one recipient."""
+    user = db.get(User, user_id)
+    config = mail_config(db)
+    if not user or user.is_pending or not user.email or not config["enabled"] or not entries:
+        return
+    normalized = []
+    for raw_entry in entries:
+        copy_to_self = bool(raw_entry.get("copy_to_self"))
+        decision_actions = [] if copy_to_self else _decision_actions(
+            db, user_id, raw_entry.get("decision_request_ids") or [], config
+        )
+        normalized.append({
+            "subject": raw_entry["subject"],
+            "body": raw_entry["body"],
+            "action_url": raw_entry.get("action_url"),
+            "decision_actions": decision_actions,
+        })
+    if not normalized:
+        return
+    is_digest = event_type in {"notification.created", "notification.digest"}
+    if subject is None:
+        if is_digest:
+            subject = f"{len(normalized)} neue Anfragen in FamilienPlan"
+        elif len(normalized) == 1:
+            subject = normalized[0]["subject"]
+        else:
+            subject = f"{len(normalized)} erneute Betreuungsanfragen"
+    now = utcnow()
+    action_url = next((entry.get("action_url") for entry in normalized if entry.get("action_url")), config["app_url"])
+    db.add(OutboxMessage(
+        channel="email",
+        recipient_key=user.email,
+        event_key=event_key,
+        event_type=event_type,
+        available_at=now + timedelta(minutes=2) if is_digest else now,
+        payload={
+            "subject": subject,
+            "body": "\n\n".join(f"• {entry['subject']}\n{entry['body']}" for entry in normalized),
+            "action_url": action_url,
+            "entries": normalized,
+            "decision_batch_actions": _batch_decision_actions(db, user_id, normalized, config),
+            "event_type": event_type,
+        },
+    ))
+
+
 def _send_mail(config: dict, recipient: str, payload: dict):
     message = EmailMessage()
     message["Subject"] = payload["subject"]

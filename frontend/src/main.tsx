@@ -805,7 +805,9 @@ function Dashboard({
             const second = allStays[secondIndex];
             if (
               first.child_id !== second.child_id ||
-              first.responsible_user_id === second.responsible_user_id
+              first.responsible_user_id === second.responsible_user_id ||
+              first.parallel ||
+              second.parallel
             ) continue;
             const startsAt = new Date(
                 Math.max(new Date(first.starts_at).getTime(), new Date(second.starts_at).getTime()),
@@ -1327,8 +1329,21 @@ function Children({
 }
 
 const localDateTime = (date: Date) => {
-  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return shifted.toISOString().slice(0, 16);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+const localInputToIso = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) throw new Error("Ungültiger Datum-/Uhrzeitwert");
+  const local = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+  );
+  if (Number.isNaN(local.getTime())) throw new Error("Ungültiger Datum-/Uhrzeitwert");
+  return local.toISOString();
 };
 const localDayStart = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -1681,13 +1696,20 @@ function CalendarScreen({
     });
   }, [requests]);
   const sessionUserId = getSessionUser()?.id;
-  const [requestResendBusy, setRequestResendBusy] = useState<string | null>(null);
+  const [requestBatchBusy, setRequestBatchBusy] = useState<"send" | "resend" | "copy" | null>(null);
+  const [selectedDraftRequestIds, setSelectedDraftRequestIds] = useState<number[]>([]);
+  const [selectedResendRequestIds, setSelectedResendRequestIds] = useState<number[]>([]);
   const [requestNotice, setRequestNotice] = useState("");
   const draftRequests = requests.filter((request) => request.status === "DRAFT" && request.requested_by_id === sessionUserId);
   const visibleRequests = requests.filter((request) => request.status !== "DRAFT");
+  const resendableRequests = visibleRequests.filter((request) => canResendRequest(request));
   const pendingEntries = visibleRequests.flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
   const pendingOnDay = (day: Date, end: Date) => availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY")
     ? pendingEntries.filter(({entry}) => new Date(entry.starts_at) < end && new Date(entry.ends_at) > day) : [];
+  useEffect(() => {
+    setSelectedDraftRequestIds((current) => current.filter((id) => draftRequests.some((request) => request.id === id)));
+    setSelectedResendRequestIds((current) => current.filter((id) => resendableRequests.some((request) => request.id === id)));
+  }, [requests]);
   useEffect(() => {
     if (open === "event" && eventType === "BIRTHDAY" && !editingEvent) {
       setOpen(null);
@@ -1749,6 +1771,7 @@ function CalendarScreen({
       status: "DRAFT",
       title: proposal.title !== undefined ? proposal.title : before.title || null,
       note: proposal.note !== undefined ? proposal.note : before.note || null,
+      parallel: proposal.parallel === true,
       recurrence_rule_id: proposal.recurrence_interval_weeks ? request.id : null,
       recurrence_interval_weeks: proposal.recurrence_interval_weeks || null,
       recurrence_frequency: proposal.recurrence_frequency || "WEEKLY",
@@ -1790,13 +1813,22 @@ function CalendarScreen({
     setError("");
     setOpen("stay");
   }
-  async function sendDraft(request: ChangeRequest) {
+  async function sendDrafts(requestIds: number[]) {
+    if (!requestIds.length) return;
+    setRequestBatchBusy("send");
     setError("");
     try {
-      await api(`/change-requests/${request.id}/send`, { method: "POST" });
+      await api("/change-requests/send-batch", {
+        method: "POST",
+        body: JSON.stringify({ request_ids: requestIds }),
+      });
+      setSelectedDraftRequestIds([]);
+      setRequestNotice(requestIds.length === 1 ? "Die Anfrage wurde versendet." : `${requestIds.length} Anfragen wurden je Empfänger zusammengefasst versendet.`);
       load();
     } catch (x) {
       setError((x as Error).message);
+    } finally {
+      setRequestBatchBusy(null);
     }
   }
   async function deleteDraft(request: ChangeRequest) {
@@ -1909,8 +1941,8 @@ function CalendarScreen({
   async function eventSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    let startsAt = new Date(String(f.get("starts_at")));
-    let endsAt = new Date(String(f.get("ends_at")));
+    let startsAt = new Date(localInputToIso(String(f.get("starts_at"))));
+    let endsAt = new Date(localInputToIso(String(f.get("ends_at"))));
     if (eventAllDay) {
       startsAt = localDayStart(startsAt);
       endsAt = nextLocalDay(startsAt);
@@ -1959,7 +1991,7 @@ function CalendarScreen({
               : null,
           recurrence_until:
             eventInterval && f.get("event_until")
-              ? new Date(String(f.get("event_until")) + "T23:59").toISOString()
+              ? localInputToIso(String(f.get("event_until")) + "T23:59")
               : null,
         }),
         },
@@ -2015,8 +2047,8 @@ function CalendarScreen({
       const payload = {
         child_id: Number(f.get("child_id")),
         responsible_user_id: Number(f.get("responsible_user_id")),
-        starts_at: new Date(String(f.get("starts_at"))).toISOString(),
-        ends_at: new Date(String(f.get("ends_at"))).toISOString(),
+        starts_at: localInputToIso(String(f.get("starts_at"))),
+        ends_at: localInputToIso(String(f.get("ends_at"))),
         status: "CONFIRMED",
         title: String(f.get("title") || "").trim() || null,
         note: f.get("note") || null,
@@ -2028,7 +2060,7 @@ function CalendarScreen({
             : null,
         recurrence_until:
           repeat && f.get("until")
-            ? new Date(String(f.get("until")) + "T23:59").toISOString()
+            ? localInputToIso(String(f.get("until")) + "T23:59")
             : null,
         parallel: editingDraftRequest?.proposed_data.parallel === true || (!editingStay && !editingDraftRequest && f.get("parallel") === "on"),
       };
@@ -2279,36 +2311,54 @@ function CalendarScreen({
       setError((x as Error).message);
     }
   }
-  async function resendRequest(request: ChangeRequest, copyToSelf: boolean) {
-    const busyKey = `${request.id}:${copyToSelf ? "copy" : "resend"}`;
-    setRequestResendBusy(busyKey);
+  async function resendRequests(requestIds: number[], copyToSelf: boolean) {
+    if (!requestIds.length) return;
+    setRequestBatchBusy(copyToSelf ? "copy" : "resend");
     setRequestNotice("");
     setError("");
     try {
-      await api(`/change-requests/${request.id}/resend`, {
+      await api("/change-requests/resend-batch", {
         method: "POST",
-        body: JSON.stringify({ copy_to_self: copyToSelf }),
+        body: JSON.stringify({ request_ids: requestIds, copy_to_self: copyToSelf }),
       });
-      setRequestNotice(copyToSelf ? "Die Kopie wurde an deine E-Mail-Adresse gesendet." : "Die aktuelle Anfrage wurde erneut gesendet.");
+      setSelectedResendRequestIds([]);
+      setRequestNotice(copyToSelf
+        ? (requestIds.length === 1 ? "Die Kopie wurde an deine E-Mail-Adresse gesendet." : `${requestIds.length} Anfragen wurden in einer Kopie an deine E-Mail-Adresse zusammengefasst.`)
+        : (requestIds.length === 1 ? "Die aktuelle Anfrage wurde erneut gesendet." : `${requestIds.length} Anfragen wurden je Empfänger zusammengefasst erneut gesendet.`));
     } catch (x) {
       setError((x as Error).message);
     } finally {
-      setRequestResendBusy(null);
+      setRequestBatchBusy(null);
     }
   }
+  function canResendRequest(request: ChangeRequest) {
+    return getSessionUser()?.role === "ADMIN" || request.requested_by_id === sessionUserId || request.affected_user_id === sessionUserId;
+  }
   function requestMailActions(request: ChangeRequest) {
-    const canResend = getSessionUser()?.role === "ADMIN" || request.requested_by_id === sessionUserId || request.affected_user_id === sessionUserId;
-    if (!canResend) return null;
-    const resendBusy = requestResendBusy === `${request.id}:resend`;
-    const copyBusy = requestResendBusy === `${request.id}:copy`;
+    if (!canResendRequest(request)) return null;
     return <>
-      <button type="button" className="secondary" onClick={() => resendRequest(request, false)} disabled={requestResendBusy !== null}>
-        {resendBusy ? "Wird gesendet …" : "Nochmals senden"}
+      <button type="button" className="secondary" onClick={() => resendRequests([request.id], false)} disabled={requestBatchBusy !== null}>
+        {requestBatchBusy === "resend" ? "Wird gesendet …" : "Nochmals senden"}
       </button>
-      <button type="button" className="secondary" onClick={() => resendRequest(request, true)} disabled={requestResendBusy !== null}>
-        {copyBusy ? "Wird gesendet …" : "Kopie an mich"}
+      <button type="button" className="secondary" onClick={() => resendRequests([request.id], true)} disabled={requestBatchBusy !== null}>
+        {requestBatchBusy === "copy" ? "Wird gesendet …" : "Kopie an mich"}
       </button>
     </>;
+  }
+  function requestSelectionControl(request: ChangeRequest) {
+    if (resendableRequests.length <= 1 || !canResendRequest(request)) return requestMailActions(request);
+    return (
+      <label className="request-select">
+        <input
+          type="checkbox"
+          checked={selectedResendRequestIds.includes(request.id)}
+          onChange={(event) => setSelectedResendRequestIds((current) => event.target.checked
+            ? [...current, request.id]
+            : current.filter((id) => id !== request.id))}
+        />
+        <span>Auswählen</span>
+      </label>
+    );
   }
   function openGroupReview(request: ChangeRequest) {
     setGroupReview(request);
@@ -2598,14 +2648,46 @@ function CalendarScreen({
           <h2>Entwürfe</h2>
           <p className="muted">Diese Anfragen sind noch nicht versendet. Du kannst sie prüfen, ändern oder vollständig löschen.</p>
           {error && !open && <p className="error">{error}</p>}
+          {draftRequests.length > 1 && (
+            <div className="request-bulk-actions">
+              <label className="request-select">
+                <input
+                  type="checkbox"
+                  checked={selectedDraftRequestIds.length === draftRequests.length}
+                  onChange={(event) => setSelectedDraftRequestIds(event.target.checked ? draftRequests.map((request) => request.id) : [])}
+                />
+                <span>Alle Entwürfe auswählen</span>
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!selectedDraftRequestIds.length || requestBatchBusy !== null}
+                onClick={() => sendDrafts(selectedDraftRequestIds)}
+              >
+                {requestBatchBusy === "send" ? "Wird gesendet …" : "Ausgewählte Anfragen versenden"}
+              </button>
+            </div>
+          )}
           {draftRequests.map((request) => {
             return <article key={request.id}>
               <div>
+                {draftRequests.length > 1 && (
+                  <label className="request-select">
+                    <input
+                      type="checkbox"
+                      checked={selectedDraftRequestIds.includes(request.id)}
+                      onChange={(event) => setSelectedDraftRequestIds((current) => event.target.checked
+                        ? [...current, request.id]
+                        : current.filter((id) => id !== request.id))}
+                    />
+                    <span>Auswählen</span>
+                  </label>
+                )}
                 {draftRequestDetails(request)}
               </div>
               <div className="request-actions">
                 <button onClick={() => openDraftEditor(request)}>Bearbeiten</button>
-                <button className="secondary" onClick={() => sendDraft(request)}>Anfrage versenden</button>
+                {draftRequests.length <= 1 && <button className="secondary" onClick={() => sendDrafts([request.id])} disabled={requestBatchBusy !== null}>{requestBatchBusy === "send" ? "Wird gesendet …" : "Anfrage versenden"}</button>}
                 <button className="secondary danger" onClick={() => deleteDraft(request)}>Entwurf löschen</button>
               </div>
             </article>;
@@ -2617,6 +2699,34 @@ function CalendarScreen({
           <h2>Offene Abstimmungen</h2>
           {requestNotice && <p className="success">{requestNotice}</p>}
           {error && !open && <p className="error">{error}</p>}
+          {resendableRequests.length > 1 && (
+            <div className="request-bulk-actions">
+              <label className="request-select">
+                <input
+                  type="checkbox"
+                  checked={selectedResendRequestIds.length === resendableRequests.length}
+                  onChange={(event) => setSelectedResendRequestIds(event.target.checked ? resendableRequests.map((request) => request.id) : [])}
+                />
+                <span>Alle offenen Anfragen auswählen</span>
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!selectedResendRequestIds.length || requestBatchBusy !== null}
+                onClick={() => resendRequests(selectedResendRequestIds, false)}
+              >
+                {requestBatchBusy === "resend" ? "Wird gesendet …" : "Ausgewählte nochmals senden"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!selectedResendRequestIds.length || requestBatchBusy !== null}
+                onClick={() => resendRequests(selectedResendRequestIds, true)}
+              >
+                {requestBatchBusy === "copy" ? "Wird gesendet …" : "Ausgewählte als Kopie an mich"}
+              </button>
+            </div>
+          )}
           {visibleRequests.map((request) => {
             const proposal = request.proposed_data;
             const before = request.before_data;
@@ -2725,7 +2835,7 @@ function CalendarScreen({
                     <button onClick={() => openGroupReview(request)}>
                       {canDecide ? "Planung prüfen" : "Details ansehen"}
                     </button>
-                    {requestMailActions(request)}
+                    {requestSelectionControl(request)}
                     {!canDecide && <span className="tag">Wartet auf {request.affected_user_name}</span>}
                   </div>
                 ) : canDecide ? (
@@ -2747,12 +2857,12 @@ function CalendarScreen({
                     >
                       Ablehnen
                     </button>
-                    {requestMailActions(request)}
+                    {requestSelectionControl(request)}
                   </div>
                 ) : (
                   <div className="request-actions">
                     <span className="tag">Wartet auf {request.affected_user_name}</span>
-                    {requestMailActions(request)}
+                    {requestSelectionControl(request)}
                   </div>
                 )}
               </article>
@@ -3014,6 +3124,8 @@ function CalendarScreen({
                             other.id !== stay.id &&
                             other.responsible_user_id !==
                               stay.responsible_user_id &&
+                            !stay.parallel &&
+                            !other.parallel &&
                             new Date(other.starts_at) <
                               new Date(stay.ends_at) &&
                             new Date(other.ends_at) >
@@ -4039,7 +4151,7 @@ function CalendarScreen({
                 const startTime = startDate.getHours() === 0 && startDate.getMinutes() === 0 ? "" : timeValue(startDate);
                 const endTime = endAtDayBoundary ? "" : timeValue(rawEndDate);
                 const toIso = (value: string, time: string, followingDay = false) => {
-                  const date = new Date(`${value}T${time || "00:00"}:00`);
+                  const date = new Date(localInputToIso(`${value}T${time || "00:00"}`));
                   if (followingDay && !time) date.setDate(date.getDate() + 1);
                   return date.toISOString();
                 };
@@ -4702,13 +4814,13 @@ function WasteCollectionScreen({ people, children, user }: { people: User[]; chi
         method: editing ? "PUT" : "POST",
         body: JSON.stringify({
           title: String(form.get("title")), description: form.get("description") || null,
-          starts_at: new Date(String(form.get("starts_at"))).toISOString(), ends_at: new Date(String(form.get("ends_at"))).toISOString(),
+          starts_at: localInputToIso(String(form.get("starts_at"))), ends_at: localInputToIso(String(form.get("ends_at"))),
           all_day: false, category: "FAMILY", event_type: "WASTE", custom_type_label: null,
           child_id: Number(form.get("child_id")) || null, color: String(form.get("color")), is_private: false,
           visible_to_user_ids: form.getAll("visible_to_user_ids").map(Number), recurrence_frequency: frequency,
           recurrence_interval: interval,
           recurrence_day_of_month: repeat === "monthlyDay" ? Number(form.get("recurrence_day")) || null : null,
-          recurrence_until: frequency && form.get("recurrence_until") ? new Date(String(form.get("recurrence_until")) + "T23:59").toISOString() : null,
+          recurrence_until: frequency && form.get("recurrence_until") ? localInputToIso(String(form.get("recurrence_until")) + "T23:59") : null,
         }),
       });
       setEditing(undefined); load();
@@ -5220,7 +5332,7 @@ function PlanningScreen({
       return;
     }
     const dateTime = (value: string, time: string, followingDay = false) => {
-      const date = new Date(`${value}T${time || "00:00"}:00`);
+      const date = new Date(localInputToIso(`${value}T${time || "00:00"}`));
       if (followingDay) date.setDate(date.getDate() + 1);
       return date.toISOString();
     };

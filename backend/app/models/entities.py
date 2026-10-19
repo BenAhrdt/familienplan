@@ -198,6 +198,7 @@ class Stay(Base):
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str | None] = mapped_column(String(300))
     note: Mapped[str | None] = mapped_column(Text)
+    parallel: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
