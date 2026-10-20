@@ -1,13 +1,15 @@
 import smtplib
 from datetime import timedelta
 from email.message import EmailMessage
+from urllib.parse import quote, urlsplit, urlunsplit
 
+from itsdangerous import URLSafeSerializer
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.security import new_token, token_hash, utcnow
-from app.models.entities import ApplicationSetting, ChangeRequest, OutboxMessage, PlanStatus, PublicDecisionToken, User
+from app.models.entities import ApplicationSetting, CalendarFeed, ChangeRequest, EmailLoginToken, OutboxMessage, PlanStatus, PublicDecisionToken, Role, User
 
 
 def mail_config(db):
@@ -24,6 +26,109 @@ def mail_config(db):
         "app_url": (value.get("app_url") or env.app_origin).rstrip("/"),
         "security": value.get("security") or ("starttls" if value.get("starttls", env.smtp_starttls) else "none"),
     }
+
+
+DEFAULT_CALENDAR_FEED_TYPES = [
+    "STAY", "SCHOOL", "GENERAL", "BIRTHDAY", "CLEANING", "WASTE",
+    "SCHOOL_HOLIDAY", "PRIVATE", "OTHER",
+]
+DEFAULT_CALENDAR_FEED_NAMES = {
+    "STAY": "Betreuung",
+    "SCHOOL": "Schule",
+    "GENERAL": "Allgemein",
+    "BIRTHDAY": "Geburtstage",
+    "CLEANING": "Putzfrau",
+    "WASTE": "Abfall",
+    "SCHOOL_HOLIDAY": "Ferien / Feiertage",
+    "PRIVATE": "Privat",
+    "OTHER": "Sonstiges",
+}
+DEFAULT_USER_EVENT_TYPES = ["STAY", "BIRTHDAY", "GENERAL", "SCHOOL"]
+calendar_feed_fallback_tokens = URLSafeSerializer(get_settings().secret_key, salt="familienplan-calendar-feed")
+
+
+def default_calendar_feed_event_types(user: User) -> list[str]:
+    """Return the separate feed categories currently visible to a user."""
+    if user.role == Role.ADMIN:
+        return list(DEFAULT_CALENDAR_FEED_TYPES)
+    allowed = set(user.allowed_event_types if user.allowed_event_types is not None else DEFAULT_USER_EVENT_TYPES)
+    allowed.add("PRIVATE")
+    if "SCHOOL" in allowed:
+        allowed.add("SCHOOL_HOLIDAY")
+    if "OTHER" in allowed:
+        allowed.add("OTHER")
+    return [event_type for event_type in DEFAULT_CALENDAR_FEED_TYPES if event_type in allowed]
+
+
+def ensure_default_calendar_feeds(db, user: User) -> list[CalendarFeed]:
+    """Create one stable, single-category feed for every visible category."""
+    visible_types = default_calendar_feed_event_types(user)
+    rows = list(db.scalars(select(CalendarFeed).where(CalendarFeed.user_id == user.id)))
+    active_rows = [row for row in rows if row.revoked_at is None]
+    for event_type in visible_types:
+        if any(set(row.event_types or []) == {event_type} for row in active_rows):
+            continue
+        raw = new_token()
+        row = CalendarFeed(
+            user_id=user.id,
+            name=DEFAULT_CALENDAR_FEED_NAMES[event_type],
+            event_types=[event_type],
+            stay_visibility=["OWN"],
+            token_hash=token_hash(raw),
+            token_value=raw,
+        )
+        db.add(row)
+        db.flush()
+        active_rows.append(row)
+    visible_sets = {frozenset({event_type}) for event_type in visible_types}
+    return sorted(
+        (row for row in active_rows if frozenset(row.event_types or []) in visible_sets),
+        key=lambda row: DEFAULT_CALENDAR_FEED_TYPES.index((row.event_types or [""])[0]),
+    )
+
+
+def _calendar_feed_token(row: CalendarFeed) -> str:
+    return row.token_value or calendar_feed_fallback_tokens.dumps({"feed_id": row.id})
+
+
+def calendar_feed_links(db, user: User, app_url: str) -> list[dict[str, str]]:
+    """Return the user's separate feed links, creating missing defaults first."""
+    rows = ensure_default_calendar_feeds(db, user)
+    base_url = app_url.rstrip("/")
+    return [
+        {
+            "name": row.name,
+            "url": f"{base_url}/api/v1/calendar-feeds/{quote(_calendar_feed_token(row), safe='')}.ics",
+        }
+        for row in rows
+    ]
+
+
+def _safe_redirect_path(action_url: str | None, app_url: str) -> str:
+    """Keep email-login redirects on the configured FamilienPlan origin."""
+    fallback = "/calendar"
+    if not action_url:
+        return fallback
+    target = urlsplit(str(action_url))
+    origin = urlsplit(app_url)
+    if target.scheme or target.netloc:
+        if (target.scheme, target.netloc) != (origin.scheme, origin.netloc):
+            return fallback
+    if not target.path.startswith("/"):
+        return fallback
+    return urlunsplit(("", "", target.path, target.query, target.fragment))
+
+
+def email_login_url(db, user: User, action_url: str | None, config: dict) -> str:
+    """Create a reusable, time-limited sign-in URL for a trusted recipient."""
+    raw = new_token()
+    db.add(EmailLoginToken(
+        user_id=user.id,
+        token_hash=token_hash(raw),
+        redirect_path=_safe_redirect_path(action_url, config["app_url"]),
+        expires_at=utcnow() + timedelta(days=14),
+    ))
+    return f"{config['app_url'].rstrip('/')}/api/v1/auth/email-login/{quote(raw, safe='')}"
 
 
 def _public_decision_url(db, user_id: int, targets: list[dict], decision: str, config: dict) -> str:
@@ -113,6 +218,10 @@ def queue_mail(
             OutboxMessage.delivered_at.is_(None),
             OutboxMessage.attempts == 0,
         ).order_by(OutboxMessage.created_at.desc()).limit(1).with_for_update())
+        calendar_links = calendar_feed_links(db, user, config["app_url"])
+        login_url = digest.payload.get("login_url") if digest else None
+        if action_url and not login_url:
+            login_url = email_login_url(db, user, action_url, config)
         entry = {"subject": subject, "body": body, "action_url": action_url, "decision_actions": decision_actions}
         if digest:
             entries = [*digest.payload.get("entries", []), entry]
@@ -123,6 +232,8 @@ def queue_mail(
                 "entries": entries,
                 "decision_batch_actions": _batch_decision_actions(db, user_id, entries, config),
                 "event_type": "notification.digest",
+                "calendar_links": digest.payload.get("calendar_links") or calendar_links,
+                "login_url": login_url,
             }
             created_at = digest.created_at
             if created_at.tzinfo is None:
@@ -139,11 +250,15 @@ def queue_mail(
                     "entries": [entry],
                     "decision_batch_actions": _batch_decision_actions(db, user_id, [entry], config),
                     "event_type": "notification.digest",
+                    "calendar_links": calendar_links,
+                    "login_url": login_url,
                 }))
         return
     if event_type == "notification.resend":
         decision_actions = _decision_actions(db, user_id, decision_request_ids or [], config)
         entry = {"subject": subject, "body": body, "action_url": action_url, "decision_actions": decision_actions}
+        calendar_links = calendar_feed_links(db, user, config["app_url"])
+        login_url = email_login_url(db, user, action_url, config) if action_url else None
         db.add(OutboxMessage(channel="email", recipient_key=user.email, event_key=event_key,
                              event_type=event_type, payload={
                                  "subject": subject,
@@ -152,10 +267,15 @@ def queue_mail(
                                  "entries": [entry],
                                  "decision_batch_actions": _batch_decision_actions(db, user_id, [entry], config),
                                  "event_type": event_type,
+                                 "calendar_links": calendar_links,
+                                 "login_url": login_url,
                              }))
         return
+    calendar_links = [] if event_type == "password.reset" else calendar_feed_links(db, user, config["app_url"])
+    login_url = email_login_url(db, user, action_url, config) if action_url and event_type != "password.reset" else None
     db.add(OutboxMessage(channel="email", recipient_key=user.email, event_key=event_key,
-                         event_type=event_type, payload={"subject": subject, "body": body, "action_url": action_url, "event_type": event_type}))
+                         event_type=event_type, payload={"subject": subject, "body": body, "action_url": action_url,
+                         "event_type": event_type, "calendar_links": calendar_links, "login_url": login_url}))
 
 
 def queue_mail_batch(db, user_id: int, event_key: str, event_type: str, entries: list[dict], subject: str | None = None):
@@ -191,6 +311,8 @@ def queue_mail_batch(db, user_id: int, event_key: str, event_type: str, entries:
             subject = f"{len(normalized)} erneute Betreuungsanfragen"
     now = utcnow()
     action_url = next((entry.get("action_url") for entry in normalized if entry.get("action_url")), config["app_url"])
+    calendar_links = [] if event_type == "password.reset" else calendar_feed_links(db, user, config["app_url"])
+    login_url = email_login_url(db, user, action_url, config) if event_type != "password.reset" else None
     db.add(OutboxMessage(
         channel="email",
         recipient_key=user.email,
@@ -204,6 +326,8 @@ def queue_mail_batch(db, user_id: int, event_key: str, event_type: str, entries:
             "entries": normalized,
             "decision_batch_actions": _batch_decision_actions(db, user_id, normalized, config),
             "event_type": event_type,
+            "calendar_links": calendar_links,
+            "login_url": login_url,
         },
     ))
 
@@ -214,6 +338,8 @@ def _send_mail(config: dict, recipient: str, payload: dict):
     message["From"] = config["from_address"]
     message["To"] = recipient
     plain_body = payload["body"]
+    login_url = payload.get("login_url")
+    calendar_links = payload.get("calendar_links") or []
     if payload.get("event_type") in {"notification.digest", "notification.resend"}:
         links = []
         for entry in payload.get("entries", []):
@@ -227,10 +353,20 @@ def _send_mail(config: dict, recipient: str, payload: dict):
             links.append(f"{action['label']}: {action['url']}")
         if links:
             plain_body = f"{plain_body}\n\nDirekte Entscheidungen:\n" + "\n".join(links)
+    if login_url:
+        plain_body = (
+            f"{plain_body}\n\nDirekt in FamilienPlan öffnen (ohne Passwort):\n{login_url}"
+            "\nDieser Link ist 14 Tage ab Versand gültig und kann in dieser Zeit mehrfach ohne Passwort verwendet werden."
+        )
+    if calendar_links:
+        plain_body = f"{plain_body}\n\nKalender abonnieren:\n" + "\n".join(
+            f"{item.get('name', 'Kalender')}: {item.get('url', '')}" for item in calendar_links
+        )
     message.set_content(plain_body)
     if payload.get("action_url"):
         import html
-        subject, body, url = (html.escape(str(payload[key])) for key in ("subject", "body", "action_url"))
+        subject, body, action_url = (html.escape(str(payload[key])) for key in ("subject", "body", "action_url"))
+        url = html.escape(str(login_url or payload["action_url"]))
         button_label = "Passwort festlegen" if payload.get("event_type") == "password.reset" else "In FamilienPlan öffnen"
         decision_html = ""
         if payload.get("event_type") in {"notification.digest", "notification.resend"}:
@@ -254,7 +390,20 @@ def _send_mail(config: dict, recipient: str, payload: dict):
                 parts.append(f'<div style="border-top:2px solid #23332e;margin-top:28px;padding-top:20px"><h2 style="font-size:18px;margin:0 0 8px">Gesamte Anfrage-Mail</h2><p style="line-height:1.6;margin:0 0 8px">Alle noch offenen Anfragen aus dieser Mail gemeinsam entscheiden:</p><p style="margin:0">{"".join(batch_buttons)}</p></div>')
             decision_html = "".join(parts)
         body_html = "" if decision_html else f'<p style="line-height:1.6;white-space:pre-line">{html.escape(str(payload["body"]))}</p>'
-        message.add_alternative(f'''<!doctype html><html><body style="margin:0;background:#f5f6f2;font-family:Arial,sans-serif;color:#23332e"><div style="max-width:600px;margin:30px auto;background:white;border:1px solid #dfe5e0;border-radius:14px;padding:32px"><h1 style="font-family:Georgia,serif;font-size:28px">{subject}</h1>{body_html}{decision_html}<p style="margin-top:28px"><a href="{url}" style="display:inline-block;background:#3ba4e5;color:white;text-decoration:none;font-weight:bold;padding:13px 18px;border-radius:9px">{button_label}</a></p><p style="margin-top:24px;color:#708079;font-size:12px">Falls ein Button nicht funktioniert, öffne FamilienPlan direkt:<br>{url}</p></div></body></html>''', subtype="html")
+        calendar_html = ""
+        if calendar_links:
+            calendar_items = "".join(
+                f'<li style="margin:7px 0"><a href="{html.escape(str(item.get("url", "")), quote=True)}" style="color:#267cb5">{html.escape(str(item.get("name", "Kalender")))}</a></li>'
+                for item in calendar_links
+            )
+            calendar_html = f'<div style="border-top:1px solid #dfe5e0;margin-top:28px;padding-top:20px"><h2 style="font-size:18px;margin:0 0 8px">Kalender abonnieren</h2><p style="line-height:1.6;margin:0 0 8px">Diese Kalender sind für dich freigegeben:</p><ul style="line-height:1.5;padding-left:20px;margin:0">{calendar_items}</ul></div>'
+        login_hint_html = (
+            '<p style="margin:10px 0 0;color:#708079;font-size:12px">'
+            'Dieser Link ist 14 Tage ab Versand gültig und kann in dieser Zeit mehrfach ohne Passwort verwendet werden.'
+            '</p>'
+            if login_url else ""
+        )
+        message.add_alternative(f'''<!doctype html><html><body style="margin:0;background:#f5f6f2;font-family:Arial,sans-serif;color:#23332e"><div style="max-width:600px;margin:30px auto;background:white;border:1px solid #dfe5e0;border-radius:14px;padding:32px"><h1 style="font-family:Georgia,serif;font-size:28px">{subject}</h1>{body_html}{decision_html}<p style="margin-top:28px"><a href="{url}" style="display:inline-block;background:#3ba4e5;color:white;text-decoration:none;font-weight:bold;padding:13px 18px;border-radius:9px">{button_label}</a></p>{login_hint_html}<p style="margin-top:24px;color:#708079;font-size:12px">Falls ein Button nicht funktioniert, öffne FamilienPlan direkt:<br>{action_url}</p>{calendar_html}</div></body></html>''', subtype="html")
     smtp_class = smtplib.SMTP_SSL if config.get("security") == "ssl" else smtplib.SMTP
     with smtp_class(config["host"], config["port"], timeout=15) as smtp:
         if config.get("security") == "starttls":

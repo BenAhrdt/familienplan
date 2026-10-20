@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -23,10 +23,10 @@ from app.api.dependencies import admin, assert_child_access, current_user, requi
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
-from app.integrations import mail_config, queue_mail, queue_mail_batch
+from app.integrations import ensure_default_calendar_feeds, mail_config, queue_mail, queue_mail_batch
 from app.push import queue_push, vapid_config
 from app.version import VERSION
-from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PublicDecisionToken, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
+from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, EmailLoginToken, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PublicDecisionToken, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
 from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestEmailBatch, ChangeRequestEmailResend, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
 from app.waste_calendar import awido_options, delete_waste_config, get_waste_config, list_waste_configs, save_waste_config, sync_waste_calendar
 
@@ -246,7 +246,7 @@ AUDIT_PUSH_ALWAYS_EXCLUDED_ACTIONS = {
     "CHANGE_REQUEST_DRAFT_EDITED", "CHANGE_REQUEST_DRAFT_DELETED", "CHANGE_REQUEST_SENT",
     "AUDIT_PUSH_CHANGED",
 }
-AUDIT_PUSH_DEFAULT_EXCLUDED_ACTIONS = {"LOGIN", "LOGOUT", "APP_OPENED"}
+AUDIT_PUSH_DEFAULT_EXCLUDED_ACTIONS = {"LOGIN", "LOGOUT", "APP_OPENED", "EMAIL_LOGIN"}
 AUDIT_PUSH_ACTION_LABELS = {
     "PASSWORD_CHANGED": "hat das eigene Passwort geändert", "PASSWORD_RESET_REQUESTED": "hat einen Passwort-Reset angefordert", "PASSWORD_RESET_COMPLETED": "hat das Passwort zurückgesetzt",
     "INITIAL_ADMIN_CREATED": "hat FamilienPlan eingerichtet",
@@ -265,7 +265,7 @@ AUDIT_PUSH_ACTION_LABELS = {
     "SCHOOL_CALENDAR_SYNCED": "hat einen Schulkalender synchronisiert", "WASTE_CALENDAR_SYNCED": "hat einen Abfallkalender synchronisiert", "CALENDAR_SOURCE_SYNCED": "hat einen externen Kalender synchronisiert",
     "WASTE_CALENDAR_CREATED": "hat einen Abfallkalender angelegt", "WASTE_CALENDAR_SETTINGS_CHANGED": "hat einen Abfallkalender geändert", "WASTE_CALENDAR_DELETED": "hat einen Abfallkalender gelöscht",
     "SYSTEM_UPDATE_REQUESTED": "hat ein Systemupdate gestartet", "IMPERSONATION_STARTED": "hat die Ansicht einer Person übernommen", "IMPERSONATION_STOPPED": "hat die übernommene Ansicht beendet",
-    "LOGIN": "hat sich angemeldet", "LOGOUT": "hat sich abgemeldet", "APP_OPENED": "hat FamilienPlan geöffnet",
+    "LOGIN": "hat sich angemeldet", "EMAIL_LOGIN": "hat sich über einen E-Mail-Link angemeldet", "LOGOUT": "hat sich abgemeldet", "APP_OPENED": "hat FamilienPlan geöffnet",
 }
 
 
@@ -366,6 +366,7 @@ def setup_admin(data: SetupAdmin, request: Request, response: Response, db: Sess
     user = User(username=data.username, display_name=data.display_name, email=str(data.email).lower(), first_name=data.first_name, last_name=data.last_name, password_hash=hash_password(data.password), role=Role.ADMIN)
     db.add(user)
     db.flush()
+    ensure_default_calendar_feeds(db, user)
     audit(db, request, "INITIAL_ADMIN_CREATED", user.id, ("user", str(user.id)))
     result = issue_session(db, response, user, False)
     db.commit()
@@ -383,6 +384,26 @@ def login(data: Login, request: Request, response: Response, db: Session = Depen
     audit(db, request, "LOGIN", user.id)
     db.commit()
     return result
+
+
+@router.get("/auth/email-login/{token}", include_in_schema=False)
+def email_login(token: str, request: Request, db: Session = Depends(get_db)):
+    """Sign in from a reusable, time-limited link in a FamilienPlan mail."""
+    login_token = db.scalar(select(EmailLoginToken).where(EmailLoginToken.token_hash == token_hash(token)).with_for_update())
+    expires_at = login_token.expires_at if login_token else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=utcnow().tzinfo)
+    if not login_token or login_token.used_at or expires_at <= utcnow():
+        raise HTTPException(status.HTTP_410_GONE, "Dieser Anmeldelink ist ungültig oder abgelaufen")
+    user = db.get(User, login_token.user_id)
+    if not user or not user.is_active or user.is_pending:
+        raise HTTPException(status.HTTP_410_GONE, "Dieser Anmeldelink ist ungültig oder abgelaufen")
+    target = login_token.redirect_path if login_token.redirect_path.startswith("/") else "/calendar"
+    response = RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
+    issue_session(db, response, user, False)
+    audit(db, request, "EMAIL_LOGIN", user.id, ("user", str(user.id)))
+    db.commit()
+    return response
 
 
 @router.post("/auth/password/forgot", status_code=202)
@@ -412,6 +433,7 @@ def reset_password(data: PasswordReset, request: Request, db: Session = Depends(
     user.password_hash = hash_password(data.password)
     reset.used_at = utcnow()
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    db.execute(update(EmailLoginToken).where(EmailLoginToken.user_id == user.id, EmailLoginToken.used_at.is_(None)).values(used_at=utcnow()))
     audit(db, request, "PASSWORD_RESET_COMPLETED", user.id, ("user", str(user.id)))
     db.commit()
     return {"message": "Das Passwort wurde geändert. Du kannst dich jetzt anmelden."}
@@ -688,6 +710,7 @@ def update_calendar_event_type_settings(data: CalendarTypeSettings, request: Req
     for person in db.scalars(select(User).where(User.is_active.is_(True), User.role != Role.ADMIN)):
         person.allowed_event_types = sorted(event_type for event_type in EVENT_TYPES - {"PRIVATE"}
                                             if person.id in data.standard_type_user_ids.get(event_type, []))
+        ensure_default_calendar_feeds(db, person)
     upsert_application_setting(db, "custom_calendar_types", stored_custom)
     audit(db, request, "CALENDAR_EVENT_TYPES_CHANGED", user.id, ("setting", "custom_calendar_types"), {"custom_types": [item["name"] for item in stored_custom]})
     db.commit()
@@ -953,6 +976,7 @@ def update_person_access(user_id: int, data: PersonAccessUpdate, request: Reques
     if unknown_types:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unbekannte Terminart")
     person.allowed_event_types = list(dict.fromkeys(data.allowed_event_types))
+    ensure_default_calendar_feeds(db, person)
     active_person_ids = set(db.scalars(select(User.id).where(User.is_active.is_(True))))
     unknown_person_ids = set(data.allowed_person_color_ids) - active_person_ids
     if unknown_person_ids:
@@ -1077,6 +1101,7 @@ def change_own_password(data: PasswordChange, request: Request, db: Session = De
     if current_session:
         statement = statement.where(UserSession.id != current_session.id)
     db.execute(statement)
+    db.execute(update(EmailLoginToken).where(EmailLoginToken.user_id == user.id, EmailLoginToken.used_at.is_(None)).values(used_at=utcnow()))
     audit(db, request, "PASSWORD_CHANGED", user.id, ("user", str(user.id)))
     db.commit()
     return Response(status_code=204)
@@ -1202,6 +1227,7 @@ def accept_invite(data: InvitationAccept, request: Request, response: Response, 
     if not invitation.user_id:
         for child_id, permission in (invitation.child_permissions or {}).items():
             db.add(ChildUserPermission(child_id=int(child_id), user_id=user.id, permission=Permission(permission)))
+    ensure_default_calendar_feeds(db, user)
     audit(db, request, "INVITATION_ACCEPTED", user.id, ("invitation", str(invitation.id)))
     result = issue_session(db, response, user, False)
     db.commit()

@@ -17,7 +17,7 @@ from app.api.dependencies import admin, current_user, require_csrf
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import new_token, token_hash, utcnow
-from app.integrations import mail_config, queue_mail
+from app.integrations import default_calendar_feed_event_types, ensure_default_calendar_feeds, mail_config, queue_mail
 from app.models.entities import ApiToken, ApplicationSetting, Birthday, CalendarEvent, CalendarFeed, Child, ChildUserPermission, OutboxMessage, PlanStatus, Role, Stay, User
 
 router = APIRouter()
@@ -185,6 +185,8 @@ def revoke_token(token_id: int, db: Session = Depends(get_db), _: User = Depends
 
 @router.get("/calendar-feeds")
 def calendar_feeds(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    ensure_default_calendar_feeds(db, user)
+    db.commit()
     rows = db.scalars(select(CalendarFeed).where(CalendarFeed.user_id == user.id).order_by(CalendarFeed.id.desc()))
     return {"feeds": [{"id": row.id, "name": row.name, "event_types": row.event_types or CALENDAR_FEED_EVENT_TYPES,
                         "stay_visibility": row.stay_visibility if row.stay_visibility is not None else ["OWN"],
@@ -202,15 +204,7 @@ def calendar_feed_url(row: CalendarFeed) -> str:
 
 
 def available_calendar_feed_event_types(user: User) -> list[str]:
-    if user.role == Role.ADMIN:
-        return list(CALENDAR_FEED_EVENT_TYPES)
-    allowed = set(user.allowed_event_types or [])
-    allowed.add("PRIVATE")
-    if "SCHOOL" in allowed:
-        allowed.add("SCHOOL_HOLIDAY")
-    if "OTHER" in allowed:
-        allowed.add("OTHER")
-    return [event_type for event_type in CALENDAR_FEED_EVENT_TYPES if event_type in allowed]
+    return default_calendar_feed_event_types(user)
 
 
 @router.post("/calendar-feeds", status_code=201, dependencies=[Depends(require_csrf)])

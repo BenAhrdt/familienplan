@@ -6506,7 +6506,7 @@ function CalendarFeedSettings() {
   const activeFeeds = feeds.filter((feed) => !feed.revoked_at);
   return <section className="password-settings calendar-feed-settings">
     <h2>Kalender auf iPhone und Android</h2>
-    <p className="muted">Erzeuge eine schreibgeschützte Kalenderadresse für die Kalender-App deines Geräts. Dafür wird kein Google-Konto benötigt.</p>
+    <p className="muted">Für jede freigegebene Kategorie ist bereits eine eigene schreibgeschützte Kalenderadresse angelegt. Dafür wird kein Google-Konto benötigt.</p>
     <p className="hint">iPhone: Einstellungen → Kalender → Account hinzufügen → Andere → Kalenderabo hinzufügen. Android: in einer Kalender-App mit Abo-Funktion als Kalender-URL hinzufügen. Benutzername und Passwort werden nicht benötigt; falls iPhone die Felder zeigt, lass sie leer.</p>
     {error && <p className="error">{error}</p>}
     {message && <p className="success">{message}</p>}

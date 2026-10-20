@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.124 – 20. Oktober 2026
+
+- Für jede Person werden die freigegebenen Kalenderkategorien automatisch als einzelne ICS-Feeds angelegt.
+- Benachrichtigungs- und Anfrage-E-Mails enthalten die passenden ICS-Links der Person.
+- Der Button „In FamilienPlan öffnen“ nutzt einen wiederverwendbaren, 14 Tage gültigen Login-Link ohne Passwort. Bei einer Passwortänderung werden offene Mail-Login-Links widerrufen.
+- Bestehende Installationen erhalten die Standardfeeds und die Datenbankmigration für die Mail-Login-Links automatisch.
+
+Validierung: 100 Backend-Tests und 15 Frontend-Tests sowie Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.123 – 19. Oktober 2026
 
 - Explizit markierte Entwürfe werden ohne zusätzliche Sammelwartezeit in die E-Mail-Versandwarteschlange gestellt.
