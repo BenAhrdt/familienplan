@@ -4264,6 +4264,7 @@ function PeopleScreen({
     [impersonateChoice, setImpersonateChoice] = useState<User | null>(null),
     [deleteChoice, setDeleteChoice] = useState<User | null>(null),
     [deletingPerson, setDeletingPerson] = useState(false),
+    [sendingCalendarLinks, setSendingCalendarLinks] = useState(false),
     [draftRole, setDraftRole] = useState<User["role"]>("EDITOR"),
     [personApiKeys, setPersonApiKeys] = useState<Array<{id:number;name:string;last_used_at:string|null}>>([]),
     [personApiName, setPersonApiName] = useState("ioBroker"),
@@ -4339,6 +4340,19 @@ function PeopleScreen({
   async function copy() {
     await navigator.clipboard.writeText(invite);
     setCopied(true);
+  }
+  async function sendCalendarLinks() {
+    if (!selected || sendingCalendarLinks) return;
+    setSendingCalendarLinks(true);
+    setError("");
+    try {
+      const result = await api<{ recipient: string }>(`/people/${selected.user.id}/calendar-links/send`, { method: "POST" });
+      setNotice({ title: "Kalenderlinks werden versendet", message: `Die Kalenderlinks an ${result.recipient} wurden in die Versandwarteschlange gelegt.` });
+    } catch (x) {
+      setError((x as Error).message);
+    } finally {
+      setSendingCalendarLinks(false);
+    }
   }
   function edit(p: User) {
     setDraftRole(p.role);
@@ -4579,6 +4593,11 @@ function PeopleScreen({
                       ? "Änderungen speichern"
                       : "Einladung erstellen"}
                   </button>
+                  {open === "edit" && selected && !selected.user.is_pending && selected.user.email && (
+                    <button type="button" className="secondary" onClick={sendCalendarLinks} disabled={sendingCalendarLinks}>
+                      {sendingCalendarLinks ? "Wird versendet …" : "Kalenderlinks per E-Mail senden"}
+                    </button>
+                  )}
                   {open === "edit" && selected && !selected.user.is_pending && selected.user.role !== "ADMIN" && (
                     <button type="button" className="secondary" onClick={() => setImpersonateChoice(selected.user)}>Als diese Person anmelden</button>
                   )}
@@ -6287,7 +6306,7 @@ const auditActionLabels: Record<string,string> = {
   PASSWORD_RESET_COMPLETED:"hat das Passwort über einen Reset-Link geändert",
   LOGIN:"hat sich angemeldet", LOGOUT:"hat sich abgemeldet", LOGIN_FAILED:"Anmeldung fehlgeschlagen", APP_OPENED:"hat FamilienPlan geöffnet",
   INITIAL_ADMIN_CREATED:"hat FamilienPlan eingerichtet", PERSON_ACCESS_CHANGED:"hat die Rechte einer Person geändert", PERSON_DELETED:"hat eine Person gelöscht",
-  INVITATION_CREATED:"hat eine Einladung erstellt", INVITATION_RENEWED:"hat einen Einladungslink erneuert", INVITATION_SENT:"hat eine Einladung versendet", INVITATION_ACCEPTED:"hat eine Einladung angenommen",
+  INVITATION_CREATED:"hat eine Einladung erstellt", INVITATION_RENEWED:"hat einen Einladungslink erneuert", INVITATION_SENT:"hat eine Einladung versendet", INVITATION_ACCEPTED:"hat eine Einladung angenommen", CALENDAR_LINKS_SENT:"hat Kalenderlinks versendet",
   CHILD_CREATED:"hat ein Kind angelegt", CHILD_CHANGED:"hat ein Kind geändert", CHILD_PERMISSION_CHANGED:"hat Kinderrechte geändert",
   STAY_CREATED:"hat eine Betreuungszeit angelegt", STAY_CHANGED:"hat eine Betreuungszeit geändert", STAY_DELETED:"hat eine Betreuungszeit gelöscht", STAY_SERIES_CREATED:"hat eine Betreuungsserie angelegt", STAY_SERIES_CHANGED:"hat eine Betreuungsserie geändert",
   STAY_SERIES_EXTENDED:"hat eine Betreuungsserie verlängert", NEW_STAY_PROPOSED:"hat eine neue Betreuungszeit vorgeschlagen", STAY_CHANGE_PROPOSED:"hat eine Betreuungsänderung vorgeschlagen", STAY_DELETE_PROPOSED:"hat das Löschen einer Betreuungszeit vorgeschlagen", GROUP_PLAN_PROPOSED:"hat eine Gruppenplanung vorgeschlagen", GROUP_PLAN_CREATED:"hat eine Gruppenplanung übernommen",

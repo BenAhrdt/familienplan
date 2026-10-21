@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.router import email_login
 from app.core.database import Base
 from app.core.security import token_hash, utcnow
-from app.integrations import email_login_url, ensure_default_calendar_feeds, queue_mail
+from app.integrations import email_login_url, ensure_default_calendar_feeds, queue_calendar_links_mail, queue_mail
 from app.models.entities import CalendarFeed, EmailLoginToken, OutboxMessage, Role, User
 
 
@@ -105,6 +105,37 @@ def test_notification_mail_contains_calendar_links_and_one_time_login(monkeypatc
         html = sent[0].get_body(preferencelist=("html",)).get_content()
         assert "14 Tage ab Versand gültig" in plain
         assert "14 Tage ab Versand gültig" in html
+
+
+def test_standalone_calendar_links_mail_contains_current_feeds(monkeypatch):
+    import app.integrations as integrations
+
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: {
+        "enabled": True,
+        "host": "smtp.example.test",
+        "port": 587,
+        "username": None,
+        "password": None,
+        "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example",
+        "security": "none",
+    })
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = _user()
+        db.add(user)
+        db.commit()
+
+        assert queue_calendar_links_mail(db, user.id, "calendar-links:1") is True
+        outbox = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "calendar.links"))
+
+        assert outbox is not None
+        assert outbox.payload["action_url"] == "https://family.example"
+        assert outbox.payload.get("login_url") is None
+        assert [item["name"] for item in outbox.payload["calendar_links"]] == [
+            "Betreuung", "Schule", "Allgemein", "Geburtstage", "Ferien / Feiertage", "Privat",
+        ]
 
 
 def test_email_login_is_reusable_for_fourteen_days_and_rejects_external_redirects():

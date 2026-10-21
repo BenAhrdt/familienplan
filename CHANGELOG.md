@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.125 – 21. Oktober 2026
+
+- Administratoren können in der Personenbearbeitung die aktuell freigegebenen Kalenderlinks direkt per E-Mail versenden.
+- Der Versand nutzt die bestehende E-Mail-Warteschlange, enthält eine formatierte HTML- und eine Plaintext-Version und wird im Logbuch protokolliert.
+- Für nicht registrierte Personen oder Personen ohne E-Mail-Adresse bleibt der Button ausgeblendet beziehungsweise der Versand wird verständlich abgewiesen.
+
+Validierung: 101 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.124 – 20. Oktober 2026
 
 - Für jede Person werden die freigegebenen Kalenderkategorien automatisch als einzelne ICS-Feeds angelegt.

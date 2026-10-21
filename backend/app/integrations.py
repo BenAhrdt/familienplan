@@ -104,6 +104,28 @@ def calendar_feed_links(db, user: User, app_url: str) -> list[dict[str, str]]:
     ]
 
 
+def queue_calendar_links_mail(db, user_id: int, event_key: str) -> bool:
+    """Queue a standalone email with the recipient's current calendar links."""
+    user = db.get(User, user_id)
+    config = mail_config(db)
+    if not user or user.is_pending or not user.email or not config["enabled"]:
+        return False
+    db.add(OutboxMessage(
+        channel="email",
+        recipient_key=user.email,
+        event_key=event_key,
+        event_type="calendar.links",
+        payload={
+            "subject": "Deine Kalenderlinks für FamilienPlan",
+            "body": "Hier sind die Kalenderlinks, die für dich in FamilienPlan freigegeben sind.",
+            "action_url": config["app_url"],
+            "event_type": "calendar.links",
+            "calendar_links": calendar_feed_links(db, user, config["app_url"]),
+        },
+    ))
+    return True
+
+
 def _safe_redirect_path(action_url: str | None, app_url: str) -> str:
     """Keep email-login redirects on the configured FamilienPlan origin."""
     fallback = "/calendar"

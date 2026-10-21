@@ -23,7 +23,7 @@ from app.api.dependencies import admin, assert_child_access, current_user, requi
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
-from app.integrations import ensure_default_calendar_feeds, mail_config, queue_mail, queue_mail_batch
+from app.integrations import ensure_default_calendar_feeds, mail_config, queue_calendar_links_mail, queue_mail, queue_mail_batch
 from app.push import queue_push, vapid_config
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, EmailLoginToken, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PublicDecisionToken, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
@@ -252,7 +252,7 @@ AUDIT_PUSH_ACTION_LABELS = {
     "INITIAL_ADMIN_CREATED": "hat FamilienPlan eingerichtet",
     "PERSON_ACCESS_CHANGED": "hat die Rechte einer Person geändert",
     "PERSON_DELETED": "hat eine Person gelöscht",
-    "INVITATION_CREATED": "hat eine Einladung erstellt", "INVITATION_RENEWED": "hat einen Einladungslink erneuert", "INVITATION_SENT": "hat eine Einladung versendet", "INVITATION_ACCEPTED": "hat eine Einladung angenommen",
+    "INVITATION_CREATED": "hat eine Einladung erstellt", "INVITATION_RENEWED": "hat einen Einladungslink erneuert", "INVITATION_SENT": "hat eine Einladung versendet", "INVITATION_ACCEPTED": "hat eine Einladung angenommen", "CALENDAR_LINKS_SENT": "hat Kalenderlinks versendet",
     "CHILD_CREATED": "hat ein Kind angelegt", "CHILD_CHANGED": "hat ein Kind geändert", "CHILD_PERMISSION_CHANGED": "hat Kinderrechte geändert",
     "STAY_CREATED": "hat eine Betreuungszeit angelegt", "STAY_CHANGED": "hat eine Betreuungszeit geändert", "STAY_DELETED": "hat eine Betreuungszeit gelöscht",
     "STAY_SERIES_CREATED": "hat eine Betreuungsserie angelegt", "STAY_SERIES_CHANGED": "hat eine Betreuungsserie geändert", "STAY_SERIES_EXTENDED": "hat eine Betreuungsserie verlängert",
@@ -940,6 +940,27 @@ def people_access(db: Session = Depends(get_db), _: User = Depends(admin)):
     users = list(db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name)))
     rows = list(db.scalars(select(ChildUserPermission)))
     return [PersonAccessOut(user=item, child_permissions={row.child_id: row.permission for row in rows if row.user_id == item.id}) for item in users]
+
+
+@router.post("/people/{user_id}/calendar-links/send", status_code=202, dependencies=[Depends(require_csrf)])
+def send_person_calendar_links(user_id: int, request: Request, db: Session = Depends(get_db), actor: User = Depends(admin)):
+    person = db.get(User, user_id)
+    if not person or not person.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person nicht gefunden")
+    if person.is_pending:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Kalenderlinks können erst nach Annahme der Einladung versendet werden")
+    if not person.email:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diese Person ist keine E-Mail-Adresse hinterlegt")
+    config = mail_config(db)
+    if not config["enabled"]:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Der E-Mail-Versand ist noch nicht aktiviert")
+    if not config["host"]:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Für den E-Mail-Versand ist kein SMTP-Server hinterlegt")
+    if not queue_calendar_links_mail(db, person.id, f"calendar-links:{person.id}:{uuid.uuid4().hex}"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Die Kalenderlinks konnten nicht eingeplant werden")
+    audit(db, request, "CALENDAR_LINKS_SENT", actor.id, ("user", str(person.id)), {"email": person.email})
+    db.commit()
+    return {"queued": True, "recipient": person.email}
 
 
 @router.put("/people/{user_id}/access", response_model=PersonAccessOut, dependencies=[Depends(require_csrf)])
