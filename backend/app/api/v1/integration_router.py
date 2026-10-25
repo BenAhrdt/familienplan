@@ -299,7 +299,11 @@ def _ics_datetime(value: datetime) -> str:
 def _ics_date(value: datetime) -> str:
     # VALUE=DATE represents a calendar date, not an instant in UTC. Converting
     # a local midnight in Europe/Berlin to UTC would shift it to the previous
-    # day in the exported calendar.
+    # day in the exported calendar. Persisted all-day events may already have
+    # been converted to UTC by PostgreSQL, so convert aware values back to the
+    # application timezone before extracting the date.
+    if value.tzinfo is not None:
+        value = value.astimezone(ZoneInfo(settings.app_timezone))
     return value.date().strftime("%Y%m%d")
 
 

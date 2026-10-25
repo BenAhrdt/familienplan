@@ -73,6 +73,27 @@ def test_calendar_feed_ics_escapes_values_and_keeps_all_day_events():
     assert ics.endswith("END:VCALENDAR\r\n")
 
 
+def test_calendar_feed_ics_keeps_all_day_dates_after_database_utc_conversion():
+    # Europe/Berlin midnight on 26 October is stored by PostgreSQL as 23:00 UTC
+    # on 25 October (after the daylight-saving transition). The exported
+    # VALUE=DATE must still be 26 October.
+    event = {
+        "source": "event",
+        "event_type": "WASTE",
+        "id": 8,
+        "child_id": None,
+        "starts_at": datetime(2026, 10, 25, 23, tzinfo=UTC),
+        "ends_at": datetime(2026, 10, 26, 23, tzinfo=UTC),
+        "all_day": True,
+        "title": "Bioabfall",
+    }
+
+    ics = calendar_feed_ics([event], "Abfallkalender")
+
+    assert "DTSTART;VALUE=DATE:20261026\r\n" in ics
+    assert "DTEND;VALUE=DATE:20261027\r\n" in ics
+
+
 def test_calendar_feed_can_filter_visible_event_types_per_device():
     events = [
         {"event_type": "STAY", "title": "Betreuung"},

@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.126 – 25. Oktober 2026
+
+- Ganztägige Termine in persönlichen ICS-Feeds behalten auch nach der UTC-Konvertierung durch die Datenbank ihr lokales Kalenderdatum. Dadurch werden Abfalltermine auf iPhone und anderen Kalendergeräten nicht mehr um einen Tag verschoben.
+
+Validierung: 102 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.125 – 21. Oktober 2026
 
 - Administratoren können in der Personenbearbeitung die aktuell freigegebenen Kalenderlinks direkt per E-Mail versenden.
