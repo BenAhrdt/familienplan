@@ -2510,6 +2510,21 @@ def change_request_email_entry(db: Session, item: ChangeRequest, copy_to_self: b
     }
 
 
+def queue_change_request_copy(db: Session, item: ChangeRequest, requester: User) -> None:
+    """Send the requester an immediate, non-actionable copy of a new request."""
+    entry = change_request_email_entry(db, item, copy_to_self=True, resend=False)
+    queue_mail(
+        db,
+        requester.id,
+        f"notification-request-copy:{item.id}:{uuid.uuid4().hex}",
+        "notification.resend",
+        entry["subject"],
+        current_change_request_email_body(db, item, copy_to_self=True),
+        entry["action_url"],
+        None,
+    )
+
+
 PUBLIC_DECISION_STATUSES = {PlanStatus.PROPOSED, PlanStatus.CHANGE_PROPOSED}
 
 
@@ -2881,6 +2896,7 @@ def send_change_request(change_id: int, request: Request, db: Session = Depends(
     if item.requested_by_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur die anfragende Person kann diesen Entwurf versenden")
     publish_change_request(db, item, request, user)
+    queue_change_request_copy(db, item, user)
     db.commit()
     db.refresh(item)
     return change_request_payload(db, item, user)
@@ -2910,6 +2926,15 @@ def send_change_requests_batch(data: ChangeRequestEmailBatch, request: Request, 
             entries,
             subject=entries[0]["subject"] if len(entries) == 1 else f"{len(entries)} neue Anfragen in FamilienPlan",
         )
+    copy_entries = [change_request_email_entry(db, item, copy_to_self=True, resend=False) for item in items]
+    queue_mail_batch(
+        db,
+        user.id,
+        f"notification-request-copy-batch:{user.id}:{uuid.uuid4().hex}",
+        "notification.resend",
+        copy_entries,
+        subject=copy_entries[0]["subject"] if len(copy_entries) == 1 else f"Kopie: {len(copy_entries)} Betreuungsanfragen",
+    )
     db.commit()
     return {"sent": len(items), "mail_count": len(grouped)}
 

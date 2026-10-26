@@ -575,10 +575,21 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
     assert len(digest.payload["entries"]) == 2
     assert len(digest.payload["decision_batch_actions"]) == 2
     assert all(len(entry["decision_actions"]) == 1 for entry in digest.payload["entries"])
+    initial_copy = db.scalar(select(OutboxMessage).where(
+        OutboxMessage.event_type == "notification.resend",
+        OutboxMessage.recipient_key == sender.email,
+    ))
+    assert initial_copy is not None
+    assert len(initial_copy.payload["entries"]) == 2
+    assert all(entry["decision_actions"] == [] for entry in initial_copy.payload["entries"])
+    assert all("ohne aktive Entscheidungslinks" in entry["body"] for entry in initial_copy.payload["entries"])
 
     result = resend_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id]), request, db, sender)
     assert result == {"queued": 2, "mail_count": 1, "copy_to_self": False}
-    resend = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.resend"))
+    resend = db.scalar(select(OutboxMessage).where(
+        OutboxMessage.event_type == "notification.resend",
+        OutboxMessage.recipient_key == recipient.email,
+    ))
     assert resend is not None
     assert len(resend.payload["entries"]) == 2
     assert len(resend.payload["decision_batch_actions"]) == 2
@@ -589,9 +600,10 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
         OutboxMessage.event_type == "notification.resend",
         OutboxMessage.recipient_key == sender.email,
     )))
-    assert len(copies) == 1
-    assert len(copies[0].payload["entries"]) == 2
-    assert all(entry["decision_actions"] == [] for entry in copies[0].payload["entries"])
+    assert len(copies) == 2
+    latest_copy = max(copies, key=lambda item: item.id)
+    assert len(latest_copy.payload["entries"]) == 2
+    assert all(entry["decision_actions"] == [] for entry in latest_copy.payload["entries"])
 
 
 def test_resend_uses_current_request_and_copy_has_no_decision_links(context, monkeypatch):
@@ -635,6 +647,34 @@ def test_resend_uses_current_request_and_copy_has_no_decision_links(context, mon
     assert copy_mail.payload["entries"][0]["decision_actions"] == []
     assert "ohne aktive Entscheidungslinks" in copy_mail.payload["body"]
     assert len(list(db.scalars(select(PublicDecisionToken)))) == token_count
+
+
+def test_initial_request_sends_non_actionable_copy_to_requester(context, monkeypatch):
+    import app.api.v1.router as router
+    import app.integrations as integrations
+
+    db, (sender, recipient, other), child, request = context
+    config = {
+        "enabled": True, "host": "smtp.example.test", "port": 587,
+        "username": None, "password": None, "from_address": "FamilienPlan <noreply@example.test>",
+        "app_url": "https://family.example", "security": "none",
+    }
+    monkeypatch.setattr(integrations, "mail_config", lambda _db: config)
+    monkeypatch.setattr(router, "mail_config", lambda _db: config)
+    result = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2027, 4, 1), ends_at=datetime(2027, 4, 2),
+    ), request, db, sender)
+
+    send_change_request(result.id, request, db, sender)
+
+    copy_mail = db.scalar(select(OutboxMessage).where(
+        OutboxMessage.event_type == "notification.resend",
+        OutboxMessage.recipient_key == sender.email,
+    ))
+    assert copy_mail is not None
+    assert copy_mail.payload["entries"][0]["decision_actions"] == []
+    assert "ohne aktive Entscheidungslinks" in copy_mail.payload["body"]
 
 
 def test_group_draft_can_remove_one_entry_and_delete_the_whole_draft(context):

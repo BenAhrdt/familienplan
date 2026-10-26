@@ -2,6 +2,12 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.127 – 26. Oktober 2026
+
+- Beim Versand einer Betreuungsanfrage erhält die anfragende Person automatisch eine separate Kopie ohne aktive Entscheidungslinks. Das gilt für Einzelanfragen und Sammelversand; die Kopie wird direkt in die E-Mail-Warteschlange gestellt.
+
+Validierung: 103 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.126 – 25. Oktober 2026
 
 - Ganztägige Termine in persönlichen ICS-Feeds behalten auch nach der UTC-Konvertierung durch die Datenbank ihr lokales Kalenderdatum. Dadurch werden Abfalltermine auf iPhone und anderen Kalendergeräten nicht mehr um einen Tag verschoben.
