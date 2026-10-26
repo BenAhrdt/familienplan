@@ -2352,6 +2352,64 @@ def request_calendar_previews(db: Session, item: ChangeRequest, viewer: User) ->
     return result
 
 
+def request_merge_previews(db: Session, item: ChangeRequest) -> list[dict]:
+    """Describe confirmed stays that will be absorbed when a new stay is approved."""
+    data = item.proposed_data or {}
+    if data.get("action") != "CREATE":
+        return []
+
+    stay_ids = data.get("stay_ids", [item.object_id])
+    proposed_stays = [db.get(Stay, stay_id) for stay_id in stay_ids]
+    previews: list[dict] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    for proposed in sorted((stay for stay in proposed_stays if stay), key=lambda stay: (stay.starts_at, stay.id)):
+        range_start, range_end = proposed.starts_at, proposed.ends_at
+        component: dict[int, Stay] = {}
+        while True:
+            candidates = list(db.scalars(select(Stay).where(
+                Stay.child_id == proposed.child_id,
+                Stay.responsible_user_id == proposed.responsible_user_id,
+                Stay.status == PlanStatus.CONFIRMED,
+                Stay.starts_at <= range_end,
+                Stay.ends_at >= range_start,
+            ).order_by(Stay.starts_at, Stay.id)))
+            new_candidates = [candidate for candidate in candidates if candidate.id not in component]
+            if not new_candidates:
+                break
+            for candidate in new_candidates:
+                component[candidate.id] = candidate
+                range_start = min(range_start, candidate.starts_at)
+                range_end = max(range_end, candidate.ends_at)
+
+        if not component:
+            continue
+        existing_start = min(stay.starts_at for stay in component.values())
+        existing_end = max(stay.ends_at for stay in component.values())
+        key = tuple(value.isoformat() for value in (existing_start, existing_end, range_start, range_end))
+        if key in seen:
+            continue
+        seen.add(key)
+        previews.append({
+            "existing_starts_at": existing_start.isoformat(),
+            "existing_ends_at": existing_end.isoformat(),
+            "merged_starts_at": range_start.isoformat(),
+            "merged_ends_at": range_end.isoformat(),
+        })
+    return previews
+
+
+def request_merge_preview_messages(db: Session, item: ChangeRequest) -> list[str]:
+    return [
+        "Hinweis: Dieser Vorschlag überschneidet sich mit einer bestehenden Betreuung "
+        f"vom {_format_request_datetime(preview['existing_starts_at'])} bis "
+        f"{_format_request_datetime(preview['existing_ends_at'])}. Nach der Bestätigung "
+        f"entsteht daraus eine gemeinsame Betreuung vom {_format_request_datetime(preview['merged_starts_at'])} bis "
+        f"{_format_request_datetime(preview['merged_ends_at'])}."
+        for preview in request_merge_previews(db, item)
+    ]
+
+
 def change_request_payload(db: Session, item: ChangeRequest, viewer: User) -> ChangeRequestOut:
     requester, affected = db.get(User, item.requested_by_id), db.get(User, item.affected_user_id)
     stay = db.get(Stay, item.object_id) if item.object_type == "stay" else None
@@ -2375,7 +2433,7 @@ def change_request_payload(db: Session, item: ChangeRequest, viewer: User) -> Ch
             proposed_data.setdefault("recurrence_interval_weeks", int(match.group(1)) if match else 1)
             proposed_data.setdefault("recurrence_until", rule.until_at.isoformat() if rule.until_at else None)
     affected_name = affected.display_name if viewer_may_see_all or affected.id in visible_ids else "Andere Betreuungsperson"
-    return ChangeRequestOut(calendar_previews=request_calendar_previews(db, item, viewer), id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
+    return ChangeRequestOut(calendar_previews=request_calendar_previews(db, item, viewer), merge_previews=request_merge_previews(db, item), id=item.id, object_type=item.object_type, object_id=item.object_id, requested_by_id=item.requested_by_id, requested_by_name=requester.display_name, affected_user_id=item.affected_user_id, affected_user_name=affected_name, status=item.status, proposed_data=proposed_data, before_data=before_data, child_id=child.id if child else None, child_name=child.display_name if child else None, created_at=item.created_at)
 
 
 def change_request_details(db: Session, item: ChangeRequest) -> str:
@@ -2526,6 +2584,9 @@ def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_
             "Änderung:",
             *change_lines,
         ])
+    merge_messages = request_merge_preview_messages(db, item)
+    if merge_messages:
+        body += "\n\n" + "\n".join(merge_messages)
     if copy_to_self:
         body += "\n\nDies ist eine Kopie ohne aktive Entscheidungslinks."
     return body
@@ -2608,7 +2669,9 @@ def _public_target_details(db: Session, target: dict) -> str:
     item = target["request"]
     item_index = target.get("item_index")
     if item_index is None:
-        return change_request_details(db, item)
+        details = change_request_details(db, item)
+        merge_messages = request_merge_preview_messages(db, item)
+        return details + ("\n" + "\n".join(merge_messages) if merge_messages else "")
     entry = (item.proposed_data or {}).get("items", [])[item_index]
     child = db.get(Child, entry.get("child_id"))
     person = db.get(User, entry.get("responsible_user_id"))

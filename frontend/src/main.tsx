@@ -2340,6 +2340,20 @@ function CalendarScreen({
   function canResendRequest(request: ChangeRequest) {
     return getSessionUser()?.role === "ADMIN" || request.requested_by_id === sessionUserId || request.affected_user_id === sessionUserId;
   }
+  function mergePreviewNotice(request: ChangeRequest) {
+    if (!request.merge_previews?.length) return null;
+    const format = (value: string) => new Date(value).toLocaleString("de-DE");
+    return (
+      <div className="request-warning" role="note">
+        <strong>Hinweis zur Zusammenführung</strong>
+        {request.merge_previews.map((preview) => (
+          <span key={`${preview.existing_starts_at}-${preview.existing_ends_at}-${preview.merged_ends_at}`}>
+            Dieser Vorschlag überschneidet sich mit einer bestehenden Betreuung vom {format(preview.existing_starts_at)} bis {format(preview.existing_ends_at)}. Nach der Bestätigung entsteht daraus eine gemeinsame Betreuung vom {format(preview.merged_starts_at)} bis {format(preview.merged_ends_at)}.
+          </span>
+        ))}
+      </div>
+    );
+  }
   function requestMailActions(request: ChangeRequest) {
     if (!canResendRequest(request)) return null;
     return <>
@@ -2835,6 +2849,7 @@ function CalendarScreen({
                       </small>
                     </>
                   )}
+                  {mergePreviewNotice(request)}
                 </div>
                 {proposal.action === "GROUP_CREATE" ? (
                   <div className="request-actions">
@@ -3814,6 +3829,7 @@ function CalendarScreen({
         <p>{new Date(pendingPreview.entry.starts_at).toLocaleString("de-DE")} – {new Date(pendingPreview.entry.ends_at).toLocaleString("de-DE")}</p>
         <p>{pendingPreview.request.status === "DRAFT" ? `Für ${pendingPreview.request.affected_user_name} vorgesehen` : `Von ${pendingPreview.request.requested_by_name} · Wartet auf ${pendingPreview.request.affected_user_name}`}</p>
         {pendingPreview.entry.note && <p>{pendingPreview.entry.note}</p>}
+        {mergePreviewNotice(pendingPreview.request)}
         <div className="modalactions">
           <button onClick={() => { const id = pendingPreview.request.id; setPendingPreview(null); document.getElementById(`planning-request-${id}`)?.scrollIntoView({behavior:"smooth", block:"center"}); }}>Anfrage ansehen</button>
           {pendingPreview.request.requested_by_id === getSessionUser()?.id && <button className="secondary" onClick={async () => {

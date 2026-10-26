@@ -188,6 +188,22 @@
 .change-requests article > div:first-child > .request-select {
   margin-bottom: 0.35rem;
 }
+.request-warning {
+  margin-top: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  border-left: 4px solid #d39b24;
+  border-radius: 8px;
+  background: #fff8df;
+  color: #6b5314;
+  font-size: 0.88rem;
+}
+.request-warning strong,
+.request-warning span {
+  display: block;
+}
+.request-warning span {
+  margin-top: 0.35rem;
+}
 .decision-actions {
   display: flex;
   gap: 0.7rem;

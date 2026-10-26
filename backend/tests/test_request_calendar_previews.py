@@ -68,6 +68,12 @@ def test_same_person_overlap_is_merged_when_new_stay_is_approved(context):
         starts_at=datetime(2026, 12, 26, 10), ends_at=datetime(2026, 12, 31, 14),
         title='Weihnachtsferien',
     ), request, db, sender)
+    assert result.merge_previews == [{
+        "existing_starts_at": start.isoformat(),
+        "existing_ends_at": datetime(2026, 12, 27, 17).isoformat(),
+        "merged_starts_at": start.isoformat(),
+        "merged_ends_at": datetime(2026, 12, 31, 14).isoformat(),
+    }]
     send_change_request(result.id, request, db, sender)
     decide_change_request(result.id, ChangeDecision(decision='APPROVE'), request, db, recipient)
 

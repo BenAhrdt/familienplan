@@ -95,6 +95,7 @@ export type Stay = {
 export type Holiday = { name: string; starts_on: string; ends_on: string };
 export type ChangeRequest = {
   calendar_previews?: Array<{id:string; starts_at:string; ends_at:string; child_id:number; title:string; note:string | null; action:string}>;
+  merge_previews?: Array<{existing_starts_at:string; existing_ends_at:string; merged_starts_at:string; merged_ends_at:string}>;
   id: number;
   object_type: string;
   object_id: number;

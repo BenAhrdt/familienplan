@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.130 – 26. Oktober 2026
+
+- Bei neuen Betreuungsanfragen wird vor der Bestätigung sichtbar gewarnt, wenn die Betreuung mit einem bestehenden Zeitraum verschmilzt. Angezeigt werden der bestehende Zeitraum und der daraus entstehende Gesamtzeitraum.
+- Die Warnung erscheint im Kalender, in den Anfrage-Details, in Entscheidungs-E-Mails und auf der öffentlichen Bestätigungsseite.
+
+Validierung: 104 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.129 – 26. Oktober 2026
 
 - Entwürfe und offene Betreuungsanfragen erscheinen in der Anwendung chronologisch nach dem frühesten betroffenen Zeitraum, sodass sie Monat für Monat abgearbeitet werden können.
