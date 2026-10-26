@@ -2414,6 +2414,38 @@ def _format_request_datetime(value) -> str:
     return parsed.strftime("%d.%m.%Y %H:%M")
 
 
+def _request_datetime_sort_key(value) -> datetime:
+    """Return a comparable local datetime for request ordering."""
+    if not value:
+        return datetime.max
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    except (TypeError, ValueError, OverflowError):
+        return datetime.max
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(ZoneInfo(settings.app_timezone)).replace(tzinfo=None)
+    return parsed
+
+
+def _request_entry_sort_key(entry: dict) -> datetime:
+    return _request_datetime_sort_key(entry.get("starts_at"))
+
+
+def change_request_sort_key(item: ChangeRequest) -> tuple[datetime, int]:
+    """Sort requests by the earliest affected period, then by id."""
+    before = item.before_data or {}
+    proposed = item.proposed_data or {}
+    action = proposed.get("action")
+    if action == "GROUP_CREATE":
+        starts = [entry.get("starts_at") for entry in proposed.get("items") or []]
+    elif action == "DELETE":
+        starts = [before.get("starts_at")]
+    else:
+        starts = [proposed.get("starts_at") or before.get("starts_at")]
+    earliest = min((_request_datetime_sort_key(value) for value in starts), default=datetime.max)
+    return earliest, item.id
+
+
 def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_self: bool = False) -> str:
     """Build a mail body from the request as it exists at resend time."""
     requester = db.get(User, item.requested_by_id)
@@ -2442,7 +2474,8 @@ def current_change_request_email_body(db: Session, item: ChangeRequest, copy_to_
         lines = [
             f"{requester.display_name if requester else 'Eine Person'} hat die aktuelle Version der Planung „{proposed.get('title') or 'Gemeinsame Planung'}“ zur Bestätigung gesendet.",
         ]
-        for index, entry in enumerate(proposed.get("items") or []):
+        entries = sorted(proposed.get("items") or [], key=_request_entry_sort_key)
+        for index, entry in enumerate(entries):
             child = db.get(Child, entry.get("child_id"))
             person = db.get(User, entry.get("responsible_user_id"))
             state = " (bereits entschieden)" if entry.get("email_decision") else ""
@@ -2853,10 +2886,13 @@ def change_requests(db: Session = Depends(get_db), user: User = Depends(current_
             (ChangeRequest.requested_by_id == user.id)
             | ((ChangeRequest.affected_user_id == user.id) & (ChangeRequest.status != PlanStatus.DRAFT))
         )
-    query = query.order_by(ChangeRequest.created_at.desc())
     if include_closed:
+        query = query.order_by(ChangeRequest.created_at.desc())
         query = query.limit(100)
-    return [change_request_payload(db, item, user) for item in db.scalars(query)]
+    items = list(db.scalars(query))
+    if not include_closed:
+        items.sort(key=change_request_sort_key)
+    return [change_request_payload(db, item, user) for item in items]
 
 
 @router.post("/stays/{stay_id}/proposals", response_model=ChangeRequestOut, status_code=201, dependencies=[Depends(require_csrf)])
@@ -2906,6 +2942,7 @@ def send_change_request(change_id: int, request: Request, db: Session = Depends(
 def send_change_requests_batch(data: ChangeRequestEmailBatch, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     request_ids = list(dict.fromkeys(data.request_ids))
     items = list(db.scalars(select(ChangeRequest).where(ChangeRequest.id.in_(request_ids)).order_by(ChangeRequest.id).with_for_update()))
+    items.sort(key=change_request_sort_key)
     if len(items) != len(request_ids):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Mindestens ein Entwurf wurde nicht gefunden")
     for item in items:
@@ -2982,6 +3019,7 @@ def resend_change_request(change_id: int, data: ChangeRequestEmailResend, reques
 def resend_change_requests_batch(data: ChangeRequestEmailBatch, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     request_ids = list(dict.fromkeys(data.request_ids))
     items = list(db.scalars(select(ChangeRequest).where(ChangeRequest.id.in_(request_ids)).order_by(ChangeRequest.id).with_for_update()))
+    items.sort(key=change_request_sort_key)
     if len(items) != len(request_ids):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Mindestens eine offene Anfrage wurde nicht gefunden")
     for item in items:

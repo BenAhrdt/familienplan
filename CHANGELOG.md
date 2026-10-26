@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.129 – 26. Oktober 2026
+
+- Entwürfe und offene Betreuungsanfragen erscheinen in der Anwendung chronologisch nach dem frühesten betroffenen Zeitraum, sodass sie Monat für Monat abgearbeitet werden können.
+- Sammelmails, erneute Sammelmails und Kopien folgen derselben chronologischen Reihenfolge. Auch die Zeiträume innerhalb einer Gruppenplanung werden sortiert.
+- Der ICS-Export bleibt auf bestätigte Betreuungszeiten beschränkt; Entwürfe und offene Anfragen werden nicht exportiert.
+
+Validierung: 104 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.128 – 26. Oktober 2026
 
 - Eigene Betreuungsentwürfe erscheinen jetzt im Webkalender. Entwürfe und versendete, noch nicht bestätigte Anfragen werden dort klar unterschiedlich markiert.

@@ -566,13 +566,15 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
         child_id=child.id, responsible_user_id=sender.id,
         starts_at=datetime(2027, 3, 3), ends_at=datetime(2027, 3, 4),
     ), request, db, sender)
-    result = send_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id]), request, db, sender)
+    result = send_change_requests_batch(ChangeRequestEmailBatch(request_ids=[second.id, first.id]), request, db, sender)
     assert result == {"sent": 2, "mail_count": 1}
     digest = db.scalar(select(OutboxMessage).where(OutboxMessage.event_type == "notification.digest"))
     assert digest is not None
     available_at = digest.available_at if digest.available_at.tzinfo else digest.available_at.replace(tzinfo=timezone.utc)
     assert available_at <= datetime.now(timezone.utc) + timedelta(seconds=5)
     assert len(digest.payload["entries"]) == 2
+    assert "01.03.2027" in digest.payload["entries"][0]["body"]
+    assert "03.03.2027" in digest.payload["entries"][1]["body"]
     assert len(digest.payload["decision_batch_actions"]) == 2
     assert all(len(entry["decision_actions"]) == 1 for entry in digest.payload["entries"])
     initial_copy = db.scalar(select(OutboxMessage).where(
@@ -581,10 +583,12 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
     ))
     assert initial_copy is not None
     assert len(initial_copy.payload["entries"]) == 2
+    assert "01.03.2027" in initial_copy.payload["entries"][0]["body"]
+    assert "03.03.2027" in initial_copy.payload["entries"][1]["body"]
     assert all(entry["decision_actions"] == [] for entry in initial_copy.payload["entries"])
     assert all("ohne aktive Entscheidungslinks" in entry["body"] for entry in initial_copy.payload["entries"])
 
-    result = resend_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id]), request, db, sender)
+    result = resend_change_requests_batch(ChangeRequestEmailBatch(request_ids=[second.id, first.id]), request, db, sender)
     assert result == {"queued": 2, "mail_count": 1, "copy_to_self": False}
     resend = db.scalar(select(OutboxMessage).where(
         OutboxMessage.event_type == "notification.resend",
@@ -592,6 +596,8 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
     ))
     assert resend is not None
     assert len(resend.payload["entries"]) == 2
+    assert "01.03.2027" in resend.payload["entries"][0]["body"]
+    assert "03.03.2027" in resend.payload["entries"][1]["body"]
     assert len(resend.payload["decision_batch_actions"]) == 2
 
     result = resend_change_requests_batch(ChangeRequestEmailBatch(request_ids=[first.id, second.id], copy_to_self=True), request, db, sender)
@@ -604,6 +610,22 @@ def test_batch_send_resend_and_copy_group_requests_into_one_mail(context, monkey
     latest_copy = max(copies, key=lambda item: item.id)
     assert len(latest_copy.payload["entries"]) == 2
     assert all(entry["decision_actions"] == [] for entry in latest_copy.payload["entries"])
+
+
+def test_open_requests_are_listed_by_earliest_period(context):
+    db, (sender, recipient, other), child, request = context
+    later = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2027, 5, 5), ends_at=datetime(2027, 5, 9),
+    ), request, db, sender)
+    earlier = propose_new_stay(StayCreate(
+        child_id=child.id, responsible_user_id=sender.id,
+        starts_at=datetime(2027, 2, 8), ends_at=datetime(2027, 2, 9),
+    ), request, db, sender)
+
+    listed = change_requests(db, sender)
+
+    assert [item.id for item in listed] == [earlier.id, later.id]
 
 
 def test_resend_uses_current_request_and_copy_has_no_decision_links(context, monkeypatch):
