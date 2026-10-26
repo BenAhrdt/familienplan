@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.128 – 26. Oktober 2026
+
+- Eigene Betreuungsentwürfe erscheinen jetzt im Webkalender. Entwürfe und versendete, noch nicht bestätigte Anfragen werden dort klar unterschiedlich markiert.
+- Persönliche ICS-Feeds bleiben auf bestätigte Betreuungszeiten beschränkt; Entwürfe und offene Anfragen werden nicht exportiert.
+
+Validierung: 103 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.127 – 26. Oktober 2026
 
 - Beim Versand einer Betreuungsanfrage erhält die anfragende Person automatisch eine separate Kopie ohne aktive Entscheidungslinks. Das gilt für Einzelanfragen und Sammelversand; die Kopie wird direkt in die E-Mail-Warteschlange gestellt.

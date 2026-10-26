@@ -697,6 +697,11 @@
   background: #fbf6eb;
   color: #695330;
 }
+.daypending.draft, .mobile-day-agenda > button.pending-agenda.draft {
+  border-color: #3979b8;
+  background: #eef5fb;
+  color: #28597c;
+}
 .daypending { display:flex; flex-wrap:wrap; align-items:center; gap:4px; width:100%; padding:5px; text-align:left; font-size:.75rem; border-radius:5px; }
 .daypending small { display:block; width:100%; font-size:.65rem; }
 .daypending svg { flex-shrink:0; }

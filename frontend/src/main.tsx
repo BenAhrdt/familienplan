@@ -1703,9 +1703,15 @@ function CalendarScreen({
   const draftRequests = requests.filter((request) => request.status === "DRAFT" && request.requested_by_id === sessionUserId);
   const visibleRequests = requests.filter((request) => request.status !== "DRAFT");
   const resendableRequests = visibleRequests.filter((request) => canResendRequest(request));
-  const pendingEntries = visibleRequests.flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
+  const pendingEntries = [...draftRequests, ...visibleRequests].flatMap((request) => (request.calendar_previews || []).map((entry) => ({request, entry})));
   const pendingOnDay = (day: Date, end: Date) => availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY")
     ? pendingEntries.filter(({entry}) => new Date(entry.starts_at) < end && new Date(entry.ends_at) > day) : [];
+  const pendingStatusLabel = (preview: { request: ChangeRequest; entry: NonNullable<ChangeRequest["calendar_previews"]>[number] }) => preview.request.status === "DRAFT"
+    ? "Entwurf"
+    : preview.entry.action === "DELETE" ? "Löschung angefragt" : "Bestätigung ausstehend";
+  const pendingTitle = (preview: { request: ChangeRequest; entry: NonNullable<ChangeRequest["calendar_previews"]>[number] }) => preview.request.status === "DRAFT"
+    ? `${preview.entry.title} · Entwurf`
+    : `${preview.entry.title} · Bestätigung von ${preview.request.affected_user_name} ausstehend`;
   useEffect(() => {
     setSelectedDraftRequestIds((current) => current.filter((id) => draftRequests.some((request) => request.id === id)));
     setSelectedResendRequestIds((current) => current.filter((id) => resendableRequests.some((request) => request.id === id)));
@@ -2612,8 +2618,8 @@ function CalendarScreen({
     return <section className={`mobile-day-agenda mobile-agenda-${position}`} aria-live={position === "top" ? "polite" : "off"}>
       <h3>{mobileSelectedDay.toLocaleDateString("de-DE", { weekday:"long", day:"2-digit", month:"long" })}</h3>
       {mobileDayEvents.length === 0 && mobileDayStays.length === 0 && mobileDayBirthdays.length === 0 && mobileDayHolidays.length === 0 && pendingOnDay(mobileSelectedDay, mobileSelectedDayEnd).length === 0 && <p>Keine Einträge an diesem Tag.</p>}
-      {pendingOnDay(mobileSelectedDay, mobileSelectedDayEnd).map((preview) => <button className="pending-agenda" key={`${position}-${preview.entry.id}`} onClick={() => { setError(""); setPendingPreview(preview); }}>
-        <i className="agenda-entry-icon"><Clock/></i><span><strong>{preview.entry.title}</strong><small>{preview.entry.action === "DELETE" ? "Löschung angefragt" : "Bestätigung ausstehend"}</small></span><ChevronRight/>
+      {pendingOnDay(mobileSelectedDay, mobileSelectedDayEnd).map((preview) => <button className={`pending-agenda${preview.request.status === "DRAFT" ? " draft" : ""}`} key={`${position}-${preview.entry.id}`} onClick={() => { setError(""); setPendingPreview(preview); }}>
+        <i className="agenda-entry-icon"><Clock/></i><span><strong>{preview.entry.title}</strong><small>{pendingStatusLabel(preview)}</small></span><ChevronRight/>
       </button>)}
       {mobileDayEvents.map((event) => <button key={`${position}-mobile-event-${event.id}`} onClick={() => showCalendarEvent(event)} style={{"--entry-color":eventDisplayColor(event),"--entry-background":eventColorGradient(event, people)} as React.CSSProperties}>
         <i className="agenda-entry-icon" aria-hidden="true"><EventSymbol eventType={event.event_type} title={event.title} />{!EventSymbol({eventType:event.event_type,title:event.title}) && <i className="agenda-color-dot" />}</i>
@@ -3104,10 +3110,10 @@ function CalendarScreen({
               >
                 <time dateTime={localDateTime(day).slice(0, 10)}>{day.getDate()}</time>
                 <div className="dayentries">
-                  {pendingOnDay(day, dayEnd).map((preview) => <button type="button" className="daypending" key={preview.entry.id}
-                    title={`${preview.entry.title} · Bestätigung von ${preview.request.affected_user_name} ausstehend`}
+                  {pendingOnDay(day, dayEnd).map((preview) => <button type="button" className={`daypending${preview.request.status === "DRAFT" ? " draft" : ""}`} key={preview.entry.id}
+                    title={pendingTitle(preview)}
                     onClick={(event) => { event.stopPropagation(); setError(""); setPendingPreview(preview); }}>
-                    <Clock size={14}/><span>{preview.entry.title}</span><small>{preview.entry.action === "DELETE" ? "Löschung angefragt" : "Bestätigung ausstehend"}</small>
+                    <Clock size={14}/><span>{preview.entry.title}</span><small>{pendingStatusLabel(preview)}</small>
                   </button>)}
                   {availableEventTypes.includes("STAY") && !hiddenEventTypes.includes("STAY") && children.map((child) => {
                     const childStays = dayStays
@@ -3802,11 +3808,11 @@ function CalendarScreen({
         onSaved={() => { setBirthdayDialog(null); setEditingEvent(null); setOpen(null); load(); }} />}
       {pendingPreview && <div className="modal"><section className="panel">
         <button type="button" className="close" onClick={() => setPendingPreview(null)} aria-label="Schließen">×</button>
-        <h2><Clock size={24}/> Bestätigung ausstehend</h2>
+        <h2><Clock size={24}/> {pendingPreview.request.status === "DRAFT" ? "Entwurf" : "Bestätigung ausstehend"}</h2>
         <h3>{pendingPreview.entry.title}</h3>
-        <p>{pendingPreview.entry.action === "DELETE" ? "Löschung angefragt" : pendingPreview.entry.action === "UPDATE" ? "Änderung angefragt" : "Neue Betreuung angefragt"}</p>
+        <p>{pendingPreview.request.status === "DRAFT" ? "Noch nicht versendet" : pendingPreview.entry.action === "DELETE" ? "Löschung angefragt" : pendingPreview.entry.action === "UPDATE" ? "Änderung angefragt" : "Neue Betreuung angefragt"}</p>
         <p>{new Date(pendingPreview.entry.starts_at).toLocaleString("de-DE")} – {new Date(pendingPreview.entry.ends_at).toLocaleString("de-DE")}</p>
-        <p>Von {pendingPreview.request.requested_by_name} · Wartet auf {pendingPreview.request.affected_user_name}</p>
+        <p>{pendingPreview.request.status === "DRAFT" ? `Für ${pendingPreview.request.affected_user_name} vorgesehen` : `Von ${pendingPreview.request.requested_by_name} · Wartet auf ${pendingPreview.request.affected_user_name}`}</p>
         {pendingPreview.entry.note && <p>{pendingPreview.entry.note}</p>}
         <div className="modalactions">
           <button onClick={() => { const id = pendingPreview.request.id; setPendingPreview(null); document.getElementById(`planning-request-${id}`)?.scrollIntoView({behavior:"smooth", block:"center"}); }}>Anfrage ansehen</button>
