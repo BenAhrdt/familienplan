@@ -687,6 +687,7 @@ type CalendarTarget = {
   id: number;
   startsAt: string;
   relatedIds?: number[];
+  focusOnly?: boolean;
 };
 
 function calendarTargetFromLocation(): CalendarTarget | null {
@@ -698,6 +699,7 @@ function calendarTargetFromLocation(): CalendarTarget | null {
     kind: "stay",
     id: Number.isFinite(stayId) && stayId > 0 ? stayId : -1,
     startsAt,
+    focusOnly: true,
   };
 }
 type DashboardConflict = {
@@ -2235,6 +2237,10 @@ function CalendarScreen({
     }
     const targetKey = `${target.kind}-${target.id}-${target.startsAt}`;
     if (openedTargetRef.current === targetKey) return;
+    if (target.focusOnly) {
+      openedTargetRef.current = targetKey;
+      return;
+    }
     if (target.kind === "event") {
       const event = events.find((item) => item.id === target.id);
       if (!event) return;

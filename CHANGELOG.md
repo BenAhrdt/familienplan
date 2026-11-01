@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.132 – 1. November 2026
+
+- E-Mail-Entscheidungslinks öffnen den fokussierten Betreuungstermin nicht mehr automatisch im Bearbeitungsdialog. Der Termin wird nur im Kalender markiert und mittig angezeigt.
+- Normale Kalenderziele und direkte Klicks auf Betreuungseinträge behalten das Öffnen der Detail- beziehungsweise Bearbeitungsansicht.
+
+Validierung: 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.131 – 1. November 2026
 
 - Nach einer Bestätigung oder Ablehnung per E-Mail wird die betreffende Person automatisch mit ihrem eigenen Benutzerkonto angemeldet und zur Kalenderansicht weitergeleitet.
