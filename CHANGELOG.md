@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.131 – 1. November 2026
+
+- Nach einer Bestätigung oder Ablehnung per E-Mail wird die betreffende Person automatisch mit ihrem eigenen Benutzerkonto angemeldet und zur Kalenderansicht weitergeleitet.
+- Der betroffene Termin wird im Kalender mittig markiert, ohne automatisch geöffnet zu werden. Bei abgelehnten neuen Betreuungen wird weiterhin das entsprechende Datum angezeigt; bereits erledigte Entscheidungslinks führen ebenfalls dorthin.
+- Passwortlose Loginlinks aus E-Mails sind dauerhaft gültig und werden bei Passwortänderung widerrufen. Die Datenbankmigration 0037 aktualisiert auch bestehende Links.
+- Das automatische Scrollen wurde für Mobilgeräte entschärft, damit Kalender und Anfragen nicht unvermittelt aus dem sichtbaren Bereich springen.
+
+Validierung: 104 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.130 – 26. Oktober 2026
 
 - Bei neuen Betreuungsanfragen wird vor der Bestätigung sichtbar gewarnt, wenn die Betreuung mit einem bestehenden Zeitraum verschmilzt. Angezeigt werden der bestehende Zeitraum und der daraus entstehende Gesamtzeitraum.

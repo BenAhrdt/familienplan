@@ -8,7 +8,7 @@ from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -335,12 +335,17 @@ def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_
 
 
 def issue_session(db: Session, response: Response, user: User, remember: bool) -> SessionOut:
+    csrf = issue_session_cookie(db, response, user, remember)
+    return SessionOut(user=user, csrf_token=csrf)
+
+
+def issue_session_cookie(db: Session, response: Response, user: User, remember: bool) -> str:
     raw = new_token()
     csrf = new_token()
     lifetime = timedelta(days=settings.remember_session_days) if remember else timedelta(hours=settings.session_hours)
     db.add(UserSession(token_hash=token_hash(raw), csrf_token=csrf, user_id=user.id, expires_at=utcnow() + lifetime))
     response.set_cookie("session_token", raw, max_age=int(lifetime.total_seconds()), httponly=True, secure=settings.session_cookie_secure, samesite="lax", path="/")
-    return SessionOut(user=user, csrf_token=csrf)
+    return csrf
 
 
 @router.get("/health")
@@ -393,7 +398,7 @@ def email_login(token: str, request: Request, db: Session = Depends(get_db)):
     expires_at = login_token.expires_at if login_token else None
     if expires_at is not None and expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=utcnow().tzinfo)
-    if not login_token or login_token.used_at or expires_at <= utcnow():
+    if not login_token or login_token.used_at or (expires_at is not None and expires_at <= utcnow()):
         raise HTTPException(status.HTTP_410_GONE, "Dieser Anmeldelink ist ungültig oder abgelaufen")
     user = db.get(User, login_token.user_id)
     if not user or not user.is_active or user.is_pending:
@@ -2679,6 +2684,66 @@ def _public_target_details(db: Session, target: dict) -> str:
     return f"Abschnitt {item_index + 1}: {entry.get('name') or 'Zeitraum'} · {child.display_name if child else 'Kind'} bei {person.display_name if person else 'Person'} · {_format_request_datetime(entry.get('starts_at'))} – {_format_request_datetime(entry.get('ends_at'))}"
 
 
+def _public_decision_focus_path(db: Session, link: PublicDecisionToken) -> str:
+    """Build a calendar deep link for a decision link, including closed requests."""
+    raw_targets = link.target_items or [{"request_id": request_id} for request_id in (link.change_request_ids or [])]
+    focus_stay_id: int | None = None
+    focus_starts_at: str | None = None
+    for raw_target in raw_targets:
+        try:
+            request_id = int(raw_target["request_id"])
+            item_index = raw_target.get("item_index")
+            item_index = int(item_index) if item_index is not None else None
+        except (KeyError, TypeError, ValueError):
+            continue
+        item = db.get(ChangeRequest, request_id)
+        if not item or item.affected_user_id != link.recipient_user_id:
+            continue
+        proposed = item.proposed_data or {}
+        before = item.before_data or {}
+        candidate_stay_ids: list[int] = []
+        if item_index is not None:
+            entries = proposed.get("items") or []
+            if 0 <= item_index < len(entries):
+                entry = entries[item_index]
+                focus_starts_at = entry.get("starts_at")
+                candidate_stay_ids = [
+                    int(value)
+                    for value in (entry.get("approved_stay_id"), entry.get("stay_id"))
+                    if value is not None
+                ]
+        else:
+            focus_starts_at = proposed.get("starts_at") or before.get("starts_at")
+            candidate_stay_ids = [item.object_id]
+            if proposed.get("action") == "CREATE" and item.status != PlanStatus.CONFIRMED:
+                candidate_stay_ids = []
+        for candidate_id in candidate_stay_ids:
+            if db.get(Stay, candidate_id):
+                focus_stay_id = candidate_id
+                break
+        if focus_starts_at or focus_stay_id:
+            break
+
+    if not focus_starts_at and focus_stay_id:
+        stay = db.get(Stay, focus_stay_id)
+        focus_starts_at = stay.starts_at.isoformat() if stay else None
+    params: dict[str, str] = {}
+    if focus_starts_at:
+        params["focus_date"] = focus_starts_at
+    if focus_stay_id:
+        params["focus_stay"] = str(focus_stay_id)
+    return "/calendar" + (f"?{urlencode(params)}" if params else "")
+
+
+def _public_decision_redirect(db: Session, link: PublicDecisionToken) -> RedirectResponse | None:
+    recipient = db.get(User, link.recipient_user_id)
+    if not recipient or not recipient.is_active or recipient.is_pending:
+        return None
+    response = RedirectResponse(url=_public_decision_focus_path(db, link), status_code=status.HTTP_303_SEE_OTHER)
+    issue_session_cookie(db, response, recipient, False)
+    return response
+
+
 def _public_decision_page(
     title: str,
     message: str,
@@ -2760,6 +2825,10 @@ def public_decision_page(token: str, db: Session = Depends(get_db)):
         return _public_decision_page("Link nicht gültig", "Dieser Entscheidungslink ist nicht gültig oder nicht mehr verfügbar.")
     items = _public_open_targets(db, link)
     if not items:
+        response = _public_decision_redirect(db, link)
+        if response:
+            db.commit()
+            return response
         return _public_decision_page("Anfrage erledigt", "Diese Anfrage wurde bereits bestätigt, abgelehnt oder zurückgezogen. Der Link ist damit nicht mehr verwendbar.")
     return _public_decision_page("E-Mail-Entscheidung", f"Bitte prüfe die Anfrage und bestätige deine Entscheidung.", link, items, db)
 
@@ -2771,6 +2840,10 @@ def public_decision_submit(token: str, request: Request, comment: str = Form("")
         return _public_decision_page("Link nicht gültig", "Dieser Entscheidungslink ist nicht gültig oder nicht mehr verfügbar.")
     items = _public_open_targets(db, link)
     if not items:
+        response = _public_decision_redirect(db, link)
+        if response:
+            db.commit()
+            return response
         return _public_decision_page("Anfrage erledigt", "Diese Anfrage wurde bereits bestätigt, abgelehnt oder zurückgezogen. Der Link ist damit nicht mehr verwendbar.")
     recipient = db.get(User, link.recipient_user_id)
     decision_comment = (comment or "").strip()
@@ -2807,11 +2880,18 @@ def public_decision_submit(token: str, request: Request, comment: str = Form("")
     remaining = _public_open_targets(db, link) if link else []
     if not remaining:
         link.used_at = utcnow()
-    db.commit()
     if processed == 0:
+        response = _public_decision_redirect(db, link) if link and not remaining else None
+        db.commit()
+        if response:
+            return response
         return _public_decision_page("Keine Änderung durchgeführt", "Die offenen Anfragen konnten nicht mehr verarbeitet werden. Bitte öffne FamilienPlan für weitere Details.")
     result = "bestätigt" if link.decision == "APPROVE" else "abgelehnt"
     count_text = "Die Anfrage wurde" if processed == 1 else f"{processed} Anfragen wurden"
+    response = _public_decision_redirect(db, link)
+    db.commit()
+    if response:
+        return response
     return _public_decision_page("Entscheidung gespeichert", f"{count_text} per E-Mail {result}. Du kannst dieses Fenster schließen.")
 
 

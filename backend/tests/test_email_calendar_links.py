@@ -50,7 +50,7 @@ def test_default_calendar_feeds_are_created_only_for_visible_categories():
         assert len(list(db.scalars(select(CalendarFeed)))) == len(rows)
 
 
-def test_notification_mail_contains_calendar_links_and_one_time_login(monkeypatch):
+def test_notification_mail_contains_calendar_links_and_reusable_login(monkeypatch):
     import app.integrations as integrations
 
     config = {
@@ -103,8 +103,8 @@ def test_notification_mail_contains_calendar_links_and_one_time_login(monkeypatc
         integrations._send_mail(config, user.email, outbox.payload)
         plain = sent[0].get_body(preferencelist=("plain",)).get_content()
         html = sent[0].get_body(preferencelist=("html",)).get_content()
-        assert "14 Tage ab Versand gültig" in plain
-        assert "14 Tage ab Versand gültig" in html
+        assert "bleibt gültig" in plain
+        assert "bleibt gültig" in html
 
 
 def test_standalone_calendar_links_mail_contains_current_feeds(monkeypatch):
@@ -138,7 +138,7 @@ def test_standalone_calendar_links_mail_contains_current_feeds(monkeypatch):
         ]
 
 
-def test_email_login_is_reusable_for_fourteen_days_and_rejects_external_redirects():
+def test_email_login_is_reusable_without_expiry_and_rejects_external_redirects():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -151,7 +151,7 @@ def test_email_login_is_reusable_for_fourteen_days_and_rejects_external_redirect
         raw = urlsplit(login_url).path.rsplit("/", 1)[-1]
         login_token = db.scalar(select(EmailLoginToken).where(EmailLoginToken.token_hash == token_hash(raw)))
         assert login_token.redirect_path == "/calendar"
-        assert login_token.expires_at.replace(tzinfo=None) - datetime.now() > timedelta(days=13)
+        assert login_token.expires_at is None
         db.commit()
 
         request = Request({

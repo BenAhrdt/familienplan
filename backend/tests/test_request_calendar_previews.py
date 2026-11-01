@@ -300,7 +300,7 @@ def test_draft_is_private_until_sent_and_can_be_edited(context):
     assert len(request_calendar_previews(db, db.get(ChangeRequest, result.id), recipient)) == 1
 
 
-def test_public_email_decision_confirms_request_without_login(context):
+def test_public_email_decision_confirms_request_and_logs_recipient_in(context):
     db, (sender, recipient, other), child, request = context
     start = datetime(2026, 11, 5)
     result = propose_new_stay(StayCreate(
@@ -322,12 +322,15 @@ def test_public_email_decision_confirms_request_without_login(context):
     assert "Bestätigen" in page.body.decode()
 
     done = public_decision_submit(raw, request, "Per E-Mail bestätigt", db)
-    assert done.status_code == 200
-    assert "bestätigt" in done.body.decode()
+    assert done.status_code == 303
+    assert done.headers["location"].startswith("/calendar?focus_date=")
+    assert f"focus_stay={result.object_id}" in done.headers["location"]
+    assert "session_token=" in done.headers["set-cookie"]
     assert db.get(ChangeRequest, result.id).status == PlanStatus.CONFIRMED
     assert db.get(PublicDecisionToken, link.id).used_at is not None
-    assert public_decision_page(raw, db).status_code == 200
-    assert "bereits bestätigt" in public_decision_page(raw, db).body.decode()
+    reopened = public_decision_page(raw, db)
+    assert reopened.status_code == 303
+    assert reopened.headers["location"] == done.headers["location"]
 
 
 def test_public_email_batch_decision_rejects_all_requests(context):
@@ -356,7 +359,9 @@ def test_public_email_batch_decision_rejects_all_requests(context):
     assert "Folgende Anfragen werden abgelehnt" in page.body.decode()
     assert page.body.decode().count("<li") == 2
     done = public_decision_submit(raw, request, "Die Zeiträume passen nicht", db)
-    assert done.status_code == 200
+    assert done.status_code == 303
+    assert done.headers["location"].startswith("/calendar?focus_date=")
+    assert "focus_stay=" not in done.headers["location"]
     assert db.get(ChangeRequest, first.id).status == PlanStatus.REJECTED
     assert db.get(ChangeRequest, second.id).status == PlanStatus.REJECTED
     assert db.get(PublicDecisionToken, link.id).used_at is not None

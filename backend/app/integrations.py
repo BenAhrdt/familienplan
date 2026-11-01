@@ -142,13 +142,13 @@ def _safe_redirect_path(action_url: str | None, app_url: str) -> str:
 
 
 def email_login_url(db, user: User, action_url: str | None, config: dict) -> str:
-    """Create a reusable, time-limited sign-in URL for a trusted recipient."""
+    """Create a reusable sign-in URL for a trusted recipient."""
     raw = new_token()
     db.add(EmailLoginToken(
         user_id=user.id,
         token_hash=token_hash(raw),
         redirect_path=_safe_redirect_path(action_url, config["app_url"]),
-        expires_at=utcnow() + timedelta(days=14),
+        expires_at=None,
     ))
     return f"{config['app_url'].rstrip('/')}/api/v1/auth/email-login/{quote(raw, safe='')}"
 
@@ -378,7 +378,7 @@ def _send_mail(config: dict, recipient: str, payload: dict):
     if login_url:
         plain_body = (
             f"{plain_body}\n\nDirekt in FamilienPlan öffnen (ohne Passwort):\n{login_url}"
-            "\nDieser Link ist 14 Tage ab Versand gültig und kann in dieser Zeit mehrfach ohne Passwort verwendet werden."
+            "\nDieser Link bleibt gültig und kann mehrfach ohne Passwort verwendet werden, bis er widerrufen wird."
         )
     if calendar_links:
         plain_body = f"{plain_body}\n\nKalender abonnieren:\n" + "\n".join(
@@ -421,7 +421,7 @@ def _send_mail(config: dict, recipient: str, payload: dict):
             calendar_html = f'<div style="border-top:1px solid #dfe5e0;margin-top:28px;padding-top:20px"><h2 style="font-size:18px;margin:0 0 8px">Kalender abonnieren</h2><p style="line-height:1.6;margin:0 0 8px">Diese Kalender sind für dich freigegeben:</p><ul style="line-height:1.5;padding-left:20px;margin:0">{calendar_items}</ul></div>'
         login_hint_html = (
             '<p style="margin:10px 0 0;color:#708079;font-size:12px">'
-            'Dieser Link ist 14 Tage ab Versand gültig und kann in dieser Zeit mehrfach ohne Passwort verwendet werden.'
+            'Dieser Link bleibt gültig und kann mehrfach ohne Passwort verwendet werden, bis er widerrufen wird.'
             '</p>'
             if login_url else ""
         )

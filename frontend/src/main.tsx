@@ -688,6 +688,18 @@ type CalendarTarget = {
   startsAt: string;
   relatedIds?: number[];
 };
+
+function calendarTargetFromLocation(): CalendarTarget | null {
+  const params = new URLSearchParams(location.search);
+  const startsAt = params.get("focus_date");
+  if (!startsAt) return null;
+  const stayId = Number(params.get("focus_stay"));
+  return {
+    kind: "stay",
+    id: Number.isFinite(stayId) && stayId > 0 ? stayId : -1,
+    startsAt,
+  };
+}
 type DashboardConflict = {
   key: string;
   childName: string;
@@ -1878,7 +1890,9 @@ function CalendarScreen({
     if (!requestId || !requests.some((item) => String(item.id) === requestId)) return;
     const element = document.getElementById(`planning-request-${requestId}`);
     if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!window.matchMedia("(max-width: 900px)").matches) {
+        element.scrollIntoView({ behavior: "auto", block: "center" });
+      }
       element.classList.add("request-highlight");
       window.setTimeout(() => element.classList.remove("request-highlight"), 5000);
     }
@@ -1912,8 +1926,11 @@ function CalendarScreen({
   }, [target, targetMode]);
   useEffect(() => {
     if (!target || targetMode === "dialog") return;
+    if (window.matchMedia("(max-width: 900px)").matches) return;
     const element = document.querySelector<HTMLElement>(
-      `[data-calendar-target="${target.kind}-${target.id}"]`,
+      target.id > 0
+        ? `[data-calendar-target="${target.kind}-${target.id}"]`
+        : `[data-calendar-date="${localDateKey(new Date(target.startsAt))}"]`,
     );
     if (element) {
       window.setTimeout(
@@ -3101,7 +3118,8 @@ function CalendarScreen({
             const isToday = day.toDateString() === now.toDateString();
             return (
               <article
-                className={`${day.getMonth() !== month.getMonth() ? "outside " : ""}${isToday ? "todaycell " : ""}${day.toDateString() === mobileSelectedDay.toDateString() ? "mobile-selected " : ""}${dayHolidays.length ? "holidaycell" : ""}`}
+                className={`${day.getMonth() !== month.getMonth() ? "outside " : ""}${isToday ? "todaycell " : ""}${day.toDateString() === mobileSelectedDay.toDateString() ? "mobile-selected " : ""}${dayHolidays.length ? "holidaycell" : ""}${target?.id === -1 && localDateKey(day) === localDateKey(new Date(target.startsAt)) ? " calendar-highlight" : ""}`}
+                data-calendar-date={localDateKey(day)}
                 key={day.toISOString()}
                 onClick={(event) => {
                   if ((event.target as HTMLElement).closest(".dayevent")) return;
@@ -5659,7 +5677,8 @@ function App() {
     [user, setUser] = useState<User | null>(null),
     [impersonating, setImpersonating] = useState(false),
     [screen, setScreen] = useState<Screen>(() => {
-      if (new URLSearchParams(location.search).has("request")) return "calendar";
+      const params = new URLSearchParams(location.search);
+      if (params.has("request") || params.has("focus_date")) return "calendar";
       const stored = localStorage.getItem("familienplan.lastScreen");
       return stored && stored in labels ? (stored as Screen) : "home";
     }),
@@ -5676,7 +5695,7 @@ function App() {
     [updateElapsedSeconds, setUpdateElapsedSeconds] = useState(0),
     [showChangelog, setShowChangelog] = useState(false),
     [markingNotificationsRead, setMarkingNotificationsRead] = useState(false),
-    [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(null),
+    [calendarTarget, setCalendarTarget] = useState<CalendarTarget | null>(() => calendarTargetFromLocation()),
     [dashboardCalendarView, setDashboardCalendarView] = useState<{ target: CalendarTarget; key: number } | null>(null),
     [holidayDraft, setHolidayDraft] =
       useState<HolidayPlanningDraft | null>(null),
