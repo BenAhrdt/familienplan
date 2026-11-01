@@ -1574,6 +1574,7 @@ function CalendarScreen({
     [stays, setStays] = useState<Stay[]>([]),
     [series, setSeries] = useState<Stay[]>([]),
     [requests, setRequests] = useState<ChangeRequest[]>([]),
+    [requestsLoaded, setRequestsLoaded] = useState(false),
     [requestHistory, setRequestHistory] = useState<ChangeRequest[] | null>(null),
     [holidays, setHolidays] = useState<Array<Holiday & { state: string }>>([]),
     [customBirthdays, setCustomBirthdays] = useState<Birthday[]>([]),
@@ -1744,7 +1745,10 @@ function CalendarScreen({
     api<ChangeRequest[]>("/change-requests").then((nextRequests) => {
       if (currentRequestLoadVersion === requestLoadVersion.current) {
         setRequests(nextRequests);
+        setRequestsLoaded(true);
       }
+    }).catch(() => {
+      if (currentRequestLoadVersion === requestLoadVersion.current) setRequestsLoaded(true);
     });
     api<Stay[]>("/stay-series").then(setSeries);
     api<CalendarEvent[]>("/calendar-series").then(setEventSeries);
@@ -1889,7 +1893,7 @@ function CalendarScreen({
   }
   useEffect(() => {
     const requestId = new URLSearchParams(location.search).get("request");
-    if (!requestId || !requests.some((item) => String(item.id) === requestId)) return;
+    if (!requestId || !requestsLoaded || !requests.some((item) => String(item.id) === requestId)) return;
     const element = document.getElementById(`planning-request-${requestId}`);
     if (element) {
       if (!window.matchMedia("(max-width: 900px)").matches) {
@@ -1898,7 +1902,7 @@ function CalendarScreen({
       element.classList.add("request-highlight");
       window.setTimeout(() => element.classList.remove("request-highlight"), 5000);
     }
-  }, [requests]);
+  }, [requests, requestsLoaded]);
   useEffect(load, [children.length, month.getFullYear(), month.getMonth()]);
   useEffect(() => {
     api<CalendarDisplayPreferences>("/settings/calendar-display")
@@ -1929,6 +1933,9 @@ function CalendarScreen({
   useEffect(() => {
     if (!target || targetMode === "dialog") return;
     if (window.matchMedia("(max-width: 900px)").matches) return;
+    const requestId = new URLSearchParams(location.search).get("request");
+    if (requestId && !requestsLoaded) return;
+    if (requestId && requests.some((item) => String(item.id) === requestId)) return;
     const element = document.querySelector<HTMLElement>(
       target.id > 0
         ? `[data-calendar-target="${target.kind}-${target.id}"]`
@@ -1940,7 +1947,7 @@ function CalendarScreen({
         80,
       );
     }
-  }, [target, events, stays, targetMode]);
+  }, [target, events, stays, requests, requestsLoaded, targetMode]);
   useEffect(() => {
     if (!holidayDraft) return;
     const child = children.find((item) => item.id === holidayDraft.child_id);

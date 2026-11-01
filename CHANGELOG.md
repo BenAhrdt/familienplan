@@ -2,6 +2,14 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.133 – 1. November 2026
+
+- „In FamilienPlan öffnen“ verknüpft offene Anfragen jetzt gleichzeitig mit der Anfrage und dem passenden Kalenderdatum beziehungsweise Betreuungstermin.
+- Wenn eine Anfrage bereits erledigt ist, wird der aktuelle beziehungsweise resultierende Termin dynamisch fokussiert; bei abgelehnten neuen Betreuungen bleibt das Datum sichtbar.
+- Bestätigungs- und Ablehnungsbenachrichtigungen verwenden ebenfalls den kombinierten Anfrage-/Kalenderfokus.
+
+Validierung: 104 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.132 – 1. November 2026
 
 - E-Mail-Entscheidungslinks öffnen den fokussierten Betreuungstermin nicht mehr automatisch im Bearbeitungsdialog. Der Termin wird nur im Kalender markiert und mittig angezeigt.

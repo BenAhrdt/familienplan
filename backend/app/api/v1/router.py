@@ -8,7 +8,7 @@ from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -321,13 +321,37 @@ def audit_app_opened(db: Session, request: Request, user: User, session: UserSes
     return True
 
 
+def change_request_calendar_path(db: Session, item: ChangeRequest) -> str:
+    """Open a request and focus its current or resulting calendar entry."""
+    proposed = item.proposed_data or {}
+    before = item.before_data or {}
+    action = proposed.get("action")
+    current_stay = db.get(Stay, item.object_id)
+    focus_stay = current_stay if current_stay and current_stay.status == PlanStatus.CONFIRMED else None
+    if focus_stay:
+        focus_starts_at = focus_stay.starts_at.isoformat()
+    else:
+        focus_starts_at = proposed.get("starts_at") or before.get("starts_at")
+        if action == "GROUP_CREATE" and not focus_starts_at:
+            entries = proposed.get("items") or []
+            focus_starts_at = entries[0].get("starts_at") if entries else None
+    params = {"request": str(item.id)}
+    if focus_starts_at:
+        params["focus_date"] = focus_starts_at
+    if focus_stay:
+        params["focus_stay"] = str(focus_stay.id)
+    return "/calendar?" + urlencode(params)
+
+
 def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None, queue_email: bool = True):
     notification = Notification(user_id=user_id, kind=kind, title=title, body=body)
     db.add(notification)
     db.flush()
     event_key = f"notification:{notification.id}"
     app_url = mail_config(db).get("app_url") or settings.app_origin
-    action_url = f"{app_url}/calendar?request={request_id}" if request_id else f"{app_url}/calendar"
+    request_item = db.get(ChangeRequest, request_id) if request_id else None
+    action_path = change_request_calendar_path(db, request_item) if request_item else "/calendar"
+    action_url = f"{app_url.rstrip('/')}{action_path}"
     if queue_email:
         queue_mail(db, user_id, event_key, "notification.created", title, f"{body}\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.", action_url, [request_id] if request_id else None)
     queue_push(db, user_id, event_key, title, body, action_url)
@@ -404,6 +428,11 @@ def email_login(token: str, request: Request, db: Session = Depends(get_db)):
     if not user or not user.is_active or user.is_pending:
         raise HTTPException(status.HTTP_410_GONE, "Dieser Anmeldelink ist ungültig oder abgelaufen")
     target = login_token.redirect_path if login_token.redirect_path.startswith("/") else "/calendar"
+    request_values = parse_qs(urlparse(target).query).get("request", [])
+    if len(request_values) == 1 and request_values[0].isdigit():
+        request_item = db.get(ChangeRequest, int(request_values[0]))
+        if request_item:
+            target = change_request_calendar_path(db, request_item)
     response = RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
     issue_session(db, response, user, False)
     audit(db, request, "EMAIL_LOGIN", user.id, ("user", str(user.id)))
@@ -2603,7 +2632,7 @@ def change_request_email_entry(db: Session, item: ChangeRequest, copy_to_self: b
     return {
         "subject": change_request_email_subject(item, "Kopie: " if copy_to_self else ("Erneute Anfrage: " if resend else "")),
         "body": current_change_request_email_body(db, item, copy_to_self=copy_to_self) + "\n\nÖffne FamilienPlan, um die Anfrage zu prüfen.",
-        "action_url": f"{app_url}/calendar?request={item.id}",
+        "action_url": f"{app_url.rstrip('/')}{change_request_calendar_path(db, item)}",
         "decision_request_ids": [] if copy_to_self else [item.id],
         "copy_to_self": copy_to_self,
     }
@@ -2812,9 +2841,9 @@ def _decide_public_group_item(
         item.status = PlanStatus.CONFIRMED if approved else PlanStatus.REJECTED
         details = change_request_details(db, item)
         if approved:
-            notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt", f"{user.display_name} hat die offenen Abschnitte deines Vorschlags bestätigt. {details}")
+            notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt", f"{user.display_name} hat die offenen Abschnitte deines Vorschlags bestätigt. {details}", item.id)
         else:
-            notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt", f"{user.display_name} hat die Gruppenplanung abgelehnt. {details} · Begründung: {comment or 'Per E-Mail abgelehnt'}")
+            notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt", f"{user.display_name} hat die Gruppenplanung abgelehnt. {details} · Begründung: {comment or 'Per E-Mail abgelehnt'}", item.id)
     db.flush()
 
 
@@ -3133,7 +3162,7 @@ def resend_change_request(change_id: int, data: ChangeRequestEmailResend, reques
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Für diese Person ist keine E-Mail-Adresse hinterlegt")
     config = mail_config(db)
     app_url = config.get("app_url") or settings.app_origin
-    action_url = f"{app_url}/calendar?request={item.id}"
+    action_url = f"{app_url.rstrip('/')}{change_request_calendar_path(db, item)}"
     subject_prefix = "Kopie: " if data.copy_to_self else "Erneute Anfrage: "
     action = (item.proposed_data or {}).get("action")
     subject = subject_prefix + ({
@@ -3258,7 +3287,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         request.state.approved_change = True
         item.status = PlanStatus.CONFIRMED
         is_group = item.proposed_data.get("action") == "GROUP_CREATE"
-        notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt" if is_group else "Betreuungsanfrage bestätigt", f"{user.display_name} hat deinen Vorschlag bestätigt. {details}{f' · Kommentare: {decision_comment}' if decision_comment else ''}")
+        notify(db, item.requested_by_id, "STAY_APPROVED", "Gruppenplanung bestätigt" if is_group else "Betreuungsanfrage bestätigt", f"{user.display_name} hat deinen Vorschlag bestätigt. {details}{f' · Kommentare: {decision_comment}' if decision_comment else ''}", item.id)
         if item.proposed_data.get("action") == "GROUP_CREATE":
             pending_ids = [entry.get("stay_id") for entry in item.proposed_data.get("items", []) if not entry.get("email_decision") and entry.get("stay_id")]
             proposed_stays = [db.get(Stay, stay_id) for stay_id in pending_ids]
@@ -3321,7 +3350,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                     rule = db.get(RecurrenceRule, rule_id)
                     if rule:
                         db.delete(rule)
-        notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt" if item.proposed_data.get("action") == "GROUP_CREATE" else "Betreuungsanfrage abgelehnt", f"{user.display_name} hat den Vorschlag abgelehnt. {details} · Begründung: {decision_comment}")
+        notify(db, item.requested_by_id, "STAY_REJECTED", "Gruppenplanung abgelehnt" if item.proposed_data.get("action") == "GROUP_CREATE" else "Betreuungsanfrage abgelehnt", f"{user.display_name} hat den Vorschlag abgelehnt. {details} · Begründung: {decision_comment}", item.id)
         db.commit()
     else:
         if not data.counter_proposal:
