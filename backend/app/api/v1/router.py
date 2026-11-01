@@ -343,6 +343,16 @@ def change_request_calendar_path(db: Session, item: ChangeRequest) -> str:
     return "/calendar?" + urlencode(params)
 
 
+def append_approval_comment(note: str | None, comment: str | None) -> str | None:
+    comment = (comment or "").strip()
+    if not comment:
+        return note
+    marker = f"Bestätigungskommentar:\n{comment}"
+    if marker in (note or ""):
+        return note
+    return f"{note.rstrip()}\n\n{marker}" if note and note.strip() else marker
+
+
 def notify(db: Session, user_id: int, kind: str, title: str, body: str, request_id: int | None = None, queue_email: bool = True):
     notification = Notification(user_id=user_id, kind=kind, title=title, body=body)
     db.add(notification)
@@ -2828,6 +2838,7 @@ def _decide_public_group_item(
     if decision == "APPROVE":
         request.state.approved_change = True
         stay.status = PlanStatus.CONFIRMED
+        stay.note = append_approval_comment(stay.note, comment)
         db.flush()
         entry["approved_stay_id"] = merge_same_person_stay(db, stay).id
     else:
@@ -3291,9 +3302,10 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
         if item.proposed_data.get("action") == "GROUP_CREATE":
             pending_ids = [entry.get("stay_id") for entry in item.proposed_data.get("items", []) if not entry.get("email_decision") and entry.get("stay_id")]
             proposed_stays = [db.get(Stay, stay_id) for stay_id in pending_ids]
-            for stay in proposed_stays:
+            for index, stay in enumerate(proposed_stays):
                 if stay:
                     stay.status = PlanStatus.CONFIRMED
+                    stay.note = append_approval_comment(stay.note, data.item_comments.get(str(index + 1)))
             db.flush()
             merged_stays = []
             for stay in sorted((item for item in proposed_stays if item), key=lambda item: (item.starts_at, item.id)):
@@ -3309,6 +3321,7 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                 if not stay:
                     continue
                 stay.status = PlanStatus.CONFIRMED
+                stay.note = append_approval_comment(stay.note, decision_comment)
             db.flush()
             merged_stays = []
             for stay in sorted((item for item in proposed_stays if item), key=lambda item: (item.starts_at, item.id)):
@@ -3325,7 +3338,9 @@ def decide_change_request(change_id: int, data: ChangeDecision, request: Request
                     db.delete(target)
             db.commit()
         else:
-            update_stay(item.object_id, StayUpdate.model_validate(item.proposed_data), request, db, user)
+            approved_data = StayUpdate.model_validate(item.proposed_data)
+            approved_data.note = append_approval_comment(approved_data.note, decision_comment)
+            update_stay(item.object_id, approved_data, request, db, user)
     elif data.decision == "REJECT":
         item.status = PlanStatus.REJECTED
         if item.proposed_data.get("action") == "GROUP_CREATE":

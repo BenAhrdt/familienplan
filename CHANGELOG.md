@@ -2,6 +2,15 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.134 – 1. November 2026
+
+- Gegenvorschläge lassen sich im Familienplan auch bei neuen Betreuungsanfragen wieder öffnen und bearbeiten.
+- Beim Bestätigen einer Anfrage kann jetzt optional ein Kommentar eingegeben werden.
+- Bestätigungskommentare werden als eigener Abschnitt „Bestätigungskommentar“ an die Betreuungsnotiz angehängt.
+- Die bestehenden Begründungen beim Ablehnen und die Kommentare einzelner Gruppenplanungsabschnitte bleiben erhalten.
+
+Validierung: 104 Backend-Tests, 15 Frontend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.133 – 1. November 2026
 
 - „In FamilienPlan öffnen“ verknüpft offene Anfragen jetzt gleichzeitig mit der Anfrage und dem passenden Kalenderdatum beziehungsweise Betreuungstermin.

@@ -1600,6 +1600,7 @@ function CalendarScreen({
     [rejectingRequest, setRejectingRequest] =
       useState<ChangeRequest | null>(null),
     [groupReview, setGroupReview] = useState<ChangeRequest | null>(null),
+    [approvingRequest, setApprovingRequest] = useState<ChangeRequest | null>(null),
     [groupReviewItems, setGroupReviewItems] = useState<
       NonNullable<ChangeRequest["proposed_data"]["items"]>
     >([]),
@@ -2341,6 +2342,7 @@ function CalendarScreen({
         method: "POST",
         body: JSON.stringify({ decision, comment }),
       });
+      setApprovingRequest(null);
       setRejectingRequest(null);
       load();
     } catch (x) {
@@ -2449,24 +2451,46 @@ function CalendarScreen({
     }
   }
   function openCounter(request: ChangeRequest) {
-    const stay = stays.find((item) => item.id === request.object_id);
-    if (
-      !stay ||
-      !request.proposed_data.starts_at ||
-      !request.proposed_data.ends_at ||
-      !request.proposed_data.responsible_user_id
-    )
+    const proposal = request.proposed_data;
+    const preview = request.calendar_previews?.[0];
+    const existingStay = stays.find((item) => item.id === request.object_id);
+    const childId = existingStay?.child_id ?? request.child_id ?? preview?.child_id;
+    if (!childId || !proposal.starts_at || !proposal.ends_at || !proposal.responsible_user_id) {
+      setError("Dieser Vorschlag kann nicht als Gegenvorschlag geöffnet werden.");
       return;
+    }
+    const stay: Stay = existingStay || {
+      id: request.object_id,
+      child_id: childId,
+      responsible_user_id: proposal.responsible_user_id,
+      responsible_display_name: proposal.responsible_user_name || request.affected_user_name,
+      starts_at: proposal.starts_at,
+      ends_at: proposal.ends_at,
+      status: "PROPOSED",
+      title: proposal.title ?? null,
+      note: proposal.note ?? null,
+      parallel: proposal.parallel === true,
+      recurrence_rule_id: proposal.recurrence_interval_weeks ? request.id : null,
+      recurrence_interval_weeks: proposal.recurrence_interval_weeks || null,
+      recurrence_frequency: proposal.recurrence_frequency || "WEEKLY",
+      recurrence_day_of_month: proposal.recurrence_day_of_month || null,
+      recurrence_until: proposal.recurrence_until || null,
+    };
     setEditingStay({
       ...stay,
-      starts_at: request.proposed_data.starts_at,
-      ends_at: request.proposed_data.ends_at,
-      responsible_user_id: request.proposed_data.responsible_user_id,
-      title: request.proposed_data.title === undefined ? stay.title : request.proposed_data.title,
-      note: request.proposed_data.note ?? null,
+      starts_at: proposal.starts_at,
+      ends_at: proposal.ends_at,
+      responsible_user_id: proposal.responsible_user_id,
+      title: proposal.title === undefined ? stay.title : proposal.title,
+      note: proposal.note ?? null,
     });
+    setSelectedDay(new Date(proposal.starts_at));
+    setEditingStaySource(null);
+    setStayRangeMode("full");
     setEditingDraftRequest(null);
     setCounterRequest(request);
+    setRepeatKind(draftRepeatKind(request));
+    setEditScope((proposal.scope || "occurrence") as "occurrence" | "future" | "series");
     setError("");
     setOpen("stay");
   }
@@ -2891,7 +2915,7 @@ function CalendarScreen({
                   </div>
                 ) : canDecide ? (
                   <div className="request-actions">
-                    <button onClick={() => decide(request, "APPROVE")}>
+                    <button onClick={() => setApprovingRequest(request)}>
                       Bestätigen
                     </button>
                     {proposal.action !== "DELETE" && (
@@ -4252,6 +4276,31 @@ function CalendarScreen({
         onCancel={() => setDraftDeleteChoice(null)}
         onConfirm={() => deleteDraft(draftDeleteChoice)}
       />}
+      {approvingRequest && (
+        <div className="modal decision-modal">
+          <form
+            className="panel"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const comment = String(new FormData(event.currentTarget).get("comment") || "").trim();
+              decide(approvingRequest, "APPROVE", comment || undefined);
+            }}
+          >
+            <button type="button" className="close" onClick={() => setApprovingRequest(null)} aria-label="Schließen">×</button>
+            <h2>Vorschlag bestätigen?</h2>
+            <p>Der Kommentar wird gespeichert und als „Bestätigungskommentar“ an die Betreuungsnotiz angehängt.</p>
+            {error && <p className="error">{error}</p>}
+            <label>
+              Kommentar (optional)
+              <textarea name="comment" maxLength={1000} rows={4} autoFocus />
+            </label>
+            <div className="decision-actions">
+              <button type="submit">Bestätigung senden</button>
+              <button type="button" className="secondary" onClick={() => setApprovingRequest(null)}>Abbrechen</button>
+            </div>
+          </form>
+        </div>
+      )}
       {rejectingRequest && (
         <div className="modal decision-modal">
           <form
