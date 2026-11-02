@@ -25,6 +25,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, new_token, token_hash, utcnow, verify_password
 from app.integrations import ensure_default_calendar_feeds, mail_config, queue_calendar_links_mail, queue_mail, queue_mail_batch
 from app.push import queue_push, vapid_config
+from app.recurrence import calendar_recurrence_dates
 from app.version import VERSION
 from app.models.entities import ApiToken, ApplicationSetting, Approval, AuditLog, Birthday, CalendarEvent, CalendarEventAttachment, CalendarSource, ChangeRequest, Child, ChildUserPermission, EmailLoginToken, HolidayPlan, HolidayPlanSegment, Invitation, Notification, PasswordResetToken, Permission, PlanStatus, PublicDecisionToken, PushSubscription, RecurrenceRule, Role, Session as UserSession, Stay, User
 from app.schemas import AuditPushSetting, BirthdayCreate, BirthdayOut, CalendarColorPreferences, CalendarDisplayPreferences, CalendarEventAttachmentOut, CalendarEventCreate, CalendarEventOut, CalendarTypeSettings, ChangeDecision, ChangeRequestEmailBatch, ChangeRequestEmailResend, ChangeRequestOut, ChildCreate, ChildOut, ChildUpdate, DraftChangeRequestUpdate, GroupPlanningCreate, GroupPlanningItem, HolidayOut, InstitutionResult, InvitationAccept, InvitationCreate, InvitationOut, Login, NotificationOut, PasswordChange, PasswordForgot, PasswordReset, PermissionSet, PersonAccessOut, PersonAccessUpdate, ProfileUpdate, PushSubscriptionCreate, SectionAccessSetting, SessionOut, SetupAdmin, SetupStatus, StayCreate, StayOut, StayUpdate, ThemeSetting, UserOut, WasteCalendarSetting
@@ -3876,16 +3877,20 @@ def create_calendar_event(data: CalendarEventCreate, request: Request, db: Sessi
     frequency = values.pop("recurrence_frequency")
     interval = values.pop("recurrence_interval")
     until = values.pop("recurrence_until")
-    duration = data.ends_at - data.starts_at
-    limit = until or (data.starts_at + timedelta(days=366 * 5))
-    cursor = data.starts_at
     group = str(uuid.uuid4()) if frequency and interval else None
     created = []
-    while True:
+    for cursor, occurrence_end in calendar_recurrence_dates(
+        data.starts_at,
+        data.ends_at,
+        frequency,
+        interval,
+        data.recurrence_day_of_month,
+        until,
+    ):
         event = CalendarEvent(
             **values,
             starts_at=cursor,
-            ends_at=cursor + duration,
+            ends_at=occurrence_end,
             source_id=None,
             created_by_id=user.id,
             recurrence_group=group,
@@ -3895,17 +3900,6 @@ def create_calendar_event(data: CalendarEventCreate, request: Request, db: Sessi
         )
         db.add(event)
         created.append(event)
-        if not frequency or not interval:
-            break
-        if frequency == "MONTHLY":
-            month_index = cursor.month - 1 + interval
-            year, month = cursor.year + month_index // 12, month_index % 12 + 1
-            requested_day = data.recurrence_day_of_month or data.starts_at.day
-            cursor = cursor.replace(year=year, month=month, day=min(requested_day, month_calendar.monthrange(year, month)[1]))
-        else:
-            cursor += timedelta(weeks=interval)
-        if cursor > limit:
-            break
     db.flush()
     audit(db, request, "CALENDAR_EVENT_SERIES_CREATED" if group else "CALENDAR_EVENT_CREATED", user.id, ("calendar_event", str(created[0].id)), {"title": data.title, "event_type": data.event_type, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "occurrences": len(created)})
     db.commit()
@@ -3947,8 +3941,6 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         old_group = event.recurrence_group
         group = old_group if scope == "series" else str(uuid.uuid4())
         creator_id = event.created_by_id
-        duration = data.ends_at - data.starts_at
-        limit = data.recurrence_until or (data.starts_at + timedelta(days=366 * 5))
         targets_query = select(CalendarEvent).where(CalendarEvent.recurrence_group == old_group)
         if scope == "future":
             targets_query = targets_query.where(CalendarEvent.starts_at >= event.starts_at)
@@ -3957,11 +3949,17 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
         for old_event in db.scalars(targets_query):
             db.delete(old_event)
         replacements = []
-        cursor = data.starts_at
-        while cursor <= limit:
+        for cursor, occurrence_end in calendar_recurrence_dates(
+            data.starts_at,
+            data.ends_at,
+            data.recurrence_frequency,
+            data.recurrence_interval,
+            data.recurrence_day_of_month,
+            data.recurrence_until,
+        ):
             replacement = CalendarEvent(
                 source_id=None, child_id=data.child_id, title=data.title,
-                description=data.description, starts_at=cursor, ends_at=cursor + duration,
+                description=data.description, starts_at=cursor, ends_at=occurrence_end,
                 all_day=data.all_day, category=data.category, color=data.color,
                 is_private=data.is_private, event_type=data.event_type,
                 custom_type_label=data.custom_type_label,
@@ -3973,13 +3971,6 @@ def update_calendar_event(event_id: int, data: CalendarEventCreate, request: Req
             )
             db.add(replacement)
             replacements.append(replacement)
-            if data.recurrence_frequency == "MONTHLY":
-                month_index = cursor.month - 1 + data.recurrence_interval
-                year, month = cursor.year + month_index // 12, month_index % 12 + 1
-                requested_day = data.recurrence_day_of_month or data.starts_at.day
-                cursor = cursor.replace(year=year, month=month, day=min(requested_day, month_calendar.monthrange(year, month)[1]))
-            else:
-                cursor += timedelta(weeks=data.recurrence_interval)
         db.flush()
         audit(db, request, "CALENDAR_EVENT_SERIES_CHANGED", user.id, ("calendar_event_series", group), {"title": data.title, "event_type": data.event_type, "scope": scope, "starts_at": data.starts_at.isoformat(), "ends_at": data.ends_at.isoformat(), "occurrences": len(replacements)})
         db.commit()

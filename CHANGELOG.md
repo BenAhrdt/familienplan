@@ -2,6 +2,13 @@
 
 Alle wesentlichen Änderungen an FamilienPlan werden hier dokumentiert. Die Versionierung folgt dem Schema MAJOR.MINOR.PATCH.
 
+## 0.1.135 – 2. November 2026
+
+- Periodische Kalendertermine behalten beim Wechsel zwischen Sommer- und Winterzeit ihre lokale Uhrzeit.
+- Bereits vorhandene Terminserien werden bei der Migration automatisch korrigiert.
+
+Validierung: Backend-Tests und Frontend-Produktionsbuild erfolgreich.
+
 ## 0.1.134 – 1. November 2026
 
 - Gegenvorschläge lassen sich im Familienplan auch bei neuen Betreuungsanfragen wieder öffnen und bearbeiten.
